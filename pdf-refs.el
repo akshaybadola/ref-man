@@ -1,5 +1,3 @@
-;; Copyleft (C) 2018  Akshay Badola
-
 ;; Author: Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Keywords: extensions
 
