@@ -87,8 +87,26 @@ my/venue-pref."
       )))
 
 
+(defun my/org-bibtex-write-ref-NA-from-assoc (key-hash)
+  (let* ((key (mapconcat (lambda (x) (replace-in-string (downcase x) " " ""))
+                         (list "na" "_"
+                               (car (gethash "authors" key-hash))
+                               (car (split-string (gethash "title" key-hash) " " t))) ""))
+         (author '("author" . nil))
+         (author (cons "author" (mapconcat
+                                 (lambda (x) (string-join x ", "))
+                                 (seq-partition (gethash "authors" key-hash) 2) " and ")))
+         (title (cons "title" (gethash "title" key-hash)))
+         (year (cons "year" (format "%s" (gethash "year" key-hash))))
+         (venue (cons "venue" (if (gethash "venue" key-hash)
+                              (replace-in-string (gethash "venue" key-hash) ",$" ""))))
+         (entry (list key (remove-if-not 'cdr (list author title year venue))))
+         )
+    (my/org-bibtex-write-ref-from-assoc entry)))
+    
+
 (defun my/build-bib-entry-not-authoritative (key-hash)
-  "Builds a big entry from the dictionary returned by science
+  "Builds a bib entry from the dictionary returned by science
 parse in case the dblp data doesn't result anything. Very similar
 to my/build-bib-entry"
   (let*  ((author (cons "author" (mapconcat
@@ -96,9 +114,10 @@ to my/build-bib-entry"
                                   (seq-partition (gethash "authors" key-hash) 2) " and ")))
           (title (cons "title" (gethash "title" key-hash)))
           (year (cons "year" (format "%s" (gethash "year" key-hash))))
-          (venue (cons "venue" (replace-in-string (gethash "venue" key-hash) ",$" "")))
+         (venue (cons "venue" (if (gethash "venue" key-hash)
+                              (replace-in-string (gethash "venue" key-hash) ",$" ""))))
           (key (mapconcat (lambda (x) (replace-in-string (downcase x) " " ""))
-                          (list "non-authoritative" "_"
+                          (list "NA" "_"
                                 (car (gethash "authors" key-hash))
                                 (car (split-string (gethash "title" key-hash) " " t))) ""))
           (bib-keys (remove-if-not 'cdr (list author title year venue)))
@@ -217,8 +236,10 @@ to a buffer right now. Can change to have it in multiple steps."
 (defun my/generate-org-buffer ()
 "Generated buffer where all the fetch results will be inserted"
   (let ((buf (get-buffer-create (concat my/title "_org")))
-      (win (if (window-in-direction 'right my/orig-win)
-                   (window-in-direction 'right my/orig-win)
+      (win (cond ((window-in-direction 'right my/orig-win)
+               (window-in-direction 'right my/orig-win))
+             ((window-in-direction 'left my/orig-win)
+                 (window-in-direction 'left my/orig-win))
              (split-window-horizontally)))
       )
     (set-window-buffer win buf)
@@ -269,6 +290,8 @@ to a buffer right now. Can change to have it in multiple steps."
                    (bib-buf (my/get-bib-buffer))
                    (org-buf (my/get-org-buffer))
                    )
+               ;;
+               ;; DEPRECATED
                ;; -- Need to write to a bibtex file instead with no message showing added to file
                ;; Has to be something like
                ;; (concat "@article{" 'key ",\n"
@@ -280,8 +303,12 @@ to a buffer right now. Can change to have it in multiple steps."
                (with-current-buffer bib-buf (insert (if key-str (my/build-bib-entry key-str)
                                                       (my/build-bib-entry-not-authoritative (cdr ref-refs)))))
                (with-current-buffer org-buf
-                 (if key-str (my/org-bibtex-write-ref-from-assoc (my/build-bib-assoc key-str))))
+                 (if key-str (my/org-bibtex-write-ref-from-assoc (my/build-bib-assoc key-str))
+                   (my/org-bibtex-write-ref-NA-from-assoc (cdr ref-refs))))
                (kill-buffer guf)
+
+               ;;
+               ;; DEPRECATED
                ;; (write-region "(" nil "/home/joe/dblp_fetch" 'append)
                ;; (mapcar (lambda (x) (write-region (format "%s\n" x) nil "/home/joe/dblp_fetch" 'append)) key-str)
                ;; (write-region ")\n" nil "/home/joe/dblp_fetch" 'append)
