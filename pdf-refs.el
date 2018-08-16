@@ -57,87 +57,8 @@
   (string-remove-suffix "}" (string-remove-prefix "{" str)))
 
 ;;
-;; constants. perhaps can name them better
+;; Constants. perhaps can name them better
 ;;
-(setq org-ref-nonascii-latex-replacements
-      '(("í" . "{\\\\'i}")
-	("æ" . "{\\\\ae}")
-	("ć" . "{\\\\'c}")
-	("é" . "{\\\\'e}")
-	("ä" . "{\\\\\"a}")
-	("è" . "{\\\\`e}")
-	("à" . "{\\\\`a}")
-	("á" . "{\\\\'a}")
-	("ø" . "{\\\\o}")
-	("ë" . "{\\\\\"e}")
-	("ü" . "{\\\\\"u}")
-	("ñ" . "{\\\\~n}")
-	("ņ" . "{\\\\c{n}}")
-	("ñ" . "{\\\\~n}")
-	("å" . "{\\\\aa}")
-	("ö" . "{\\\\\"o}")
-	("á" . "{\\\\'a}")
-	("í" . "{\\\\'i}")
-	("ó" . "{\\\\'o}")
-	("ó" . "{\\\\'o}")
-	("ú" . "{\\\\'u}")
-	("ú" . "{\\\\'u}")
-	("ý" . "{\\\\'y}")
-	("š" . "{\\\\v{s}}")
-	("č" . "{\\\\v{c}}")
-	("ř" . "{\\\\v{r}}")
-	("š" . "{\\\\v{s}}")
-	("İ" . "{\\\\.i}")
-	("ğ" . "{\\\\u{g}}")
-	("δ" . "$\\\\delta$")
-	("ç" . "{\\\\c{c}}")
-	("ß" . "{\\\\ss}")
-	("≤" . "$\\\\le$")
-	("≥" . "$\\\\ge$")
-	("<" . "$<$")
-	("θ" . "$\\\\theta$")
-	("μ" . "$\\\\mu$")
-	("→" . "$\\\\rightarrow$")
-	("⇌" . "$\\\\leftrightharpoons$")
-	("×" . "$\\\\times$")
-	("°" . "$\\\\deg$")
-	("ş" . "{\\\\c{s}}")
-	("γ" . "$\\\\gamma$")
-	("ɣ" . "$\\\\gamma$")
-	("º" . "degc")
-	("η" . "$\\\\eta$")
-	("µ" . "$\\\\mu$")
-	("α" . "$\\\\alpha$")
-	("β" . "$\\\\beta$")
-	("ɛ" . "$\\\\epsilon$")
-	("ⅵ" . "\\textrm{vi}")
-	("ⅲ" . "\\textrm{iii}")
-	("ⅴ" . "\\textrm{v}")
-	("λ" . "$\\\\lambda$")
-	("π" . "$\\\\pi$")
-	("∞" . "$\\\\infty$")
-	("χ" . "$\\\\chi$")
-	("∼" . "\\\\textasciitilde{}")
-	("‑" . "\\\\textemdash{}")
-	(" " . " ")
-	("…" . "...")
-	("•" . "\\\\textbullet ")
-	;; i think these are non-ascii spaces. there seems to be more than one.
-	(" " . " ")
-	(" " . " ")
-	(" " . " ")
-	("–" . "-")
-	("−" . "-")
-	("–" . "-")
-	("—" . "-")
-	("‒" . "\\\\textemdash{}")
-	("‘" . "'")
-	("’" . "'")
-	("’" . "'")
-	("“" . "\"")
-	("’" . "'")
-	("”" . "\"")))
-
 (setq my/venue-priorities (let* ((confs '("icml" "nips" "iccv" "cvpr" "eccv"))
        (confs-seq (number-sequence (length confs) 1 -1)))
        (mapcar* 'cons confs confs-seq)))
@@ -165,32 +86,12 @@ pairs for only the top result from my/venue-priorities."
       )
     ))
 
-
-(defun my/build-bib-entry-not-authoritative (key-hash)
-  "builds a bib entry from the dictionary returned by science
-parse in case the dblp data doesn't result anything. very similar
-to my/build-bib-entry"
-  (let*  ((author (cons "author" (mapconcat
-                                  (lambda (x) (string-join x ", "))
-                                  (seq-partition (gethash "authors" key-hash) 2) " and ")))
-          (title (cons "title" (gethash "title" key-hash)))
-          (year (cons "year" (format "%s" (gethash "year" key-hash))))
-         (venue (cons "venue" (if (gethash "venue" key-hash)
-                              (replace-in-string (gethash "venue" key-hash) ",$" ""))))
-          (key (mapconcat (lambda (x) (replace-in-string (downcase x) " " ""))
-                          (list "na" "_"
-                                (car (gethash "authors" key-hash))
-                                (car (split-string (gethash "title" key-hash) " " t))) ""))
-          (bib-keys (remove-if-not 'cdr (list author title year venue volume number pages)))
-          )
-    (concat "@article{" key ",\n"
-            (mapconcat 'identity (mapcar (lambda (x) (concat "  " (car x) "=" (concat "{" (cdr x) "},\n")))
-                                         bib-keys) "")
-            "}\n")))
-
 ;;
 ;; remove stop words from first title word
 ;;
+;; TODO: build a different function so that \{etc} aren't there in bib keys
+;; my/remove-non-ascii does something else entirely and I don't want accents
+;; in the keys
 (defun my/build-bib-key (key-str)
   "builds a unique key with the format [author year
   first-title-word] entry from the list of (key . value)"
@@ -200,7 +101,7 @@ to my/build-bib-entry"
          (year-pub (car (cdr (assoc "year" key-str))))
          (title-first (first (split-string (car (cdr (assoc "title" key-str))) " ")))
          )
-    (mapconcat 'downcase (list last-name year-pub title-first) "")))
+    (my/remove-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) ""))))
 
 
 (defun my/validate-author (author)
@@ -212,15 +113,13 @@ to my/build-bib-entry"
 
 (defun my/build-bib-author (author-str)
   "builds the \"author\" value according to bibtex format"
-  (setq my/temp-author-str author-str)
-  (loop for x in org-ref-nonascii-latex-replacements
-        do (setq my/temp-author-str (replace-in-string my/temp-author-str (car x) (cdr x)))
-        )
-  (let* ((author-str (replace-in-string my/temp-author-str ".$" ""))
+  (let* ((author-str (my/remove-non-ascii author-str))
+         (author-str (replace-in-string (replace-in-string author-str ".$" "") ",$" ""))         
          (authors (split-string author-str "," t))
          (result-authors (mapcar (lambda (x)
                                    (let ((temp-auth (my/validate-author (split-string x " " t))))
-                                     (mapconcat 'car (list (last temp-auth) (butlast temp-auth)) ", ")
+                                     (if (= 1 (length temp-auth)) (car temp-auth)
+                                       (mapconcat 'car (list (last temp-auth) (butlast temp-auth)) ", "))
                                      ))
                                  authors)))
     (mapconcat 'identity result-authors " and "))
@@ -248,20 +147,6 @@ entry and org entry"
          (venue (cons "venue" (car (cdr (assoc "venue" key-str))))) ;; todo expand venue
          )
     (list key (remove-if-not 'cdr (list author title year doi volume number pages url venue)))))
-
-
-(defun my/build-bib-entry (key-str)
-  "builds the full bib entry. uses the above defined three
-functions."
-  (let* ((bib-assoc (my/build-bib-assoc key-str))
-         (key (car bib-assoc))
-         (bib (nth 1 bib-assoc))
-         )
-    (concat "@article{" key ",\n"
-            (mapconcat 'identity
-                       (mapcar (lambda (x) (concat "  " (car x) "=" (concat "{" (cdr x) "},\n")))
-                               bib) "")
-            "}\n")))
 
 
 (defun my/get-references ()
@@ -298,17 +183,6 @@ to a buffer right now. can change to have it in multiple steps."
 ;; right, I can open the results on the left.
 ;; Or just create it and user switch to it when she wants.
 ;;
-(defun my/generate-bib-buffer ()
-  "Generated buffer where all the fetch results will be inserted"
-  (let ((buf (get-buffer-create (concat my/title "_refs"))))
-    buf))
-
-(defun my/get-bib-buffer ()
-  "Generated buffer where all the fetch results will be inserted"
-  (let ((buf (get-buffer (concat my/title "_refs"))))
-    buf))
-
-
 (defun my/get-org-buffer ()
   "Generated buffer where all the fetch results will be inserted"
   (let ((buf (get-buffer (concat my/title "_org"))))
@@ -326,16 +200,6 @@ to a buffer right now. can change to have it in multiple steps."
     (set-window-buffer win buf)
     (with-current-buffer buf (org-mode))
     buf))
-
-;; (split-window-right)
-;; (delete-window (window-parent (car (cdr (window-list)))))
-;; (window-list)
-;; (window-parent)
-;; (window-parent (nth 0 (window-list)))
-
-;; DEPRECATED
-;; (setq my/dblp-keys (remove nil (mapcar (lambda (x) (my/dblp-gen-key x)) my/dblp-results)))
-;; (mapcar (lambda (x) (if (assoc "ee" x) (setf (car (assoc "ee" x)) "url"))) my/dblp-keys)
 
 ;;
 ;; Maybe python-epc would be better.
@@ -355,7 +219,7 @@ to a buffer right now. can change to have it in multiple steps."
                 (kill-buffer buf))))
 
          `(lambda (buf-string)
-            ;; ,(async-inject-variables "ref-refs\\|org-ref-nonascii-latex-replacements")
+            ,(async-inject-variables "ref-refs")
             (let ((guf (generate-new-buffer "*dblp-test*")))
               (with-current-buffer guf (insert buf-string))
               (with-current-buffer guf (set-buffer-multibyte t))
@@ -368,36 +232,13 @@ to a buffer right now. can change to have it in multiple steps."
                                                 (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit))
                                         )
                                        ))
-                      ;; DISABLED
-                      ;; (bib-buf (my/get-bib-buffer))
                       (org-buf (my/get-org-buffer))
                       )
-                  ;;
-                  ;; DEPRECATED
-                  ;; -- Need to write to a bibtex file instead with no message showing added to file
-                  ;; Has to be something like
-                  ;; (concat "@article{" 'key ",\n"
-                  ;;                       (mapcar (lambda (x) (concat (car x) "=" (concat "{" (cdr x) "},\n"))) key-str)
-                  ;;                       "}\n\n")
-                  ;; (write-region (format "%s\n" key-str) nil "/home/joe/key_fetch_test" 'append)
-                  ;; (write-region (my/build-bib-entry key-str) nil "/home/joe/dblp_fetch" 'append)
-
-               ;; DISABLED
-               ;; (with-current-buffer bib-buf (insert (if key-str (my/build-bib-entry key-str)
-               ;;                                        (my/build-bib-entry-not-authoritative (cdr ref-refs)))))
-               ;; 
-
                (with-current-buffer org-buf
                  (if key-str (my/org-bibtex-write-ref-from-assoc (my/build-bib-assoc key-str))
                    (my/org-bibtex-write-ref-NA-from-keyhash (cdr ref-refs))))
                (kill-buffer guf)
 
-               ;;
-               ;; DEPRECATED
-               ;; (write-region "(" nil "/home/joe/dblp_fetch" 'append)
-               ;; (mapcar (lambda (x) (write-region (format "%s\n" x) nil "/home/joe/dblp_fetch" 'append)) key-str)
-               ;; (write-region ")\n" nil "/home/joe/dblp_fetch" 'append)
-               ;;--
              )))))))
 
 ;;
@@ -435,20 +276,16 @@ top level heading"
          )
     ;; What if not filename?
     (if filename
-        (progn (with-current-buffer org-buf
-                 (my/org-bibtex-write-heading-from-assoc (my/build-bib-assoc key-str))
-                 (org-insert-heading-after-current)
-                 (org-shiftmetaright)
-                 ;; (set-visited-file-name
-                 ;;  (concat (string-remove-suffix "/" my/org-store-dir) "/" filename ".org"))
-                 )
-               (with-current-buffer bib-buf
-                 ;; (set-visited-file-name
-                 ;;  (concat (string-remove-suffix "/" my/bib-store-dir) "/" filename ".bib"))
-                 (insert (if key-str (my/build-bib-entry key-str)))
-                 (end-of-buffer)
-                 )))
+        (with-current-buffer org-buf
+          (my/org-bibtex-write-heading-from-assoc (my/build-bib-assoc key-str))
+          (org-insert-heading-after-current)
+          (org-shiftmetaright)
+          ;; TODO: fix setting of file name
+          ;; (set-visited-file-name
+          ;;  (concat (string-remove-suffix "/" my/org-store-dir) "/" filename ".org"))
+          ))
     ))
+
 
 (defun my/org-bibtex-write-heading-from-assoc (entry)
   "Generate an org entry from an association list retrieved via
@@ -473,25 +310,100 @@ json."
   ))
 
 
+;; The characters directly borrowed from org-ref
 (defun my/remove-non-ascii (author-str)
-  (setq my/temp-author-str-nonascii author-str)
-  (loop for x in org-ref-nonascii-latex-replacements
-        do (setq my/temp-author-str-nonascii (replace-in-string my/temp-author-str-nonascii (car x) (cdr x)))
-        )
-  my/temp-author-str-nonascii)
+  (let* ((author-str (replace-in-string author-str "í" "{\\\\'i}"))
+         (author-str (replace-in-string author-str "æ" "{\\\\ae}"))
+         (author-str (replace-in-string author-str "ć" "{\\\\'c}"))
+         (author-str (replace-in-string author-str "é" "{\\\\'e}"))
+         (author-str (replace-in-string author-str "ä" "{\\\\\"a}"))
+         (author-str (replace-in-string author-str "è" "{\\\\`e}"))
+         (author-str (replace-in-string author-str "à" "{\\\\`a}"))
+         (author-str (replace-in-string author-str "á" "{\\\\'a}"))
+         (author-str (replace-in-string author-str "ø" "{\\\\o}"))
+         (author-str (replace-in-string author-str "ë" "{\\\\\"e}"))
+         (author-str (replace-in-string author-str "ü" "{\\\\\"u}"))
+         (author-str (replace-in-string author-str "ñ" "{\\\\~n}"))
+         (author-str (replace-in-string author-str "ņ" "{\\\\c{n}}"))
+         (author-str (replace-in-string author-str "ñ" "{\\\\~n}"))
+         (author-str (replace-in-string author-str "å" "{\\\\aa}"))
+         (author-str (replace-in-string author-str "ö" "{\\\\\"o}"))
+         (author-str (replace-in-string author-str "á" "{\\\\'a}"))
+         (author-str (replace-in-string author-str "í" "{\\\\'i}"))
+         (author-str (replace-in-string author-str "ó" "{\\\\'o}"))
+         (author-str (replace-in-string author-str "ó" "{\\\\'o}"))
+         (author-str (replace-in-string author-str "ú" "{\\\\'u}"))
+         (author-str (replace-in-string author-str "ú" "{\\\\'u}"))
+         (author-str (replace-in-string author-str "ý" "{\\\\'y}"))
+         (author-str (replace-in-string author-str "š" "{\\\\v{s}}"))
+         (author-str (replace-in-string author-str "č" "{\\\\v{c}}"))
+         (author-str (replace-in-string author-str "ř" "{\\\\v{r}}"))
+         (author-str (replace-in-string author-str "š" "{\\\\v{s}}"))
+         (author-str (replace-in-string author-str "İ" "{\\\\.i}"))
+         (author-str (replace-in-string author-str "ğ" "{\\\\u{g}}"))
+         (author-str (replace-in-string author-str "δ" "$\\\\delta$"))
+         (author-str (replace-in-string author-str "ç" "{\\\\c{c}}"))
+         (author-str (replace-in-string author-str "ß" "{\\\\ss}"))
+         (author-str (replace-in-string author-str "≤" "$\\\\le$"))
+         (author-str (replace-in-string author-str "≥" "$\\\\ge$"))
+         (author-str (replace-in-string author-str "<" "$<$"))
+         (author-str (replace-in-string author-str "θ" "$\\\\theta$"))
+         (author-str (replace-in-string author-str "μ" "$\\\\mu$"))
+         (author-str (replace-in-string author-str "→" "$\\\\rightarrow$"))
+         (author-str (replace-in-string author-str "⇌" "$\\\\leftrightharpoons$"))
+         (author-str (replace-in-string author-str "×" "$\\\\times$"))
+         (author-str (replace-in-string author-str "°" "$\\\\deg$"))
+         (author-str (replace-in-string author-str "ş" "{\\\\c{s}}"))
+         (author-str (replace-in-string author-str "γ" "$\\\\gamma$"))
+         (author-str (replace-in-string author-str "ɣ" "$\\\\gamma$"))
+         (author-str (replace-in-string author-str "º" "degc"))
+         (author-str (replace-in-string author-str "η" "$\\\\eta$"))
+         (author-str (replace-in-string author-str "µ" "$\\\\mu$"))
+         (author-str (replace-in-string author-str "α" "$\\\\alpha$"))
+         (author-str (replace-in-string author-str "β" "$\\\\beta$"))
+         (author-str (replace-in-string author-str "ɛ" "$\\\\epsilon$"))
+         (author-str (replace-in-string author-str "ⅵ" "\\textrm{vi}"))
+         (author-str (replace-in-string author-str "ⅲ" "\\textrm{iii}"))
+         (author-str (replace-in-string author-str "ⅴ" "\\textrm{v}"))
+         (author-str (replace-in-string author-str "λ" "$\\\\lambda$"))
+         (author-str (replace-in-string author-str "π" "$\\\\pi$"))
+         (author-str (replace-in-string author-str "∞" "$\\\\infty$"))
+         (author-str (replace-in-string author-str "χ" "$\\\\chi$"))
+         (author-str (replace-in-string author-str "∼" "\\\\textasciitilde{}"))
+         (author-str (replace-in-string author-str "‑" "\\\\textemdash{}"))
+         (author-str (replace-in-string author-str " " " "))
+         (author-str (replace-in-string author-str "…" "..."))
+         (author-str (replace-in-string author-str "•" "\\\\textbullet "))
+         (author-str (replace-in-string author-str " " " "))
+         (author-str (replace-in-string author-str " " " "))
+         (author-str (replace-in-string author-str " " " "))
+         (author-str (replace-in-string author-str "–" "-"))
+         (author-str (replace-in-string author-str "−" "-"))
+         (author-str (replace-in-string author-str "–" "-"))
+         (author-str (replace-in-string author-str "—" "-"))
+         (author-str (replace-in-string author-str "‒" "\\\\textemdash{}"))
+         (author-str (replace-in-string author-str "‘" "'"))
+         (author-str (replace-in-string author-str "’" "'"))
+         (author-str (replace-in-string author-str "’" "'"))
+         (author-str (replace-in-string author-str "“" "\""))
+         (author-str (replace-in-string author-str "’" "'"))
+         (author-str (replace-in-string author-str "”" "\"")))
+    author-str))
+
 
 (defun my/org-bibtex-write-ref-NA-from-keyhash (key-hash)
   (if (and (gethash "title" key-hash) (gethash "authors" key-hash))
       (let* ((key (mapconcat (lambda (x) (replace-in-string (downcase x) " " ""))
                              (list "na" "_"
-                                   (car (gethash "authors" key-hash))
+                                   (let ((first-author (split-string (car (gethash "authors" key-hash)) " ")))
+                                     (if (= 1 (length first-author)) (car first-author)
+                                       (nth 1 first-author)))
+                                   (if (gethash "year" key-hash) (format "%s" (gethash "year" key-hash))
+                                     "_")
                                    (car (split-string (gethash "title" key-hash) " " t))) ""))
              (author '("author" . nil))
-             (author (cons "author" (my/remove-non-ascii
-                                     (string-join (mapcar (lambda (x) (string-join x ", "))
-                                                          (seq-partition (gethash "authors" key-hash) 2))
-                                                  " and "))))
-
+             (author (cons "author" (my/build-bib-author
+                                     (string-join (gethash "authors" key-hash) ", "))))
              (title (cons "title" (gethash "title" key-hash)))
              (volume (cons "volume" (gethash "volume" key-hash)))
              (number (cons "number" (gethash "number" key-hash)))
@@ -531,7 +443,7 @@ json."
     (org-set-property "BTYPE" "article")
   ))
 
-
+;; This isn't used apparently?
 (defun my/org-bibtex-write-heading-from-bibtex (entry)
   "Generate an org entry from a bibtex association list, parsed
 with 'bibtex from a bibtex entry"
@@ -558,7 +470,7 @@ with 'bibtex from a bibtex entry"
   ;; auth just to be safe
   (async-start-process "auth" "/home/joe/bin/myauth" nil)
   (if (not (string-match-p "akshay@10.5.0.88" (shell-command-to-string  "ps -ef | grep ssh")))
-  (async-start-process "ls" "ssh" nil "-N" "-L" "9090:localhost:8080" "akshay@10.5.0.88"))
+      (async-start-process "ls" "ssh" nil "-N" "-L" "9090:localhost:8080" "akshay@10.5.0.88"))
   (sleep-for 1)
   (if (not (string-match-p "Usage"
                            (shell-command-to-string "curl -s localhost:9090")))
