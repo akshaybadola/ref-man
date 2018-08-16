@@ -1,18 +1,18 @@
-;; Author: Akshay Badola <akshay.badola.cs@gmail.com>
-;; Keywords: extensions
+;; author: akshay badola <akshay.badola.cs@gmail.com>
+;; keywords: extensions
 
-;; This program is free software; you can redistribute it and/or modify
-;; it under the terms of the GNU General Public License as published by
-;; the Free Software Foundation, either version 3 of the License, or
+;; this program is free software; you can redistribute it and/or modify
+;; it under the terms of the gnu general public license as published by
+;; the free software foundation, either version 3 of the license, or
 ;; (at your option) any later version.
 
-;; This program is distributed in the hope that it will be useful,
-;; but WITHOUT ANY WARRANTY; without even the implied warranty of
-;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-;; GNU General Public License for more details.
+;; this program is distributed in the hope that it will be useful,
+;; but without any warranty; without even the implied warranty of
+;; merchantability or fitness for a particular purpose.  see the
+;; gnu general public license for more details.
 
-;; You should have received a copy of the GNU General Public License
-;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+;; you should have received a copy of the gnu general public license
+;; along with this program.  if not, see <http://www.gnu.org/licenses/>.
 
 (require 'cl)
 (require 'url)
@@ -24,7 +24,7 @@
 (require 'gscholar-bibtex)
 
 ;;
-;; Utility functions
+;; utility functions
 ;;
 (defun firstn (x n)
   (butlast x (- (length x) n)))
@@ -57,57 +57,118 @@
   (string-remove-suffix "}" (string-remove-prefix "{" str)))
 
 ;;
-;; CONSTANTS. Perhaps can name them better
+;; constants. perhaps can name them better
 ;;
-(setq my/venue-priorities (let* ((confs '("ICML" "NIPS" "ICCV" "CVPR" "ECCV"))
+(setq org-ref-nonascii-latex-replacements
+      '(("í" . "{\\\\'i}")
+	("æ" . "{\\\\ae}")
+	("ć" . "{\\\\'c}")
+	("é" . "{\\\\'e}")
+	("ä" . "{\\\\\"a}")
+	("è" . "{\\\\`e}")
+	("à" . "{\\\\`a}")
+	("á" . "{\\\\'a}")
+	("ø" . "{\\\\o}")
+	("ë" . "{\\\\\"e}")
+	("ü" . "{\\\\\"u}")
+	("ñ" . "{\\\\~n}")
+	("ņ" . "{\\\\c{n}}")
+	("ñ" . "{\\\\~n}")
+	("å" . "{\\\\aa}")
+	("ö" . "{\\\\\"o}")
+	("á" . "{\\\\'a}")
+	("í" . "{\\\\'i}")
+	("ó" . "{\\\\'o}")
+	("ó" . "{\\\\'o}")
+	("ú" . "{\\\\'u}")
+	("ú" . "{\\\\'u}")
+	("ý" . "{\\\\'y}")
+	("š" . "{\\\\v{s}}")
+	("č" . "{\\\\v{c}}")
+	("ř" . "{\\\\v{r}}")
+	("š" . "{\\\\v{s}}")
+	("İ" . "{\\\\.i}")
+	("ğ" . "{\\\\u{g}}")
+	("δ" . "$\\\\delta$")
+	("ç" . "{\\\\c{c}}")
+	("ß" . "{\\\\ss}")
+	("≤" . "$\\\\le$")
+	("≥" . "$\\\\ge$")
+	("<" . "$<$")
+	("θ" . "$\\\\theta$")
+	("μ" . "$\\\\mu$")
+	("→" . "$\\\\rightarrow$")
+	("⇌" . "$\\\\leftrightharpoons$")
+	("×" . "$\\\\times$")
+	("°" . "$\\\\deg$")
+	("ş" . "{\\\\c{s}}")
+	("γ" . "$\\\\gamma$")
+	("ɣ" . "$\\\\gamma$")
+	("º" . "degc")
+	("η" . "$\\\\eta$")
+	("µ" . "$\\\\mu$")
+	("α" . "$\\\\alpha$")
+	("β" . "$\\\\beta$")
+	("ɛ" . "$\\\\epsilon$")
+	("ⅵ" . "\\textrm{vi}")
+	("ⅲ" . "\\textrm{iii}")
+	("ⅴ" . "\\textrm{v}")
+	("λ" . "$\\\\lambda$")
+	("π" . "$\\\\pi$")
+	("∞" . "$\\\\infty$")
+	("χ" . "$\\\\chi$")
+	("∼" . "\\\\textasciitilde{}")
+	("‑" . "\\\\textemdash{}")
+	(" " . " ")
+	("…" . "...")
+	("•" . "\\\\textbullet ")
+	;; i think these are non-ascii spaces. there seems to be more than one.
+	(" " . " ")
+	(" " . " ")
+	(" " . " ")
+	("–" . "-")
+	("−" . "-")
+	("–" . "-")
+	("—" . "-")
+	("‒" . "\\\\textemdash{}")
+	("‘" . "'")
+	("’" . "'")
+	("’" . "'")
+	("“" . "\"")
+	("’" . "'")
+	("”" . "\"")))
+
+(setq my/venue-priorities (let* ((confs '("icml" "nips" "iccv" "cvpr" "eccv"))
        (confs-seq (number-sequence (length confs) 1 -1)))
        (mapcar* 'cons confs confs-seq)))
 
-(setq my/key-list '(authors title venue pages year doi ee))
-(setq my/org-store-dir "/home/joe/PhD/org")
-(setq my/bib-store-dir "/home/joe/PhD/bibs")
+(setq my/key-list '(authors title venue volume number pages year doi ee))
+(setq my/org-store-dir "/home/joe/phd/pubs/org")
+(setq my/bib-store-dir "/home/joe/phd/pubs/bibs")
 
 ;;
-;; Generate bib key from dblp xml. Uses gscholar-bibtex
-;; Perhaps should be renamed
+;; clean the xml entry and keep relevant itmes. uses gscholar-bibtex
 ;; 
-(defun my/dblp-gen-key (result)
-  "Generates a list of (key . value) pairs from the fetched dblp
-xml. Uses gscholar-bibtex for the xml parsing. Returns an assoc
-list for only the top result from my/venue-priorities. Uses
-my/venue-pref."
+(defun my/dblp-clean (result)
+  "cleans the xml entry and keeps relevant itmes according to
+my/key-list. uses gscholar-bibtex. returns an assoc list of (key. value) 
+pairs for only the top result from my/venue-priorities."
   (let ((result (nth (my/max-ind (my/venue-pref result)) result)))
-    (if result ;; TODO handle this later    
+    (if result ;; todo handle this later    
         (remove '("nil") (mapcar (lambda (x)
                   (if (eq x 'authors)
                       (list (symbol-name 'authors) (string-join (mapcar (lambda (x)
                                                                           (car (last x))) (butfirst (gscholar-bibtex--xml-get-child result x) 2)) ", "))
                     (cons (symbol-name (first (gscholar-bibtex--xml-get-child result x)))
-                          (last (gscholar-bibtex--xml-get-child result x))))) my/key-list))
-      )))
+                          (last (gscholar-bibtex--xml-get-child result x)))))
+                                 my/key-list))
+      )
+    ))
 
-
-(defun my/org-bibtex-write-ref-NA-from-assoc (key-hash)
-  (let* ((key (mapconcat (lambda (x) (replace-in-string (downcase x) " " ""))
-                         (list "na" "_"
-                               (car (gethash "authors" key-hash))
-                               (car (split-string (gethash "title" key-hash) " " t))) ""))
-         (author '("author" . nil))
-         (author (cons "author" (mapconcat
-                                 (lambda (x) (string-join x ", "))
-                                 (seq-partition (gethash "authors" key-hash) 2) " and ")))
-         (title (cons "title" (gethash "title" key-hash)))
-         (year (cons "year" (format "%s" (gethash "year" key-hash))))
-         (venue (cons "venue" (if (gethash "venue" key-hash)
-                              (replace-in-string (gethash "venue" key-hash) ",$" ""))))
-         (entry (list key (remove-if-not 'cdr (list author title year venue))))
-         )
-    (my/org-bibtex-write-ref-from-assoc entry)))
-    
 
 (defun my/build-bib-entry-not-authoritative (key-hash)
-  "Builds a bib entry from the dictionary returned by science
-parse in case the dblp data doesn't result anything. Very similar
+  "builds a bib entry from the dictionary returned by science
+parse in case the dblp data doesn't result anything. very similar
 to my/build-bib-entry"
   (let*  ((author (cons "author" (mapconcat
                                   (lambda (x) (string-join x ", "))
@@ -117,10 +178,10 @@ to my/build-bib-entry"
          (venue (cons "venue" (if (gethash "venue" key-hash)
                               (replace-in-string (gethash "venue" key-hash) ",$" ""))))
           (key (mapconcat (lambda (x) (replace-in-string (downcase x) " " ""))
-                          (list "NA" "_"
+                          (list "na" "_"
                                 (car (gethash "authors" key-hash))
                                 (car (split-string (gethash "title" key-hash) " " t))) ""))
-          (bib-keys (remove-if-not 'cdr (list author title year venue)))
+          (bib-keys (remove-if-not 'cdr (list author title year venue volume number pages)))
           )
     (concat "@article{" key ",\n"
             (mapconcat 'identity (mapcar (lambda (x) (concat "  " (car x) "=" (concat "{" (cdr x) "},\n")))
@@ -128,49 +189,69 @@ to my/build-bib-entry"
             "}\n")))
 
 ;;
-;; Remove stop words from first title word
+;; remove stop words from first title word
 ;;
 (defun my/build-bib-key (key-str)
-  "Builds a unique key with the format [author year
-  first-title-word] entry from the list of (key . value) pairs
-  returned according to keys which are usefult to me and of only
-  the top venue priority."
-  (let* ((first-author (car (split-string (car (cdr (assoc "authors" key-str))) "," t)))
-         (last-name (car (last (split-string first-author " " t))))
+  "builds a unique key with the format [author year
+  first-title-word] entry from the list of (key . value)"
+  (let* ((first-author-str (car (split-string (car (cdr (assoc "authors" key-str))) "," t)))
+         (first-author (my/validate-author (split-string first-author-str " " t)))
+         (last-name (car (last first-author)))
          (year-pub (car (cdr (assoc "year" key-str))))
          (title-first (first (split-string (car (cdr (assoc "title" key-str))) " ")))
          )
     (mapconcat 'downcase (list last-name year-pub title-first) "")))
 
+
+(defun my/validate-author (author)
+  (if (or (string-match-p "[0-9]+" (car (last author)))
+                  (string-match-p "^i$\\|^ii$\\|^iii$\\|^iv$" (downcase (car (last author)))))
+      (if (> (length author) 2) (butlast author) (nconc (butlast author) '("")))
+    author))
+
+
 (defun my/build-bib-author (author-str)
-  "Builds the \"author\" value according to bibtex format"
-  (let* ((authors (split-string author-str "," t))
+  "builds the \"author\" value according to bibtex format"
+  (setq my/temp-author-str author-str)
+  (loop for x in org-ref-nonascii-latex-replacements
+        do (setq my/temp-author-str (replace-in-string my/temp-author-str (car x) (cdr x)))
+        )
+  (let* ((author-str (replace-in-string my/temp-author-str ".$" ""))
+         (authors (split-string author-str "," t))
          (result-authors (mapcar (lambda (x)
-                                   (let ((temp-auth (split-string x " " t)))
-                                      (mapconcat 'car (list (last temp-auth) (butlast temp-auth)) ", ")
+                                   (let ((temp-auth (my/validate-author (split-string x " " t))))
+                                     (mapconcat 'car (list (last temp-auth) (butlast temp-auth)) ", ")
                                      ))
                                  authors)))
-         (mapconcat 'identity result-authors " and "))
-    )
+    (mapconcat 'identity result-authors " and "))
+  )
+
 
 (defun my/build-bib-assoc (key-str)
-"builds the association list. Can be used to build both the bib
+  "builds the association list. can be used to build both the bib
 entry and org entry"
   (let* ((key (my/build-bib-key key-str))
-         (author (cons "author" (my/build-bib-author (car (cdr (assoc "authors" key-str))))))
+         (author (cons "author" (my/build-bib-author
+                                 (car (cdr (assoc "authors" key-str))))
+                       ))
          (title (cons "title" (car (cdr (assoc "title" key-str)))))
          (year (cons "year" (car (cdr (assoc "year" key-str)))))
          (doi (cons "doi" (car (cdr (assoc "doi" key-str)))))
+         (volume (cons "volume" (car (cdr (assoc "volume" key-str)))))
+         (number (cons "number" (car (cdr (assoc "number" key-str)))))                  
          (tmp-pages (car (cdr (assoc "pages" key-str))))
-         (pages (cons "pages" (if tmp-pages (replace-in-string tmp-pages "-" "--") nil)))
+         (pages (cons "pages" (if tmp-pages
+                                  (replace-in-string
+                                   (replace-in-string tmp-pages "-" "--") " " "")
+                                nil)))
          (url (cons "url" (car (cdr (assoc "ee" key-str)))))
-         (venue (cons "venue" (car (cdr (assoc "venue" key-str))))) ;; TODO expand venue
+         (venue (cons "venue" (car (cdr (assoc "venue" key-str))))) ;; todo expand venue
          )
-    (list key (remove-if-not 'cdr (list author title year doi pages url venue)))))
+    (list key (remove-if-not 'cdr (list author title year doi volume number pages url venue)))))
 
 
 (defun my/build-bib-entry (key-str)
-  "Builds the full bib entry. Uses the above defined three
+  "builds the full bib entry. uses the above defined three
 functions."
   (let* ((bib-assoc (my/build-bib-assoc key-str))
          (key (car bib-assoc))
@@ -184,14 +265,14 @@ functions."
 
 
 (defun my/get-references ()
-  "This is the only entry point to fetch and write the references
-to a buffer right now. Can change to have it in multiple steps."
+  "this is the only entry point to fetch and write the references
+to a buffer right now. can change to have it in multiple steps."
   (interactive)
   (setq my/dblp-results ())
   (let*
       ((pdf-file-name (expand-file-name (buffer-file-name (current-buffer))))
        (json-string (shell-command-to-string (format "curl -s -H\
-       \"Content-type: application/pdf\" --data-binary @%s\
+       \"content-type: application/pdf\" --data-binary @%s\
        \"http://localhost:9090/v1\"" pdf-file-name)))
        (json-object-type 'hash-table)
        (json-key-type 'string)
@@ -202,7 +283,7 @@ to a buffer right now. Can change to have it in multiple steps."
                             (cons (concat (gethash "title" x) " " (string-join (gethash "authors" x) " ")) x))
                           (gethash "references" json-string))))
     (setq my/science-parse-data json-string)
-    (setq my/abstract (gethash "abstractText" json-string))
+    (setq my/abstract (gethash "abstracttext" json-string))
     (setq my/title (gethash "title" json-string))
     (setq my/refs-list refs-list)
     (setq my/bibs "")
@@ -234,17 +315,17 @@ to a buffer right now. Can change to have it in multiple steps."
     buf))
 
 (defun my/generate-org-buffer ()
-"Generated buffer where all the fetch results will be inserted"
+  "Generated buffer where all the fetch results will be inserted"
   (let ((buf (get-buffer-create (concat my/title "_org")))
-      (win (cond ((window-in-direction 'right my/orig-win)
-               (window-in-direction 'right my/orig-win))
-             ((window-in-direction 'left my/orig-win)
-                 (window-in-direction 'left my/orig-win))
-             (split-window-horizontally)))
-      )
+        (win (cond ((window-in-direction 'right my/orig-win)
+                    (window-in-direction 'right my/orig-win))
+                   ((window-in-direction 'left my/orig-win)
+                    (window-in-direction 'left my/orig-win))
+                   (split-window-horizontally)))
+        )
     (set-window-buffer win buf)
     (with-current-buffer buf (org-mode))
-  buf))
+    buf))
 
 ;; (split-window-right)
 ;; (delete-window (window-parent (car (cdr (window-list)))))
@@ -260,7 +341,7 @@ to a buffer right now. Can change to have it in multiple steps."
 ;; Maybe python-epc would be better.
 ;;
 (defun my/dblp-fetch-parallel (refs-list)
-"Fetches all dblp queries in parallel via async"
+  "Fetches all dblp queries in parallel via async"
   (loop for ref-refs in refs-list do
         (async-start
          `(lambda ()
@@ -268,43 +349,47 @@ to a buffer right now. Can change to have it in multiple steps."
             ;;   (replace-regexp-in-string (regexp-quote what) with in nil 'literal))
             ,(async-inject-variables "ref-refs")
             (let* ((mah-url (format "http://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" (car ref-refs)))
-                  (buf (url-retrieve-synchronously mah-url)))
-              (prog1 (with-current-buffer buf (buffer-string))
-             (kill-buffer buf))))
+                   (buf (url-retrieve-synchronously mah-url)))
+              (prog2 (with-current-buffer buf (set-buffer-multibyte t))
+                  (with-current-buffer buf (buffer-string))
+                (kill-buffer buf))))
 
          `(lambda (buf-string)
-            ,(async-inject-variables "ref-refs")
-           (let ((guf (generate-new-buffer "*dblp-test*")))
-             (with-current-buffer guf (insert buf-string))
-             (with-current-buffer guf (set-buffer-multibyte t))
+            ;; ,(async-inject-variables "ref-refs\\|org-ref-nonascii-latex-replacements")
+            (let ((guf (generate-new-buffer "*dblp-test*")))
+              (with-current-buffer guf (insert buf-string))
+              (with-current-buffer guf (set-buffer-multibyte t))
+              (pcase-let ((`(,(and result `(result . ,_)))
+                           (xml-parse-region nil nil guf)))
+                (let ((key-str (remove nil
+                                       (my/dblp-clean
+                                        (mapcar (lambda (hit)
+                                                  (gscholar-bibtex--xml-get-child hit 'info))
+                                                (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit))
+                                        )
+                                       ))
+                      ;; DISABLED
+                      ;; (bib-buf (my/get-bib-buffer))
+                      (org-buf (my/get-org-buffer))
+                      )
+                  ;;
+                  ;; DEPRECATED
+                  ;; -- Need to write to a bibtex file instead with no message showing added to file
+                  ;; Has to be something like
+                  ;; (concat "@article{" 'key ",\n"
+                  ;;                       (mapcar (lambda (x) (concat (car x) "=" (concat "{" (cdr x) "},\n"))) key-str)
+                  ;;                       "}\n\n")
+                  ;; (write-region (format "%s\n" key-str) nil "/home/joe/key_fetch_test" 'append)
+                  ;; (write-region (my/build-bib-entry key-str) nil "/home/joe/dblp_fetch" 'append)
 
-           (pcase-let ((`(,(and result `(result . ,_)))
-                        (xml-parse-region nil nil guf)))
-             (let ((key-str (remove nil
-                                    (my/dblp-gen-key
-             (mapcar (lambda (hit)
-                                                            (gscholar-bibtex--xml-get-child hit 'info))
-                     (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit))
-                                     )
-                                    ))
-                   (bib-buf (my/get-bib-buffer))
-                   (org-buf (my/get-org-buffer))
-                   )
-               ;;
-               ;; DEPRECATED
-               ;; -- Need to write to a bibtex file instead with no message showing added to file
-               ;; Has to be something like
-               ;; (concat "@article{" 'key ",\n"
-               ;;                       (mapcar (lambda (x) (concat (car x) "=" (concat "{" (cdr x) "},\n"))) key-str)
-               ;;                       "}\n\n")
-               ;; (write-region (format "%s\n" key-str) nil "/home/joe/key_fetch_test" 'append)
-               ;; (write-region (my/build-bib-entry key-str) nil "/home/joe/dblp_fetch" 'append)
+               ;; DISABLED
+               ;; (with-current-buffer bib-buf (insert (if key-str (my/build-bib-entry key-str)
+               ;;                                        (my/build-bib-entry-not-authoritative (cdr ref-refs)))))
+               ;; 
 
-               (with-current-buffer bib-buf (insert (if key-str (my/build-bib-entry key-str)
-                                                      (my/build-bib-entry-not-authoritative (cdr ref-refs)))))
                (with-current-buffer org-buf
                  (if key-str (my/org-bibtex-write-ref-from-assoc (my/build-bib-assoc key-str))
-                   (my/org-bibtex-write-ref-NA-from-assoc (cdr ref-refs))))
+                   (my/org-bibtex-write-ref-NA-from-keyhash (cdr ref-refs))))
                (kill-buffer guf)
 
                ;;
@@ -326,7 +411,7 @@ top level heading"
     (with-current-buffer buf (set-buffer-multibyte t))
     (pcase-let ((`(,(and result `(result . ,_)))
                  (xml-parse-region nil nil buf)))
-      (remove nil (my/dblp-gen-key
+      (remove nil (my/dblp-clean
                    (mapcar (lambda (hit)
                              (gscholar-bibtex--xml-get-child hit 'info))
                            (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit)))))
@@ -339,14 +424,16 @@ top level heading"
 
 (defun my/generate-primary-buffer ()
   (let* ((org-buf (my/generate-org-buffer))
-        (bib-buf (my/generate-bib-buffer))
-        (key-str (my/dblp-fetch-serial  ;; assoc list
-                  (concat
-                   (gethash "title" my/science-parse-data) " "
-                   (string-join (mapcar (lambda (x) (gethash "name" x))
-                                        (gethash "authors" my/science-parse-data)) " "))))
-        (filename (my/build-bib-key key-str))
-        )
+         (bib-buf (my/generate-bib-buffer))
+         (key-str (my/dblp-fetch-serial  ;; assoc list
+                   (concat
+                    (replace-regexp-in-string "[^\t\n\r\f -~]" ""  (gethash "title" my/science-parse-data)) " "
+                    (string-join (mapcar (lambda (x) (gethash "name" x))
+                                         (gethash "authors" my/science-parse-data)) " "))))
+         ;; What if not key-str?
+         (filename (my/build-bib-key key-str))
+         )
+    ;; What if not filename?
     (if filename
         (progn (with-current-buffer org-buf
                  (my/org-bibtex-write-heading-from-assoc (my/build-bib-assoc key-str))
@@ -386,6 +473,41 @@ json."
   ))
 
 
+(defun my/remove-non-ascii (author-str)
+  (setq my/temp-author-str-nonascii author-str)
+  (loop for x in org-ref-nonascii-latex-replacements
+        do (setq my/temp-author-str-nonascii (replace-in-string my/temp-author-str-nonascii (car x) (cdr x)))
+        )
+  my/temp-author-str-nonascii)
+
+(defun my/org-bibtex-write-ref-NA-from-keyhash (key-hash)
+  (if (and (gethash "title" key-hash) (gethash "authors" key-hash))
+      (let* ((key (mapconcat (lambda (x) (replace-in-string (downcase x) " " ""))
+                             (list "na" "_"
+                                   (car (gethash "authors" key-hash))
+                                   (car (split-string (gethash "title" key-hash) " " t))) ""))
+             (author '("author" . nil))
+             (author (cons "author" (my/remove-non-ascii
+                                     (string-join (mapcar (lambda (x) (string-join x ", "))
+                                                          (seq-partition (gethash "authors" key-hash) 2))
+                                                  " and "))))
+
+             (title (cons "title" (gethash "title" key-hash)))
+             (volume (cons "volume" (gethash "volume" key-hash)))
+             (number (cons "number" (gethash "number" key-hash)))
+             (tmp-pages (cons "pages" (gethash "pages" key-hash)))
+             (pages (cons "pages" (if tmp-pages
+                                  (replace-in-string
+                                   (replace-in-string (format "%s" tmp-pages) "-" "--") " " "")
+                                nil)))
+             (year (cons "year" (format "%s" (gethash "year" key-hash))))
+             (venue (cons "venue" (if (gethash "venue" key-hash)
+                                      (replace-in-string (gethash "venue" key-hash) ",$" ""))))
+             (entry (list key (remove-if-not 'cdr (list author title year venue volume number pages))))
+             )
+        (my/org-bibtex-write-ref-from-assoc entry))))
+  
+
 (defun my/org-bibtex-write-ref-from-assoc (entry)
   "Generate an org entry from an association list retrieved via
 json."
@@ -396,14 +518,14 @@ json."
     (insert (cdr (assoc "title" entry)))
     (insert "\n")
     (org-indent-line)
-    (insert (format "- Authors: %s" (cdr (assoc "author" entry))))
+    (insert (format "- Authors: %s" (my/remove-non-ascii (cdr (assoc "author" entry)))))
     (org-insert-item)
     (insert (concat (cdr (assoc "venue" entry)) ", " (cdr (assoc "year" entry))))
     (org-insert-property-drawer)
     (loop for ent in entry
           do
           (if (not (string-equal (car ent) "abstract"))
-              (org-set-property (upcase (car ent)) (my/fix (cdr ent)))
+              (org-set-property (upcase (car ent)) (my/remove-non-ascii (my/fix (cdr ent))))
             ))
     (org-set-property "CUSTOM_ID" key)
     (org-set-property "BTYPE" "article")
@@ -431,3 +553,16 @@ with 'bibtex from a bibtex entry"
           (`("=key=" . ,_) (org-set-property "CUSTOM_ID" (my/fix (cdr ent))))
           (`(,_ . ,_) (org-set-property (upcase (car ent)) (my/fix (cdr ent)))))
         ))
+
+(defun my/pdf-refs-init ()
+  ;; auth just to be safe
+  (async-start-process "auth" "/home/joe/bin/myauth" nil)
+  (if (not (string-match-p "akshay@10.5.0.88" (shell-command-to-string  "ps -ef | grep ssh")))
+  (async-start-process "ls" "ssh" nil "-N" "-L" "9090:localhost:8080" "akshay@10.5.0.88"))
+  (sleep-for 1)
+  (if (not (string-match-p "Usage"
+                           (shell-command-to-string "curl -s localhost:9090")))
+      (message "ERROR! Check connections") (message "Established connection to server successfully"))
+  )
+
+(my/pdf-refs-init)
