@@ -68,20 +68,25 @@
 
 ;;
 ;; clean the xml entry and keep relevant itmes. uses gscholar-bibtex
-;; 
+;;
 (defun my/dblp-clean (result)
   "cleans the xml entry and keeps relevant itmes according to
-my/key-list. uses gscholar-bibtex. returns an assoc list of (key. value) 
+my/key-list. uses gscholar-bibtex. returns an assoc list of (key. value)
 pairs for only the top result from my/venue-priorities."
   (let ((result (nth (my/max-ind (my/venue-pref result)) result)))
-    (if result ;; TODO handle this later    
-        (remove '("nil") (mapcar (lambda (x)
-                  (if (eq x 'authors)
-                      (list (symbol-name 'authors) (string-join (mapcar (lambda (x)
-                                                                          (car (last x))) (butfirst (gscholar-bibtex--xml-get-child result x) 2)) ", "))
-                    (cons (symbol-name (first (gscholar-bibtex--xml-get-child result x)))
-                          (last (gscholar-bibtex--xml-get-child result x)))))
-                                 my/key-list)))))
+    ;; TODO handle this later
+    (if result
+        (remove '("nil")
+                (mapcar
+                 (lambda (x)
+                   (if (eq x 'authors)
+                       (list
+                        (symbol-name 'authors)
+                        (string-join (mapcar (lambda (x) (car (last x)))
+                                             (butfirst (gscholar-bibtex--xml-get-child result x) 2)) ", "))
+                     (cons (symbol-name (first (gscholar-bibtex--xml-get-child result x)))
+                           (last (gscholar-bibtex--xml-get-child result x)))))
+                 my/key-list)))))
 
 ;;
 ;; TODO: remove stop words from first title word
@@ -111,7 +116,7 @@ pairs for only the top result from my/venue-priorities."
 (defun my/build-bib-author (author-str)
   "builds the \"author\" value according to bibtex format"
   (let* ((author-str (my/remove-non-ascii author-str))
-         (author-str (replace-in-string (replace-in-string author-str "\\.$" "") ",$" ""))         
+         (author-str (replace-in-string (replace-in-string author-str "\\.$" "") ",$" ""))
          (authors (split-string author-str "," t))
          (result-authors (mapcar (lambda (x)
                                    (let ((temp-auth (my/validate-author (split-string x " " t))))
@@ -132,7 +137,7 @@ entry and org entry"
          (year (cons "year" (car (cdr (assoc "year" key-str)))))
          (doi (cons "doi" (car (cdr (assoc "doi" key-str)))))
          (volume (cons "volume" (car (cdr (assoc "volume" key-str)))))
-         (number (cons "number" (car (cdr (assoc "number" key-str)))))                  
+         (number (cons "number" (car (cdr (assoc "number" key-str)))))
          (tmp-pages (car (cdr (assoc "pages" key-str))))
          (pages (cons "pages" (if tmp-pages
                                   (replace-in-string
@@ -409,7 +414,7 @@ json."
              (entry (list key (remove-if-not 'cdr (list author title year venue volume number pages))))
              )
         (my/org-bibtex-write-ref-from-assoc entry))))
-  
+
 
 (defun my/org-bibtex-write-ref-from-assoc (entry)
   "Generate an org entry from an association list retrieved via
