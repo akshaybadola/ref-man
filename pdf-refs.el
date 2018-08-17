@@ -111,7 +111,7 @@ pairs for only the top result from my/venue-priorities."
 (defun my/build-bib-author (author-str)
   "builds the \"author\" value according to bibtex format"
   (let* ((author-str (my/remove-non-ascii author-str))
-         (author-str (replace-in-string (replace-in-string author-str ".$" "") ",$" ""))         
+         (author-str (replace-in-string (replace-in-string author-str "\\.$" "") ",$" ""))         
          (authors (split-string author-str "," t))
          (result-authors (mapcar (lambda (x)
                                    (let ((temp-auth (my/validate-author (split-string x " " t))))
@@ -254,7 +254,6 @@ top level heading"
 
 (defun my/generate-primary-buffer ()
   (let* ((org-buf (my/generate-org-buffer))
-         (bib-buf (my/generate-bib-buffer))
          (key-str (my/dblp-fetch-serial  ;; assoc list
                    (concat
                     (replace-regexp-in-string "[^\t\n\r\f -~]" ""  (gethash "title" my/science-parse-data)) " "
