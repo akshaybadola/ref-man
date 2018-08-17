@@ -1,18 +1,18 @@
-;; author: akshay badola <akshay.badola.cs@gmail.com>
-;; keywords: extensions
+;; Author: Akshay Badola <akshay.badola.cs@gmail.com>
+;; Keywords: extensions
 
-;; this program is free software; you can redistribute it and/or modify
+;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the gnu general public license as published by
 ;; the free software foundation, either version 3 of the license, or
 ;; (at your option) any later version.
 
-;; this program is distributed in the hope that it will be useful,
+;; This program is distributed in the hope that it will be useful,
 ;; but without any warranty; without even the implied warranty of
-;; merchantability or fitness for a particular purpose.  see the
-;; gnu general public license for more details.
+;; merchantability or fitness for a particular purpose.  See the
+;; GNU General Public License for more details.
 
-;; you should have received a copy of the gnu general public license
-;; along with this program.  if not, see <http://www.gnu.org/licenses/>.
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 (require 'cl)
 (require 'url)
@@ -62,7 +62,6 @@
 (setq my/venue-priorities (let* ((confs '("icml" "nips" "iccv" "cvpr" "eccv"))
        (confs-seq (number-sequence (length confs) 1 -1)))
        (mapcar* 'cons confs confs-seq)))
-
 (setq my/key-list '(authors title venue volume number pages year doi ee))
 (setq my/org-store-dir "/home/joe/phd/pubs/org")
 (setq my/bib-store-dir "/home/joe/phd/pubs/bibs")
@@ -75,19 +74,17 @@
 my/key-list. uses gscholar-bibtex. returns an assoc list of (key. value) 
 pairs for only the top result from my/venue-priorities."
   (let ((result (nth (my/max-ind (my/venue-pref result)) result)))
-    (if result ;; todo handle this later    
+    (if result ;; TODO handle this later    
         (remove '("nil") (mapcar (lambda (x)
                   (if (eq x 'authors)
                       (list (symbol-name 'authors) (string-join (mapcar (lambda (x)
                                                                           (car (last x))) (butfirst (gscholar-bibtex--xml-get-child result x) 2)) ", "))
                     (cons (symbol-name (first (gscholar-bibtex--xml-get-child result x)))
                           (last (gscholar-bibtex--xml-get-child result x)))))
-                                 my/key-list))
-      )
-    ))
+                                 my/key-list)))))
 
 ;;
-;; remove stop words from first title word
+;; TODO: remove stop words from first title word
 ;;
 ;; TODO: build a different function so that \{etc} aren't there in bib keys
 ;; my/remove-non-ascii does something else entirely and I don't want accents
@@ -122,8 +119,7 @@ pairs for only the top result from my/venue-priorities."
                                        (mapconcat 'car (list (last temp-auth) (butlast temp-auth)) ", "))
                                      ))
                                  authors)))
-    (mapconcat 'identity result-authors " and "))
-  )
+    (mapconcat 'identity result-authors " and ")))
 
 
 (defun my/build-bib-assoc (key-str)
@@ -131,8 +127,7 @@ pairs for only the top result from my/venue-priorities."
 entry and org entry"
   (let* ((key (my/build-bib-key key-str))
          (author (cons "author" (my/build-bib-author
-                                 (car (cdr (assoc "authors" key-str))))
-                       ))
+                                 (car (cdr (assoc "authors" key-str))))))
          (title (cons "title" (car (cdr (assoc "title" key-str)))))
          (year (cons "year" (car (cdr (assoc "year" key-str)))))
          (doi (cons "doi" (car (cdr (assoc "doi" key-str)))))
@@ -144,7 +139,7 @@ entry and org entry"
                                    (replace-in-string tmp-pages "-" "--") " " "")
                                 nil)))
          (url (cons "url" (car (cdr (assoc "ee" key-str)))))
-         (venue (cons "venue" (car (cdr (assoc "venue" key-str))))) ;; todo expand venue
+         (venue (cons "venue" (car (cdr (assoc "venue" key-str))))) ;; TODO: expand venue
          )
     (list key (remove-if-not 'cdr (list author title year doi volume number pages url venue)))))
 
@@ -178,15 +173,12 @@ to a buffer right now. can change to have it in multiple steps."
     )
   nil)
 
-;;
-;; Change to maybe left or right, as in if the pdf buffer is on the
-;; right, I can open the results on the left.
-;; Or just create it and user switch to it when she wants.
-;;
+
 (defun my/get-org-buffer ()
   "Generated buffer where all the fetch results will be inserted"
   (let ((buf (get-buffer (concat my/title "_org"))))
     buf))
+
 
 (defun my/generate-org-buffer ()
   "Generated buffer where all the fetch results will be inserted"
@@ -195,8 +187,7 @@ to a buffer right now. can change to have it in multiple steps."
                     (window-in-direction 'right my/orig-win))
                    ((window-in-direction 'left my/orig-win)
                     (window-in-direction 'left my/orig-win))
-                   (split-window-horizontally)))
-        )
+                   (split-window-horizontally))))
     (set-window-buffer win buf)
     (with-current-buffer buf (org-mode))
     buf))
@@ -217,7 +208,6 @@ to a buffer right now. can change to have it in multiple steps."
               (prog2 (with-current-buffer buf (set-buffer-multibyte t))
                   (with-current-buffer buf (buffer-string))
                 (kill-buffer buf))))
-
          `(lambda (buf-string)
             ,(async-inject-variables "ref-refs")
             (let ((guf (generate-new-buffer "*dblp-test*")))
@@ -238,7 +228,6 @@ to a buffer right now. can change to have it in multiple steps."
                  (if key-str (my/org-bibtex-write-ref-from-assoc (my/build-bib-assoc key-str))
                    (my/org-bibtex-write-ref-NA-from-keyhash (cdr ref-refs))))
                (kill-buffer guf)
-
              )))))))
 
 ;;
@@ -309,8 +298,11 @@ json."
     (org-set-property "BTYPE" "article")
   ))
 
-
-;; The characters directly borrowed from org-ref
+;; The characters directly borrowed from org-ref.
+;; The function is too long and is an ugly hack because I couldnt'
+;; find an effective way to update a local variable in a cl-loop.
+;; And setting a global variable was causing trouble with parallel
+;; implementation.
 (defun my/remove-non-ascii (author-str)
   (let* ((author-str (replace-in-string author-str "í" "{\\\\'i}"))
          (author-str (replace-in-string author-str "æ" "{\\\\ae}"))
@@ -444,6 +436,8 @@ json."
   ))
 
 ;; This isn't used apparently?
+;; TODO: Have to write functions for conversion to and from
+;; org properties to bibtex.
 (defun my/org-bibtex-write-heading-from-bibtex (entry)
   "Generate an org entry from a bibtex association list, parsed
 with 'bibtex from a bibtex entry"
@@ -466,6 +460,7 @@ with 'bibtex from a bibtex entry"
           (`(,_ . ,_) (org-set-property (upcase (car ent)) (my/fix (cdr ent)))))
         ))
 
+
 (defun my/pdf-refs-init ()
   ;; auth just to be safe
   (async-start-process "auth" "/home/joe/bin/myauth" nil)
@@ -474,7 +469,7 @@ with 'bibtex from a bibtex entry"
   (sleep-for 1)
   (if (not (string-match-p "Usage"
                            (shell-command-to-string "curl -s localhost:9090")))
-      (message "ERROR! Check connections") (message "Established connection to server successfully"))
-  )
+      (message "ERROR! Check connections") (message "Established connection to server successfully")))
+
 
 (my/pdf-refs-init)
