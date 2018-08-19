@@ -465,6 +465,85 @@ with 'bibtex from a bibtex entry"
         ))
 
 
+(defun my/org-bibtex-convert-bib-to-property (assoc-list &optional buf)
+  (debug)
+  (let ((buf (if buf buf (current-buffer)))
+        (entry assoc-list))
+  (with-current-buffer buf
+    (loop for ent in entry
+          do
+          (pcase ent
+            (`("abstract" . ,_))
+            (`("=type=" . ,_) (org-set-property "BTYPE" (my/fix (cdr ent))))
+            (`("=key=" . ,_) (org-set-property "CUSTOM_ID" (my/fix (cdr ent))))
+            (`(,_ . ,_) (org-set-property (upcase (car ent)) (my/fix (cdr ent)))))
+        ))))
+
+
+(defun org-search-heading-on-gscholar-from-eww ()
+  "Searches for the current heading in google scholar in eww"
+  (interactive)
+  (setq my/org-heading-gscholar-launch-point (point))
+  (setq my/org-heading-gscholar-launch-buffer (current-buffer))
+  (save-excursion
+    (let ((buf (generate-new-buffer "*scholar*"))
+          (query-string (org-get-heading t t)))
+      (with-current-buffer buf (insert (gscholar-bibtex-google-scholar-search-results
+                                        query-string)))
+      (shr-render-buffer buf)
+      (if (get-buffer "*google-scholar*")
+          (kill-buffer (get-buffer "*google-scholar*")))
+      (pop-to-buffer-same-window "*html*")
+      (rename-buffer "*google-scholar*")
+      (with-current-buffer (get-buffer "*google-scholar*")
+        (local-set-key (kbd "RET") 'eww-follow-link)
+        (local-set-key (kbd "C-c e i") 'my/eww-get-bibtex-from-scholar)
+        (read-only-mode))
+      (kill-buffer buf))))
+
+
+(defun my/eww-get-bibtex-from-scholar ()
+  "Extracts the NEXT bibtex entry from a web page rendered with eww
+and stores it to my/bibtex-entry"
+  (interactive)
+  (save-excursion
+    (let
+        ((bib-url (progn (search-forward "import into bibtex")
+                         (backward-char)
+                         (car (eww-links-at-point)))))
+      (my/eww-browse-url bib-url)
+      (sleep-for .2)
+      (debug)
+      (let ((bib-assoc (if (get-buffer "* scholar-entry*")
+                           (with-current-buffer (get-buffer "* scholar-entry*")
+                             (goto-char (point-min)) (bibtex-parse-entry))
+                         (progn (message "Could not create buffer for scholar entry") nil)))
+            (current-key (with-current-buffer my/org-heading-gscholar-launch-buffer
+                           (org-entry-get (point) "CUSTOM_ID"))))
+        (kill-buffer (get-buffer "* scholar-entry*"))
+        (cond ((not bib-assoc) (message "Could not get entry from scholar"))
+              ((string-match-p "na_" current-key)
+               (my/org-bibtex-convert-bib-to-property bib-assoc my/org-heading-gscholar-launch-buffer))
+              ((y-or-n-p "Authoritative entry. Really replace?")
+               (my/org-bibtex-convert-bib-to-property bib-assoc my/org-heading-gscholar-launch-buffer)))
+        ))
+    ))
+
+
+(defun my/eww-browse-url (url)
+  (let ((buf (if (get-buffer "* scholar-entry*") (get-buffer "* scholar-entry*")
+               (generate-new-buffer "* scholar-entry*"))))
+    (with-current-buffer buf (eww-setup-buffer)
+                         (plist-put eww-data :url url)
+                         (plist-put eww-data :title "")
+                         (eww-update-header-line-format)
+                         (let ((inhibit-read-only t))
+                           (insert (format "Loading %s..." url))
+                           (goto-char (point-min)))
+                         (url-retrieve url 'eww-render
+                                       (list url nil (current-buffer))))))
+
+
 (defun my/pdf-refs-init ()
   ;; auth just to be safe
   (async-start-process "auth" "/home/joe/bin/myauth" nil)
