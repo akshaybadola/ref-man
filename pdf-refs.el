@@ -21,6 +21,7 @@
 (require 'async)
 (require 'bibtex)
 (require 'org-bibtex)
+(require 'biblio-core)
 (require 'gscholar-bibtex)
 
 ;;
@@ -582,6 +583,25 @@ Results are parsed with (BACKEND 'parse-buffer)."
 ;; End Biblio stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;
 
+;; HACK
+;; Redefine shr-map
+(defvar shr-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "a" 'shr-show-alt-text)
+    (define-key map "i" 'shr-browse-image)
+    (define-key map "z" 'shr-zoom-image)
+    (define-key map [?\t] 'shr-next-link)
+    (define-key map [?\M-\t] 'shr-previous-link)
+    (define-key map [follow-link] 'mouse-face)
+    (define-key map [mouse-2] 'shr-browse-url)
+    (define-key map "I" 'shr-insert-image)
+    (define-key map "w" 'shr-copy-url)
+    (define-key map "u" 'shr-copy-url)
+    (define-key map "RET" 'shr-browse-url)
+    (define-key map "o" 'shr-save-contents)
+    (define-key map "\r" 'shr-browse-url)
+    map))
+
 
 (defun org-search-heading-on-gscholar-with-eww ()
   "Searches for the current heading in google scholar in eww"
@@ -600,7 +620,9 @@ Results are parsed with (BACKEND 'parse-buffer)."
       (rename-buffer "*google-scholar*")
       (with-current-buffer (get-buffer "*google-scholar*")
         (local-set-key (kbd "RET") 'eww-follow-link)
-        (local-set-key (kbd "C-c e i") 'my/eww-get-bibtex-from-scholar)
+        (local-set-key (kbd "i") 'my/eww-get-bibtex-from-scholar)
+        (local-set-key (kbd "d") 'my/eww-download-pdf-from-scholar)
+        (local-set-key (kbd "v") 'my/eww-view-and-download-if-required-pdf-from-scholar)
         (local-set-key (kbd "q") 'quit-window)
         (read-only-mode))
       (kill-buffer buf))))
@@ -616,6 +638,102 @@ and stores it to my/bibtex-entry"
                          (backward-char)
                          (car (eww-links-at-point)))))
       (my/eww-browse-url bib-url))))
+
+
+(defun my/eww-get-all-links (&optional frombegin substring)
+  (interactive)
+  (save-excursion
+    (if frombegin (goto-char (point-min)))
+    (setq my/eww-buffer-links nil)
+    (setq my/current-url (get-text-property (point) 'shr-url))
+    (setq my/url-text-start (point))
+    (setq my/url-text-end (point))      
+    (while (not (eobp))
+      ;; Debug info
+      ;; (message (concat (format "%s" my/url-text-start) ", " (format "%s" my/url-text-end)))
+      ;; (message (format "%s" (string-match-p substring
+      ;;                                       (buffer-substring-no-properties my/url-text-start my/url-text-end))))
+      (if substring
+          (if (string-match-p substring
+                              (buffer-substring-no-properties my/url-text-start my/url-text-end))
+              (if my/current-url
+                  (setq my/eww-buffer-links (cons my/current-url my/eww-buffer-links))))
+        (if my/current-url
+            (setq my/eww-buffer-links (cons my/current-url my/eww-buffer-links))))
+      (setq my/url-text-start (point))
+      (while (and (not (eobp))
+                  (equal (get-text-property (point) 'shr-url) my/current-url))
+        (forward-char 1))               ;; not next link (same link)
+      (setq my/url-text-end (point))
+      (setq my/current-url (get-text-property (point) 'shr-url)))
+    my/eww-buffer-links))
+
+
+(defun my/eww-download-and-view-pdf-from-scholar ()
+    (interactive)
+  (my/eww-download-pdf-from-scholar t))
+
+
+(defun my/eww-view-and-download-if-required-pdf-from-scholar ()
+  "View the pdf if it exists in the download directory and download if required"
+  (interactive)
+  (let* ((url (car (my/eww-get-all-links t "pdf")))
+            (obj (url-generic-parse-url url))
+            (path (car (url-path-and-query obj)))
+            (file (concat eww-download-directory (file-name-nondirectory path))))
+    (if (file-exists-p file)
+        (find-file-other-window file)
+      (my/eww-download-pdf-from-scholar t url))))
+
+
+(defun my/eww-download-callback (status url)
+  (unless (plist-get status :error)
+    (let* ((obj (url-generic-parse-url url))
+           (path (car (url-path-and-query obj)))
+           (file (concat eww-download-directory (file-name-nondirectory path))))
+      (if (file-exists-p file)
+          (if (y-or-n-p "File exists. Replace?")
+              (progn (goto-char (point-min))
+                     (re-search-forward "\r?\n\r?\n")
+                     (write-region (point) (point-max) file)
+                     (message "Saved %s" file)))
+        (goto-char (point-min))
+        (re-search-forward "\r?\n\r?\n")
+        (write-region (point) (point-max) file)
+        (message "Saved %s" file))
+      )))
+
+
+;; TODO: Should be async with wait from callback
+(defun my/eww-download-pdf-from-scholar (&optional view url)
+  "Downloads the pdf file and optionally view it"
+  (interactive)
+  (let ((url (if url url (car (my/eww-get-all-links t "pdf")))))
+    (if (not view)
+        (url-retrieve url 'my/eww-download-callback (list url))
+      (let* ((buf (url-retrieve-synchronously url t))
+             (buf-string (with-current-buffer buf (buffer-string))))
+        (if buf-string
+            (let* ((obj (url-generic-parse-url url))
+                   (path (car (url-path-and-query obj)))
+                   (file (concat eww-download-directory (file-name-nondirectory path))))
+              ;; (eww-make-unique-file-name
+              ;;  (eww-decode-url-file-name (file-name-nondirectory path))
+              ;;  eww-download-directory)
+              (if (file-exists-p file)
+                  (if (y-or-n-p "File exists. Replace?")
+                      (with-current-buffer buf
+                        (goto-char (point-min))
+                        (re-search-forward "\r?\n\r?\n")
+                        (write-region (point) (point-max) file)))
+                (with-current-buffer buf
+                  (goto-char (point-min))
+                  (re-search-forward "\r?\n\r?\n")
+                  (write-region (point) (point-max) file)))
+              (find-file-other-window file)
+              ))
+        (kill-buffer buf))
+      )))
 
 
 (defun my/eww-get-bibtex-from-scholar-rest ()
