@@ -1,3 +1,6 @@
+;; Should I put a copyright assertion here? Isn't the whole purpose of
+;; GPL to not have a copyright? It's confusing.
+;; 
 ;; Author: Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Keywords: extensions
 
@@ -36,11 +39,9 @@
 (defun my/venue-pref (results)
   (if (= 1 (length results))
       0
-    (let*
-        ((venues (mapcar (lambda (x)
-                          (gscholar-bibtex--xml-get-child x 'venue)) results))
-         (prefs (mapcar (lambda (x) (cdr (assoc (car (last x)) my/venue-priorities))) venues)))
-         prefs)))
+    (let* ((venues (mapcar (lambda (x) (gscholar-bibtex--xml-get-child x 'venue)) results))
+           (prefs (mapcar (lambda (x) (cdr (assoc (car (last x)) my/venue-priorities))) venues)))
+      prefs)))
 
 (defun my/max-ind (seq)
   (let* ((my/max-val 0) (my/ind -1) (my/max 0))
@@ -108,7 +109,7 @@ pairs for only the top result from my/venue-priorities."
          (first-author (my/validate-author (split-string first-author-str " " t)))
          (last-name (car (last first-author)))
          (year-pub (car (cdr (assoc "year" key-str))))
-         (title (remove-if 'my/is-stop-word (split-string (downcase (cdr (assoc "title" key-str))) " ")))
+         (title (remove-if 'my/is-stop-word (split-string (downcase (car (cdr (assoc "title" key-str)))) " ")))
          (title-first (car (split-string (first title) "-")))
          )
     (my/remove-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) ""))))
@@ -704,6 +705,16 @@ and stores it to my/bibtex-entry"
       )))
 
 
+;; TODO: Maybe the file should be stored in Pubs somewhere, or some
+;; other variable and the filename should be automatically inserted as
+;; a link into the org file.
+;; So instead of scholar searching I can simply view it from org.
+;;
+;; TODO: When a pdf is stored for a link, automatically extract
+;; abstract from science-parse and add it to the abstract field.
+;;
+;; TODO: Fetch and parse pdfs in the background? That's too much
+;; 
 ;; TODO: Should be async with wait from callback
 (defun my/eww-download-pdf-from-scholar (&optional view url)
   "Downloads the pdf file and optionally view it"
