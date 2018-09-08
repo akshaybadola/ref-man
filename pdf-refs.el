@@ -503,7 +503,7 @@ with 'bibtex from a bibtex entry"
             (`("=type=" . ,_) (org-set-property "BTYPE" (my/fix (cdr ent))))
             (`("=key=" . ,_) (org-set-property "CUSTOM_ID" (my/fix (cdr ent))))
             (`(,_ . ,_) (org-set-property (upcase (car ent)) (my/fix (cdr ent)))))
-        ))))
+          ))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Begin Biblio stuff ;;
@@ -586,6 +586,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
 
 ;; HACK
 ;; Redefine shr-map
+;; TODO: remove redefine and use (bind-key)
 (defvar shr-map
   (let ((map (make-sparse-keymap)))
     (define-key map "a" 'shr-show-alt-text)
@@ -641,6 +642,11 @@ and stores it to my/bibtex-entry"
       (my/eww-browse-url bib-url))))
 
 
+;; Apparently the problem occurs when there are two links are present
+;; simultaneously Basically my/current-url is the next url and not the
+;; current url. Since it's happening on each transition, I think it's
+;; ok, as the code is correct.
+;; Although, I think I'll remove the debug code later
 (defun my/eww-get-all-links (&optional frombegin substring)
   (interactive)
   (save-excursion
@@ -648,7 +654,7 @@ and stores it to my/bibtex-entry"
     (setq my/eww-buffer-links nil)
     (setq my/current-url (get-text-property (point) 'shr-url))
     (setq my/url-text-start (point))
-    (setq my/url-text-end (point))      
+    (setq my/url-text-end (point))
     (while (not (eobp))
       ;; Debug info
       ;; (message (concat (format "%s" my/url-text-start) ", " (format "%s" my/url-text-end)))
@@ -657,16 +663,33 @@ and stores it to my/bibtex-entry"
       (if substring
           (if (string-match-p substring
                               (buffer-substring-no-properties my/url-text-start my/url-text-end))
-              (if my/current-url
-                  (setq my/eww-buffer-links (cons my/current-url my/eww-buffer-links))))
+              ;; More Debug code
+              ;; (progn
+              ;;   (message (concat substring " matches " (buffer-substring-no-properties my/url-text-start my/url-text-end)))
+              ;;   (message (concat "URL was set at " (format "%s" my/url-text-end)))
+                (if my/current-url
+                    ;; (progn
+                    ;;   (message (concat "Copying " my/current-url))
+                    ;; (setq my/eww-buffer-links (nconc my/eww-buffer-links (list my/current-url)))
+                    (let ((url (get-text-property (- my/url-text-end 1) 'shr-url)))
+
+                      (if url (setq my/eww-buffer-links (nconc my/eww-buffer-links (list url)))
+                        (setq my/eww-buffer-links
+                              (nconc my/eww-buffer-links (list (get-text-property my/url-text-end 'shr-url)))
+                      )))
+            ;; )
+            ))
         (if my/current-url
-            (setq my/eww-buffer-links (cons my/current-url my/eww-buffer-links))))
-      (setq my/url-text-start (point))
+                      (setq my/eww-buffer-links (nconc my/eww-buffer-links
+                                                       (list (get-text-property (- my/url-text-end 1) 'shr-url))))))
+      (setq my/url-text-start (+ 1 (point)))
+      (setq my/url-text-end (+ 1 (point)))
       (while (and (not (eobp))
                   (equal (get-text-property (point) 'shr-url) my/current-url))
         (forward-char 1))               ;; not next link (same link)
       (setq my/url-text-end (point))
-      (setq my/current-url (get-text-property (point) 'shr-url)))
+      (setq my/current-url (get-text-property (point) 'shr-url))
+      )
     my/eww-buffer-links))
 
 
@@ -787,6 +810,56 @@ and stores it to my/bibtex-entry"
                                        (list url (current-buffer))))))
 
 
+;; Currently no TODO attribute is set on the org entry and no
+;; timestamp is marked. I should fix that.
+;; 
+;; Perhaps author and publication information can also be added as a
+;; stopgap to see which paper to read first.
+;;
+;; The keybindings also have to be added.
+;;
+;; Now it's datetree format
+(defun my/import-link-to-org-buffer ()
+"Generates a temporary buffer (currently ~/.emacs.d/temp-org-links) 
+and from the current eww buffer, copies the link there with an
+org heading as title. Perhaps I can include author also there,
+but that's too much work for now."
+  (interactive)
+  (save-excursion
+    (let* ((eww-buf (current-buffer))
+           (buf (if (get-buffer "temp-org-links") (get-buffer "temp-org-links")
+                  (progn
+                    (generate-new-buffer "temp-org-links")
+                    (with-current-buffer (get-buffer "temp-org-links")
+                      (set-visited-file-name (expand-file-name "~/.emacs.d/temp-org-links"))
+                      (org-mode))
+                    (get-buffer "temp-org-links"))))
+           (link (get-text-property (point) 'shr-url))
+           (link-text-begin (if link (progn
+                                       (while (equal link (get-text-property (point) 'shr-url))
+                                         (backward-char))
+                                       (forward-char) (point)) nil))
+           (link-text-end (if link (progn
+                                     (while (equal link (get-text-property (point) 'shr-url))
+                                       (forward-char)) (point)) nil))
+           (metadata (if link (progn (forward-line 2)
+                                     (with-current-buffer eww-buf
+                                       (buffer-substring-no-properties (point-at-bol) (point-at-eol))))))
+           )
+      (if (and link-text-begin link-text-end)
+          (with-current-buffer buf
+            (org-datetree-find-date-create (org-date-to-gregorian (org-read-date t nil "now")))
+            (goto-char (point-at-eol))
+            (org-insert-subheading nil)
+            (insert (concat (with-current-buffer eww-buf
+                      (buffer-substring-no-properties link-text-begin link-text-end)) "\n"))
+            (org-indent-line) (insert (concat metadata "\n"))
+            (org-indent-line) (org-insert-link nil link "link")
+            )
+        (message "No link under point"))
+      )))
+          
+
 (defun my/pdf-refs-init ()
   ;; auth just to be safe
   (async-start-process "auth" "/home/joe/bin/myauth" nil)
@@ -796,6 +869,5 @@ and stores it to my/bibtex-entry"
   (if (not (string-match-p "Usage"
                            (shell-command-to-string "curl -s localhost:9191")))
       (message "ERROR! Check connections") (message "Established connection to server successfully")))
-
 
 (my/pdf-refs-init)
