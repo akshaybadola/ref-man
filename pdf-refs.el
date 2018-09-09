@@ -642,55 +642,62 @@ and stores it to my/bibtex-entry"
       (my/eww-browse-url bib-url))))
 
 
-;; Apparently the problem occurs when there are two links are present
-;; simultaneously Basically my/current-url is the next url and not the
-;; current url. Since it's happening on each transition, I think it's
-;; ok, as the code is correct.
+;; Much cleaner code now
 ;; Although, I think I'll remove the debug code later
 (defun my/eww-get-all-links (&optional frombegin substring)
   (interactive)
   (save-excursion
     (if frombegin (goto-char (point-min)))
     (setq my/eww-buffer-links nil)
-    (setq my/current-url (get-text-property (point) 'shr-url))
+    (setq my/prev-url (get-text-property (point) 'shr-url)) ;; was my/current-url
+    (setq my/current-url nil)
     (setq my/url-text-start (point))
     (setq my/url-text-end (point))
     (while (not (eobp))
+      ;; (debug)    
       ;; Debug info
       ;; (message (concat (format "%s" my/url-text-start) ", " (format "%s" my/url-text-end)))
       ;; (message (format "%s" (string-match-p substring
       ;;                                       (buffer-substring-no-properties my/url-text-start my/url-text-end))))
-      (if substring
-          (if (string-match-p substring
-                              (buffer-substring-no-properties my/url-text-start my/url-text-end))
+      (if my/prev-url
+          (if substring
+              ;; (if (string-match-p substring my/prev-url)
+              ;; (buffer-substring-no-properties my/url-text-start my/url-text-end))
               ;; More Debug code
-              ;; (progn
               ;;   (message (concat substring " matches " (buffer-substring-no-properties my/url-text-start my/url-text-end)))
               ;;   (message (concat "URL was set at " (format "%s" my/url-text-end)))
-                (if my/current-url
-                    ;; (progn
-                    ;;   (message (concat "Copying " my/current-url))
-                    ;; (setq my/eww-buffer-links (nconc my/eww-buffer-links (list my/current-url)))
-                    (let ((url (get-text-property (- my/url-text-end 1) 'shr-url)))
-
-                      (if url (setq my/eww-buffer-links (nconc my/eww-buffer-links (list url)))
-                        (setq my/eww-buffer-links
-                              (nconc my/eww-buffer-links (list (get-text-property my/url-text-end 'shr-url)))
-                      )))
-            ;; )
+              ;; (if
+              ;; was my/current-url
+              ;; (progn
+              ;;   (message (concat "Copying " my/current-url))
+              ;; (setq my/eww-buffer-links (nconc my/eww-buffer-links (list my/current-url)))
+              ;; 
+              ;; (let ((url (get-text-property (- my/url-text-end 1) 'shr-url)))
+              ;;   (if url (setq my/eww-buffer-links (nconc my/eww-buffer-links (list url)))
+              ;;     (setq my/eww-buffer-links
+              ;;           (nconc my/eww-buffer-links (list (get-text-property my/url-text-end 'shr-url)))
+              ;;   )))
+              ;; (progn
+              ;;   (message (concat "Copying " my/prev-url))
+              (if (string-match-p substring my/prev-url)
+                  (setq my/eww-buffer-links (nconc my/eww-buffer-links (list my/prev-url)))
+                )
+            ;; (if my/prev-url
+            (setq my/eww-buffer-links (nconc my/eww-buffer-links (list my/prev-url)))
             ))
-        (if my/current-url
-                      (setq my/eww-buffer-links (nconc my/eww-buffer-links
-                                                       (list (get-text-property (- my/url-text-end 1) 'shr-url))))))
-      (setq my/url-text-start (+ 1 (point)))
-      (setq my/url-text-end (+ 1 (point)))
-      (while (and (not (eobp))
-                  (equal (get-text-property (point) 'shr-url) my/current-url))
-        (forward-char 1))               ;; not next link (same link)
-      (setq my/url-text-end (point))
-      (setq my/current-url (get-text-property (point) 'shr-url))
-      )
-    my/eww-buffer-links))
+    ;; (setq my/eww-buffer-links (nconc my/eww-buffer-links
+    ;;                                  (list (get-text-property (- my/url-text-end 1) 'shr-url))))))
+    (setq my/prev-url my/current-url)
+    (setq my/current-url nil)
+    (setq my/url-text-start (+ 1 (point)))
+    (setq my/url-text-end (+ 1 (point)))
+    (while (and (not (eobp))
+                (equal (get-text-property (point) 'shr-url) my/prev-url))
+      (forward-char 1))               ;; not next link (same link)
+    (setq my/url-text-end (point))
+    (setq my/current-url (get-text-property (point) 'shr-url))
+    )
+  my/eww-buffer-links))
 
 
 (defun my/eww-download-and-view-pdf-from-scholar ()
@@ -770,7 +777,27 @@ and stores it to my/bibtex-entry"
       )))
 
 
+(defun my/sanitize-org-entry ()
+  (let (retval)
+    (condition-case ex
+        (setq retval
+              (cond
+               ((not (equal (with-current-buffer my/org-heading-gscholar-launch-buffer major-mode)
+                            'org-mode)) "Not org mode")
+               ((not (with-current-buffer my/org-heading-gscholar-launch-buffer
+                       (org-entry-get my/org-heading-gscholar-launch-point "CUSTOM_ID")))
+                (with-current-buffer my/org-heading-gscholar-launch-buffer
+                  (org-set-property "CUSTOM_ID" "na_"))
+                "No property drawer or no property. Fixed")
+               (t (with-current-buffer my/org-heading-gscholar-launch-buffer
+                    (org-entry-get my/org-heading-gscholar-launch-point "CUSTOM_ID")))))
+      ('error (message (format "Caught exception: [%s]" ex))))
+    (message retval))
+  )
+
+
 (defun my/eww-get-bibtex-from-scholar-rest ()
+  (my/sanitize-org-entry)
   (let* ((buf (get-buffer " *scholar-entry*"))
          (buf-string (if buf (with-current-buffer buf (buffer-string))
                        (progn (message "Could not create buffer for scholar entry") nil)))
