@@ -1,4 +1,6 @@
 # Pdf Refs
+## I'm archiving this repo as the functionality here is enough for my needs right now and I can't maintain it at the moment
+
 Emacs  plugin to generate bibliography file automatically from a given plugin using various other libraries.
 
 The references are extracted from a pdf using allenai's [science parse](https://github.com/allenai/science-parse).
