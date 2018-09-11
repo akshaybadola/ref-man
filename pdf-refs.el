@@ -102,7 +102,7 @@ pairs for only the top result from my/venue-priorities."
 ;; TODO: build a different function so that \{etc} aren't there in bib keys
 ;; my/remove-non-ascii does something else entirely and I don't want accents
 ;; in the keys
-(defun my/build-bib-key (key-str)
+(defun my/build-bib-key (key-str &optional na)
   "builds a unique key with the format [author year
   first-title-word] entry from the list of (key . value)"
   (let* ((first-author-str (car (split-string (car (cdr (assoc "authors" key-str))) "," t)))
@@ -111,8 +111,10 @@ pairs for only the top result from my/venue-priorities."
          (year-pub (car (cdr (assoc "year" key-str))))
          (title (remove-if 'my/is-stop-word (split-string (downcase (car (cdr (assoc "title" key-str)))) " ")))
          (title-first (car (split-string (first title) "-")))
+         (key (my/remove-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))
          )
-    (my/remove-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) ""))))
+    (if na (concat "na_" key) key)))
+
 
 
 (defun my/build-bib-key-from-parsed-bibtex (bib-assoc)
@@ -149,10 +151,10 @@ pairs for only the top result from my/venue-priorities."
     (mapconcat 'identity result-authors " and ")))
 
 
-(defun my/build-bib-assoc (key-str)
+(defun my/build-bib-assoc (key-str &optional na)
   "builds the association list. can be used to build both the bib
 entry and org entry"
-  (let* ((key (my/build-bib-key key-str))
+  (let* ((key (my/build-bib-key key-str na))
          (author (cons "author" (my/build-bib-author
                                  (car (cdr (assoc "authors" key-str))))))
          (title (cons "title" (car (cdr (assoc "title" key-str)))))
@@ -284,6 +286,40 @@ top level heading"
 ;; Org generation and insertion stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; (defun my/generate-key-hash-from-science-parse ()
+;;   (let ((key-hash (make-hash-table :test 'equal)))
+;;     (if (gethash "authors" my/science-parse-data)
+;;         (puthash "authors"
+;;                  (mapcar (lambda (x) (gethash "name" x)) (gethash "authors" my/science-parse-data)) key-hash))
+;;     (if (gethash "year" my/science-parse-data)
+;;         (puthash "year" (gethash "year" my/science-parse-data) key-hash))
+;;     (if (gethash "title" my/science-parse-data)
+;;         (puthash "title" (gethash "title" my/science-parse-data) key-hash))
+;;     (if (gethash "venue" my/science-parse-data)
+;;         (puthash "venue" (gethash "venue" my/science-parse-data) key-hash))
+;;     (if (gethash "pages" my/science-parse-data)
+;;         (puthash "pages" (gethash "pages" my/science-parse-data) key-hash))
+;;     (if (gethash "volume" my/science-parse-data)
+;;         (puthash "volume" (gethash "volume" my/science-parse-data) key-hash))
+;;     key-hash))
+
+(defun my/generate-key-str-from-science-parse ()
+  (let ((key-str ()))
+         (if (gethash "authors" my/science-parse-data)
+                     (add-to-list 'key-str (cons "authors"  (list (mapconcat (lambda (x) (gethash "name" x))
+                                                    (gethash "authors" my/science-parse-data) ", ")))))
+         ;; (if (gethash "authors" my/science-parse-data)
+         ;;             (add-to-list 'key-str (cons "authors"  (list (mapcar (lambda (x) (gethash "name" x))
+         ;;                                            (gethash "authors" my/science-parse-data))))))
+         (if (gethash "year" my/science-parse-data)
+                      (add-to-list 'key-str (cons "year" (list (format "%s" (gethash "year" my/science-parse-data))))))
+         (if (gethash "title" my/science-parse-data)
+             (add-to-list 'key-str (cons "title"  (list (gethash "title" my/science-parse-data)))))
+         (if (gethash "venue" my/science-parse-data)
+                      (add-to-list 'key-str (cons "venue" (list (gethash "venue" my/science-parse-data)))))
+        key-str))
+
+;; Fixed: "What if not key-str"
 (defun my/generate-primary-buffer ()
   (let* ((org-buf (my/generate-org-buffer))
          (key-str (my/dblp-fetch-serial  ;; assoc list
@@ -291,20 +327,20 @@ top level heading"
                     (replace-regexp-in-string "[^\t\n\r\f -~]" ""  (gethash "title" my/science-parse-data)) " "
                     (string-join (mapcar (lambda (x) (gethash "name" x))
                                          (gethash "authors" my/science-parse-data)) " "))))
-         ;; What if not key-str?
-         (filename (my/build-bib-key key-str))
+         (key-str (if (not key-str) (my/generate-key-str-from-science-parse)))
+         (filename  (car (cdr (assoc "title" key-str))))
          )
     ;; What if not filename?
     (if filename
         (with-current-buffer org-buf
-          (my/org-bibtex-write-heading-from-assoc (my/build-bib-assoc key-str))
+          (my/org-bibtex-write-heading-from-assoc (my/build-bib-assoc key-str t))
           (org-insert-heading-after-current)
           (org-shiftmetaright)
           ;; TODO: fix setting of file name
           ;; (set-visited-file-name
           ;;  (concat (string-remove-suffix "/" my/org-store-dir) "/" filename ".org"))
           ))
-    ))
+    )))
 
 
 (defun my/org-bibtex-write-heading-from-assoc (entry)
@@ -414,7 +450,7 @@ json."
     author-str))
 
 
-(defun my/org-bibtex-write-ref-NA-from-keyhash (key-hash)
+(defun my/generate-NA-entry (key-hash)
   (if (and (gethash "title" key-hash) (gethash "authors" key-hash))
       (let* ((key (mapconcat (lambda (x) (replace-in-string (downcase x) " " ""))
                              (list "na" "_"
@@ -440,7 +476,11 @@ json."
                                       (replace-in-string (gethash "venue" key-hash) ",$" ""))))
              (entry (list key (remove-if-not 'cdr (list author title year venue volume number pages))))
              )
-        (my/org-bibtex-write-ref-from-assoc entry))))
+        entry)))
+
+
+(defun my/org-bibtex-write-ref-NA-from-keyhash (key-hash)
+  (my/org-bibtex-write-ref-from-assoc (my/generate-NA-entry entry)))
 
 
 (defun my/org-bibtex-write-ref-from-assoc (entry)
@@ -622,10 +662,11 @@ Results are parsed with (BACKEND 'parse-buffer)."
       (rename-buffer "*google-scholar*")
       (with-current-buffer (get-buffer "*google-scholar*")
         (local-set-key (kbd "RET") 'eww-follow-link)
-        (local-set-key (kbd "i") 'my/eww-get-bibtex-from-scholar)
+        (local-set-key (kbd "b") 'my/eww-get-bibtex-from-scholar)
         (local-set-key (kbd "d") 'my/eww-download-pdf-from-scholar)
-        (local-set-key (kbd "v") 'my/eww-view-and-download-if-required-pdf-from-scholar)
+        (local-set-key (kbd "i") 'my/import-link-to-org-buffer)
         (local-set-key (kbd "q") 'quit-window)
+        (local-set-key (kbd "v") 'my/eww-view-and-download-if-required-pdf-from-scholar)
         (read-only-mode))
       (kill-buffer buf))))
 
@@ -846,6 +887,7 @@ and stores it to my/bibtex-entry"
 ;; The keybindings also have to be added.
 ;;
 ;; Now it's datetree format
+(setq org-links-file "temp-org-links")
 (defun my/import-link-to-org-buffer ()
 "Generates a temporary buffer (currently ~/.emacs.d/temp-org-links) 
 and from the current eww buffer, copies the link there with an
@@ -854,13 +896,13 @@ but that's too much work for now."
   (interactive)
   (save-excursion
     (let* ((eww-buf (current-buffer))
-           (buf (if (get-buffer "temp-org-links") (get-buffer "temp-org-links")
+           (buf (if (get-buffer org-links-file) (get-buffer org-links-file)
                   (progn
-                    (generate-new-buffer "temp-org-links")
-                    (with-current-buffer (get-buffer "temp-org-links")
-                      (set-visited-file-name (expand-file-name "~/.emacs.d/temp-org-links"))
+                    (generate-new-buffer org-links-file)
+                    (with-current-buffer (get-buffer org-links-file)
+                      (set-visited-file-name (expand-file-name (concat "~/.emacs.d/") org-links-file-name))
                       (org-mode))
-                    (get-buffer "temp-org-links"))))
+                    (get-buffer org-links-file))))
            (link (get-text-property (point) 'shr-url))
            (link-text-begin (if link (progn
                                        (while (equal link (get-text-property (point) 'shr-url))
@@ -882,6 +924,9 @@ but that's too much work for now."
                       (buffer-substring-no-properties link-text-begin link-text-end)) "\n"))
             (org-indent-line) (insert (concat metadata "\n"))
             (org-indent-line) (org-insert-link nil link "link")
+            (message (concat "Imported entry " (with-current-buffer eww-buf
+                                                 (buffer-substring-no-properties link-text-begin link-text-end))
+                             " into buffer " org-links-file))
             )
         (message "No link under point"))
       )))
