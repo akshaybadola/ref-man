@@ -67,8 +67,8 @@
        (confs-seq (number-sequence (length confs) 1 -1)))
        (mapcar* 'cons confs confs-seq)))
 (setq my/key-list '(authors title venue volume number pages year doi ee))
-(setq my/org-store-dir "/home/joe/phd/pubs/org")
-(setq my/bib-store-dir "/home/joe/phd/pubs/bibs")
+(setq my/org-store-dir "/home/joe/PhD/Pubs/org")
+(setq my/bib-store-dir "/home/joe/PhD/Pubs/bibs")
 (setq my/stop-words '("i" "it" "its" "what" "which" "who" "that" "these" "is" "are" "was" "were" "have" "has" "had" "having" "do" "does" "did" "a" "an" "the" "and" "because" "as" "of" "at" "by" "for" "with" "about" "against" "between" "into" "through" "during" "before" "after" "above" "below" "to" "from" "up" "down" "in" "out" "on" "off" "over" "under" "again" "further" "then" "once" "here" "there" "when" "where" "why" "how" "all" "any" "both" "each" "few" "more" "most" "other" "some" "such" "no" "nor" "not" "only" "own" "same" "so" "than" "too" "very" "s" "t" "can" "will" "just" "don" "should" "now"))
 (defun my/is-stop-word (x)
   (member x my/stop-words))
@@ -196,21 +196,15 @@ to a buffer right now. can change to have it in multiple steps."
     (setq my/title (gethash "title" json-string))
     (setq my/refs-list refs-list)
     (setq my/bibs "")
-    (my/generate-primary-buffer)
-    (my/dblp-fetch-parallel refs-list)
+    (my/generate-buffer-and-fetch refs-list)
     )
   nil)
 
-;; TODO: should not rely on names. Fix
-(defun my/get-org-buffer ()
-  "Generated buffer where all the fetch results will be inserted"
-  (let ((buf (get-buffer (concat my/title "_org"))))
-    buf))
 
-
-(defun my/generate-org-buffer ()
+(defun my/generate-org-buffer (&optional visiting-filename)
   "Generated buffer where all the fetch results will be inserted"
-  (let ((buf (get-buffer-create (concat my/title "_org")))
+  (let ((buf (get-buffer-create
+              (if visiting-filename visiting-filename (concat my/title "_org"))))
         (win (my/get-or-create-window-on-side)))
     (set-window-buffer win buf)
     (with-current-buffer buf (org-mode))
@@ -229,7 +223,7 @@ to a buffer right now. can change to have it in multiple steps."
 ;;
 ;; Maybe python-epc would be better.
 ;;
-(defun my/dblp-fetch-parallel (refs-list)
+(defun my/dblp-fetch-parallel (refs-list org-buf)
   "Fetches all dblp queries in parallel via async"
   (loop for ref-refs in refs-list do
         (async-start
@@ -243,7 +237,7 @@ to a buffer right now. can change to have it in multiple steps."
                   (with-current-buffer buf (buffer-string))
                 (kill-buffer buf))))
          `(lambda (buf-string)
-            ,(async-inject-variables "ref-refs")
+            ,(async-inject-variables "ref-refs\\|org-buf")
             (let ((guf (generate-new-buffer "*dblp-test*")))
               (with-current-buffer guf (insert buf-string))
               (with-current-buffer guf (set-buffer-multibyte t))
@@ -254,10 +248,7 @@ to a buffer right now. can change to have it in multiple steps."
                                         (mapcar (lambda (hit)
                                                   (gscholar-bibtex--xml-get-child hit 'info))
                                                 (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit))
-                                        )
-                                       ))
-                      (org-buf (my/get-org-buffer))
-                      )
+                                        ))))
                (with-current-buffer org-buf
                  (if key-str (my/org-bibtex-write-ref-from-assoc (my/build-bib-assoc key-str))
                    (my/org-bibtex-write-ref-NA-from-keyhash (cdr ref-refs))))
@@ -265,7 +256,7 @@ to a buffer right now. can change to have it in multiple steps."
              )))))))
 
 ;;
-;; Called by my/generate-primary-buffer
+;; Called by my/generate-buffer-and-fetch
 ;;
 (defun my/dblp-fetch-serial (query)
   "Fetch the dblp data synchronously. Would be used to insert the
@@ -320,27 +311,38 @@ top level heading"
         key-str))
 
 ;; Fixed: "What if not key-str"
-(defun my/generate-primary-buffer ()
-  (let* ((org-buf (my/generate-org-buffer))
-         (key-str (my/dblp-fetch-serial  ;; assoc list
+(defun my/generate-buffer-and-fetch (refs-list)
+  (let* ((key-str (my/dblp-fetch-serial  ;; assoc list
                    (concat
                     (replace-regexp-in-string "[^\t\n\r\f -~]" ""  (gethash "title" my/science-parse-data)) " "
                     (string-join (mapcar (lambda (x) (gethash "name" x))
                                          (gethash "authors" my/science-parse-data)) " "))))
-         (key-str (if (not key-str) (my/generate-key-str-from-science-parse)))
-         (filename  (car (cdr (assoc "title" key-str))))
+         (na (not key-str))
+         (key-str (if (not key-str) (my/generate-key-str-from-science-parse) key-str))
+         (bib-assoc (my/build-bib-assoc key-str na))
+         (filename  (car bib-assoc))
+         (visiting-filename
+          (concat (string-remove-suffix "/" my/org-store-dir)
+                  "/" (string-remove-prefix "na_" filename) ".org"))
          )
-    ;; What if not filename?
-    (if filename
-        (with-current-buffer org-buf
-          (my/org-bibtex-write-heading-from-assoc (my/build-bib-assoc key-str t))
-          (org-insert-heading-after-current)
-          (org-shiftmetaright)
-          ;; TODO: fix setting of file name
-          ;; (set-visited-file-name
-          ;;  (concat (string-remove-suffix "/" my/org-store-dir) "/" filename ".org"))
-          ))
-    )))
+    ;; What if not filename? I guess that's a parse error
+    (if (file-exists-p visiting-filename)
+        (progn (message "File already exists. Opening")
+               (with-current-buffer (get-buffer-create (concat filename ".org"))
+                 (insert-file-contents visiting-filename t))
+               (my/generate-org-buffer (concat filename ".org")))
+      (if filename
+          (let ((org-buf (my/generate-org-buffer visiting-filename)))
+            (with-current-buffer org-buf
+              (my/org-bibtex-write-heading-from-assoc bib-assoc)
+              (org-insert-heading-after-current)
+              (org-shiftmetaright)
+              (my/dblp-fetch-parallel refs-list org-buf)
+              (set-visited-file-name visiting-filename))
+            )
+        (message "PDF Parse Error"))
+      )
+    ))
 
 
 (defun my/org-bibtex-write-heading-from-assoc (entry)
@@ -480,7 +482,7 @@ json."
 
 
 (defun my/org-bibtex-write-ref-NA-from-keyhash (key-hash)
-  (my/org-bibtex-write-ref-from-assoc (my/generate-NA-entry entry)))
+  (my/org-bibtex-write-ref-from-assoc (my/generate-NA-entry key-hash)))
 
 
 (defun my/org-bibtex-write-ref-from-assoc (entry)
@@ -663,10 +665,12 @@ Results are parsed with (BACKEND 'parse-buffer)."
       (with-current-buffer (get-buffer "*google-scholar*")
         (local-set-key (kbd "RET") 'eww-follow-link)
         (local-set-key (kbd "b") 'my/eww-get-bibtex-from-scholar)
-        (local-set-key (kbd "d") 'my/eww-download-pdf-from-scholar)
+        (local-set-key (kbd "d") (lambda () (interactive)
+                                   (my/eww-download-pdf-from-scholar t)))
         (local-set-key (kbd "i") 'my/import-link-to-org-buffer)
         (local-set-key (kbd "q") 'quit-window)
-        (local-set-key (kbd "v") 'my/eww-view-and-download-if-required-pdf-from-scholar)
+        (local-set-key (kbd "v") (lambda () (interactive)
+                                   (my/eww-view-and-download-if-required-pdf-from-scholar t)))
         (read-only-mode))
       (kill-buffer buf))))
 
@@ -741,21 +745,17 @@ and stores it to my/bibtex-entry"
   my/eww-buffer-links))
 
 
-(defun my/eww-download-and-view-pdf-from-scholar ()
-    (interactive)
-  (my/eww-download-pdf-from-scholar t))
 
-
-(defun my/eww-view-and-download-if-required-pdf-from-scholar ()
+(defun my/eww-view-and-download-if-required-pdf-from-scholar (frombegin)
   "View the pdf if it exists in the download directory and download if required"
   (interactive)
-  (let* ((url (car (my/eww-get-all-links t "pdf")))
+  (let* ((url (car (my/eww-get-all-links frombegin "pdf")))
             (obj (url-generic-parse-url url))
             (path (car (url-path-and-query obj)))
             (file (concat eww-download-directory (file-name-nondirectory path))))
     (if (file-exists-p file)
         (find-file-other-window file)
-      (my/eww-download-pdf-from-scholar t url))))
+      (my/eww-download-pdf-from-scholar frombegin t url))))
 
 
 (defun my/eww-download-callback (status url)
@@ -787,10 +787,10 @@ and stores it to my/bibtex-entry"
 ;; TODO: Fetch and parse pdfs in the background? That's too much
 ;; 
 ;; TODO: Should be async with wait from callback
-(defun my/eww-download-pdf-from-scholar (&optional view url)
+(defun my/eww-download-pdf-from-scholar (frombegin &optional view url)
   "Downloads the pdf file and optionally view it"
   (interactive)
-  (let ((url (if url url (car (my/eww-get-all-links t "pdf")))))
+  (let ((url (if url url (car (my/eww-get-all-links frombegin "pdf")))))
     (if (not view)
         (url-retrieve url 'my/eww-download-callback (list url))
       (let* ((buf (url-retrieve-synchronously url t))
