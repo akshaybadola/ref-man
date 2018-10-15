@@ -63,6 +63,7 @@
 ;;
 ;; Constants. perhaps can name them better
 ;;
+(setq org-links-file "temp-org-links")
 (setq my/venue-priorities (let* ((confs '("icml" "nips" "iccv" "cvpr" "eccv"))
        (confs-seq (number-sequence (length confs) 1 -1)))
        (mapcar* 'cons confs confs-seq)))
@@ -327,7 +328,7 @@ top level heading"
          )
     ;; What if not filename? I guess that's a parse error
     (if (file-exists-p visiting-filename)
-        (progn (message "File already exists. Opening")
+        (progn (message "[pdf-refs] File already exists. Opening")
                (with-current-buffer (get-buffer-create (concat filename ".org"))
                  (insert-file-contents visiting-filename t))
                (my/generate-org-buffer (concat filename ".org")))
@@ -340,7 +341,7 @@ top level heading"
               (my/dblp-fetch-parallel refs-list org-buf)
               (set-visited-file-name visiting-filename))
             )
-        (message "PDF Parse Error"))
+        (message "[pdf-refs] PDF Parse Error"))
       )
     ))
 
@@ -570,6 +571,7 @@ with 'bibtex from a bibtex entry"
 (defun my/biblio-callback (results-buffer backend)
   "Generate a search results callback for RESULTS-BUFFER.
 Results are parsed with (BACKEND 'parse-buffer)."
+;; TODO: Did let not work here?
   (setq my/biblio-callback-buf results-buffer)
   (biblio-generic-url-callback
    (lambda () ;; no allowed errors, so no arguments
@@ -583,7 +585,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
          (local-set-key (kbd "p") 'biblio--selection-previous)
          (local-set-key (kbd "o") 'my/parse-selected-entry-to-org))
        (set-window-buffer win my/biblio-callback-buf)
-       (message "Tip: learn to browse results with `h'")))))
+       (message "[pdf-refs] Tip: learn to browse results with `h'")))))
 
 
 (defun my/parse-selected-entry-to-org ()
@@ -603,7 +605,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
         (new-key (my/build-bib-key-from-parsed-bibtex bib-assoc))
         (bib-assoc (remove-if 'my/is-bibtex-key bib-assoc)))
     (setf (alist-get "=key=" bib-assoc) new-key)
-    (cond ((not bib-assoc) (message "Received nil entry"))
+    (cond ((not bib-assoc) (message "[pdf-refs] Received nil entry"))
           ((string-match-p "na_" current-key)
            (my/org-bibtex-convert-bib-to-property bib-assoc my/org-heading-gscholar-launch-buffer))
           ((y-or-n-p "Authoritative entry. Really replace?")
@@ -650,6 +652,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
 (defun org-search-heading-on-gscholar-with-eww ()
   "Searches for the current heading in google scholar in eww"
   (interactive)
+  ;; TODO: This code is repetitive. Dislike
   (setq my/org-heading-gscholar-launch-point (point))
   (setq my/org-heading-gscholar-launch-buffer (current-buffer))
   (save-excursion
@@ -768,11 +771,11 @@ and stores it to my/bibtex-entry"
               (progn (goto-char (point-min))
                      (re-search-forward "\r?\n\r?\n")
                      (write-region (point) (point-max) file)
-                     (message "Saved %s" file)))
+                     (message "[pdf-refs] Saved %s" file)))
         (goto-char (point-min))
         (re-search-forward "\r?\n\r?\n")
         (write-region (point) (point-max) file)
-        (message "Saved %s" file))
+        (message "[pdf-refs] Saved %s" file))
       )))
 
 
@@ -832,8 +835,8 @@ and stores it to my/bibtex-entry"
                 "No property drawer or no property. Fixed")
                (t (with-current-buffer my/org-heading-gscholar-launch-buffer
                     (org-entry-get my/org-heading-gscholar-launch-point "CUSTOM_ID")))))
-      ('error (message (format "Caught exception: [%s]" ex))))
-    (message retval))
+      ('error (message (format "[pdf-refs] Caught exception: [%s]" ex))))
+    (message (concat "[pdf-refs] " retval)))
   )
 
 
@@ -841,16 +844,16 @@ and stores it to my/bibtex-entry"
   (my/sanitize-org-entry)
   (let* ((buf (get-buffer " *scholar-entry*"))
          (buf-string (if buf (with-current-buffer buf (buffer-string))
-                       (progn (message "Could not create buffer for scholar entry") nil)))
+                       (progn (message "[pdf-refs] Could not create buffer for scholar entry") nil)))
          (bib-assoc (if buf-string (cond ((string-match-p "systems have detected unusual" buf-string)
-                                          (progn (message "Scholar is detecting a robot") nil))
+                                          (progn (message "[pdf-refs] Scholar is detecting a robot") nil))
                                          ((string-match-p "client does not have permission" buf-string)
-                                          (progn (message "Scholar doesn't like EWW") nil))
+                                          (progn (message "[pdf-refs] Scholar doesn't like EWW") nil))
                                          (t (with-current-buffer buf (goto-char (point-min)) (bibtex-parse-entry))))
-                      (progn (message "Empty reply from scholar") nil)))
+                      (progn (message "[pdf-refs] Empty reply from scholar") nil)))
          (current-key (with-current-buffer my/org-heading-gscholar-launch-buffer
                         (org-entry-get (point) "CUSTOM_ID"))))
-    (cond ((not bib-assoc) (message "Could not get entry from scholar"))
+    (cond ((not bib-assoc) (message "[pdf-refs] Could not get entry from scholar"))
           ((string-match-p "na_" current-key)
            (my/org-bibtex-convert-bib-to-property bib-assoc my/org-heading-gscholar-launch-buffer))
           ((y-or-n-p "Authoritative entry. Really replace?")
@@ -887,7 +890,6 @@ and stores it to my/bibtex-entry"
 ;; The keybindings also have to be added.
 ;;
 ;; Now it's datetree format
-(setq org-links-file "temp-org-links")
 (defun my/import-link-to-org-buffer ()
 "Generates a temporary buffer (currently ~/.emacs.d/temp-org-links) 
 and from the current eww buffer, copies the link there with an
@@ -924,11 +926,11 @@ but that's too much work for now."
                       (buffer-substring-no-properties link-text-begin link-text-end)) "\n"))
             (org-indent-line) (insert (concat metadata "\n"))
             (org-indent-line) (org-insert-link nil link "link")
-            (message (concat "Imported entry " (with-current-buffer eww-buf
+            (message (concat "[pdf-refs] " "Imported entry " (with-current-buffer eww-buf
                                                  (buffer-substring-no-properties link-text-begin link-text-end))
                              " into buffer " org-links-file))
             )
-        (message "No link under point"))
+        (message "[pdf-refs] No link under point"))
       )))
           
 
@@ -940,6 +942,6 @@ but that's too much work for now."
   (sleep-for 1)
   (if (not (string-match-p "Usage"
                            (shell-command-to-string "curl -s localhost:9191")))
-      (message "ERROR! Check connections") (message "Established connection to server successfully")))
+      (message "[pdf-refs] ERROR! Check connections") (message "[pdf-refs] Established connection to server successfully")))
 
 (my/pdf-refs-init)
