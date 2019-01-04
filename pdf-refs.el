@@ -27,9 +27,10 @@
 (require 'biblio-core)
 (require 'gscholar-bibtex)
 
-;;
-;; utility functions
-;;
+;;;;;;;;;;;;;;;;;;;;;;;
+;; utility functions ;;
+;;;;;;;;;;;;;;;;;;;;;;;
+
 (defun firstn (x n)
   (butlast x (- (length x) n)))
 
@@ -60,6 +61,11 @@
 
 (defun my/is-bibtex-key (item)
   (string= (car item) "=key="))
+
+(defun my/trim (str)
+  "Trims the string and replaces multiple spaces with a single one"
+  (replace-in-string (string-trim str) "[ ]+" " "))
+
 ;;
 ;; Constants. perhaps can name them better
 ;;
@@ -106,17 +112,64 @@ pairs for only the top result from my/venue-priorities."
 (defun my/build-bib-key (key-str &optional na)
   "builds a unique key with the format [author year
   first-title-word] entry from the list of (key . value)"
-  (let* ((first-author-str (car (split-string (car (cdr (assoc "authors" key-str))) "," t)))
+  (let* ((first-author-str (car (split-string (my/trim (car (cdr (assoc "authors" key-str)))) "," t)))
          (first-author (my/validate-author (split-string first-author-str " " t)))
          (last-name (car (last first-author)))
-         (year-pub (car (cdr (assoc "year" key-str))))
-         (title (remove-if 'my/is-stop-word (split-string (downcase (car (cdr (assoc "title" key-str)))) " ")))
+         (year-pub (my/trim (car (cdr (assoc "year" key-str)))))
+         (title (remove-if 'my/is-stop-word (split-string (downcase (my/trim (car (cdr (assoc "title" key-str))))) " ")))
          (title-first (car (split-string (first title) "-")))
          (key (my/remove-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))
          )
     (if na (concat "na_" key) key)))
 
+(defun my/build-bib-key-from-parsed-org-bibtex (bib-assoc)
+  "builds a unique key with the format [author year
+  first-title-word] entry from the list of (key . value). Trims
+  the entries and converts multiple spaces to a single one."
+  (let* ((first-author-str (car (split-string (my/trim (cdr (assoc :author bib-assoc))) "," t)))
+         (first-author (my/validate-author (split-string first-author-str " " t)))
+         (last-name (car (last first-author)))
+         (year-pub (my/trim (cdr (assoc :year bib-assoc))))
+         (title (remove-if 'my/is-stop-word (split-string (downcase (my/trim (cdr (assoc :title bib-assoc)))) " ")))
+         (title-first (car (split-string (first title) "-")))
+         (key (my/remove-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))
+         )
+    key))
 
+
+(defun my/build-bib-assoc-from-parsed-org-bibtex (bib-assoc)
+  "builds the association list. can be used to build both the bib
+entry and org entry"
+  (let* ((key (my/build-bib-key-from-parsed-org-bibtex bib-assoc))
+         (author (cons "author" (my/build-bib-author
+                                 (my/trim (cdr (assoc :author bib-assoc))))))
+         (title (cons "title" (my/trim (cdr (assoc :title bib-assoc)))))
+         (year (cons "year" (my/trim (cdr (assoc :year bib-assoc)))))
+         (doi (cons "doi" (cdr (assoc :doi bib-assoc))))
+         (volume (cons "volume"  (cdr (assoc :volume bib-assoc))))
+         (number (cons "number"  (cdr (assoc :number bib-assoc))))
+         (pages  (cons "pages" (cdr (assoc :pages bib-assoc))))
+         (publisher  (cons "publisher" (cdr (assoc :publisher bib-assoc))))
+         (abstract (cons "abstract" (cdr (assoc :abstract bib-assoc))))
+         ;; (tmp-pages  (cdr (assoc :pages bib-assoc)))
+         ;; (pages (cons "pages" (if tmp-pages
+         ;;                          (replace-in-string
+         ;;                           (replace-in-string tmp-pages "-" "--") " " "")
+         ;;                        nil)))
+         (url (cons "url" (cdr (assoc :ee bib-assoc))))
+         (url (cons "url" (cdr (assoc :ee bib-assoc))))         
+         (url (if url url (cons "url" (cdr (assoc :url bib-assoc)))))
+         (tmp-venue (cdr (assoc :journal bib-assoc))) ;; TODO: expand venue
+         (tmp-venue (if tmp-venue tmp-venue (cdr (assoc :booktitle bib-assoc)))) ;; TODO: expand venue
+         (tmp-venue (if tmp-venue tmp-venue (cdr (assoc :venue bib-assoc)))) ;; TODO: expand venue
+         (venue (cons "venue" tmp-venue)) ;; TODO: expand venue
+         (howpublished (cdr (assoc :howpublished bib-assoc)))
+         (howpublished (if (and howpublished (> 1 (length (split-string howpublished "{"))))
+             (if (string-match-p "url" (nth 0 (split-string howpublished "{")))
+                 (car (split-string (nth 1 (split-string howpublished "{")) "}")) nil)
+             nil))
+         )
+    (list key (remove-if-not 'cdr (list abstract author title year doi volume number pages url venue publisher howpublished)))))
 
 (defun my/build-bib-key-from-parsed-bibtex (bib-assoc)
   "builds a unique key with the format [author year
@@ -129,7 +182,6 @@ pairs for only the top result from my/venue-priorities."
          (title-first (car (split-string (first title) "-")))
          )
     (my/remove-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) ""))))
-
 
 (defun my/validate-author (author)
   (if (or (string-match-p "[0-9]+" (car (last author)))
@@ -335,7 +387,7 @@ top level heading"
       (if filename
           (let ((org-buf (my/generate-org-buffer visiting-filename)))
             (with-current-buffer org-buf
-              (my/org-bibtex-write-heading-from-assoc bib-assoc)
+              (my/org-bibtex-write-top-heading-from-assoc bib-assoc)
               (org-insert-heading-after-current)
               (org-shiftmetaright)
               (my/dblp-fetch-parallel refs-list org-buf)
@@ -346,9 +398,8 @@ top level heading"
     ))
 
 
-(defun my/org-bibtex-write-heading-from-assoc (entry)
-  "Generate an org entry from an association list retrieved via
-json."
+(defun my/org-bibtex-write-top-heading-from-assoc (entry)
+  "Generate the top level org entry for data parsed with science-parse."
   (let* ((key (car entry))
          (entry (nth 1 entry))
          )
@@ -485,6 +536,51 @@ json."
 (defun my/org-bibtex-write-ref-NA-from-keyhash (key-hash)
   (my/org-bibtex-write-ref-from-assoc (my/generate-NA-entry key-hash)))
 
+(defun my/org-bibtex-write-ref-from-assoc-misc (entry)
+    (org-insert-heading-after-current)
+    (insert (cdr (assoc :title entry)))
+    (insert "\n")
+    (org-insert-property-drawer)
+    (loop for ent in entry
+          do
+          (if (not (string-equal (symbol-name (car ent)) ":type"))
+              (org-set-property (upcase (car (cdr (split-string (symbol-name (car ent)) ":"))))
+                                (cdr ent)))
+          )
+    )
+
+(defun my/org-bibtex-write-ref-from-assoc-permissive (entry)
+  "Generate an org entry from an association list retrieved via
+json."
+  (let* ((key (car entry))
+         (entry (nth 1 entry))
+         )
+    (org-insert-heading-after-current)
+    (insert (cdr (assoc "title" entry)))
+    (insert "\n")
+    (if (assoc "author" entry)
+        (progn
+          (org-indent-line)
+          (insert (format "- Authors: %s\n" (my/remove-non-ascii (cdr (assoc "author" entry)))))))
+    (if (and (assoc "venue" entry) (assoc "year" entry))
+        (progn
+          (org-indent-line)
+          (insert (format "- %s\n" (concat (cdr (assoc "venue" entry)) ", " (cdr (assoc "year" entry)))))))
+    (if (assoc "howpublished" entry)
+        (progn
+          (org-indent-line)
+          (insert (format "- %s\n" (concat "Published as: " (cdr (assoc "venue" entry)))))))
+    (org-insert-property-drawer)
+    (loop for ent in entry
+          do
+          (if (not (string-equal (car ent) "abstract"))
+              (org-set-property (upcase (car ent)) (my/remove-non-ascii (my/fix (cdr ent))))
+            ))
+    (org-set-property "CUSTOM_ID" key)
+    (if (string-equal (assoc :type bib-assoc) "misc")
+        (org-set-property "BTYPE" "misc")
+      (org-set-property "BTYPE" "article"))
+  ))
 
 (defun my/org-bibtex-write-ref-from-assoc (entry)
   "Generate an org entry from an association list retrieved via
@@ -534,6 +630,33 @@ with 'bibtex from a bibtex entry"
           (`(,_ . ,_) (org-set-property (upcase (car ent)) (my/fix (cdr ent)))))
         ))
 
+(defun my/org-bibtex-read-bib-file-to-buffer (filename &optional buffername)
+  (interactive "sFile: ")
+  (if (file-exists-p filename)
+      (let* ((buffername
+             (if  buffername buffername (replace-in-string filename "\\.[a-z0-9]*?$" ".org")))
+             (org-buf (my/generate-org-buffer buffername)))
+        (setq org-bibtex-entries nil)
+        (org-bibtex-read-file filename)
+        (with-current-buffer org-buf
+          (org-insert-heading)
+          (loop for entry in org-bibtex-entries
+                do
+                (progn
+                  ;; (insert (concat (cdr (assoc :type entry)) "\n"))
+                  ;;   (my/org-bibtex-write-ref-from-assoc
+                  ;;    (my/build-bib-assoc-from-parsed-org-bibtex entry))
+                  (if (string-equal (cdr (assoc :type entry)) "misc")
+                      (my/org-bibtex-write-ref-from-assoc-misc entry)
+                    (my/org-bibtex-write-ref-from-assoc
+                     (my/build-bib-assoc-from-parsed-org-bibtex entry)))
+                  ))
+          ;; (goto-char (point-min))
+          ;; (delete-char 2)
+          ))
+    (message (format "[pdf-refs] File %s does not exist" filename)))
+  )
+        
 
 (defun my/org-bibtex-convert-bib-to-property (assoc-list &optional buf)
   (let ((buf (if buf buf (current-buffer)))
@@ -547,11 +670,13 @@ with 'bibtex from a bibtex entry"
             (`("=key=" . ,_) (org-set-property "CUSTOM_ID" (my/fix (cdr ent))))
             (`(,_ . ,_) (org-set-property (upcase (car ent)) (my/fix (cdr ent)))))
           ))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; End Org generation and insertion stuff ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Begin Biblio stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;
-
 (defun org-search-heading-on-crossref-with-biblio ()
   "Searches for the current heading in google scholar in eww"
   (interactive)
@@ -622,12 +747,13 @@ Results are parsed with (BACKEND 'parse-buffer)."
     (seq-do #'biblio-insert-result items))
   (biblio--selection-first)
   (hl-line-highlight))
-
-
 ;;;;;;;;;;;;;;;;;;;;;;
 ;; End Biblio stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;
 
+;;;;;;;;;;;;;;;;;;;;;;;
+;; shr and eww hacks ;;
+;;;;;;;;;;;;;;;;;;;;;;;
 ;; HACK
 ;; Redefine shr-map
 ;; TODO: remove redefine and use (bind-key)
@@ -932,7 +1058,10 @@ but that's too much work for now."
             )
         (message "[pdf-refs] No link under point"))
       )))
-          
+;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; End shr and eww hacks ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 
 (defun my/pdf-refs-init ()
   ;; auth just to be safe
@@ -952,10 +1081,10 @@ but that's too much work for now."
   (if (not (string-match-p "science-parse" (shell-command-to-string  "ps -ef | grep java")))
       (progn
         (async-start-process "science-parse" "java" nil "-Xmx6g" "-jar" "server/target/scala-2.11/science-parse-server-assembly-2.0.2-SNAPSHOT.jar")
-        (message "Trying to start server. This may take a couple of minutes.")
+        (message "[pdf-refs] Trying to start server. This may take a couple of minutes.")
         (sleep-for 75)))
   (if (not (string-match-p "Usage"
                            (shell-command-to-string (concat "curl -s localhost:" server-port))))
       (message "[pdf-refs] ERROR! Check connections") (message "[pdf-refs] Established connection to server successfully")))
 
-(my/pdf-refs-init-droid)
+(my/pdf-refs-init)
