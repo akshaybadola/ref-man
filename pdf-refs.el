@@ -183,7 +183,7 @@ to a buffer right now. can change to have it in multiple steps."
       ((pdf-file-name (expand-file-name (buffer-file-name (current-buffer))))
        (json-string (shell-command-to-string (format "curl -s -H\
        \"content-type: application/pdf\" --data-binary @%s\
-       \"http://localhost:9191/v1\"" pdf-file-name)))
+       \"http://localhost:%s/v1\"" pdf-file-name server-port)))
        (json-object-type 'hash-table)
        (json-key-type 'string)
        (json-array-type 'list)
@@ -936,12 +936,26 @@ but that's too much work for now."
 
 (defun my/pdf-refs-init ()
   ;; auth just to be safe
+  (setq server-port "9191")
   (async-start-process "auth" "/home/joe/bin/myauth" nil)
   (if (not (string-match-p "akshay@10.5.0.88" (shell-command-to-string  "ps -ef | grep ssh")))
-      (async-start-process "ssh" "ssh" nil "-N" "-L" "9191:localhost:9191" "akshay@10.5.0.88"))
+      (async-start-process "ssh" "ssh" nil "-N" "-L" (concat server-port ":localhost:" server-port) "akshay@10.5.0.88"))
   (sleep-for 1)
   (if (not (string-match-p "Usage"
-                           (shell-command-to-string "curl -s localhost:9191")))
+                           (shell-command-to-string (concat "curl -s localhost:" server-port))))
       (message "[pdf-refs] ERROR! Check connections") (message "[pdf-refs] Established connection to server successfully")))
 
-(my/pdf-refs-init)
+(defun my/pdf-refs-init-droid ()
+  ;; auth just to be safe
+  ;; java -Xmx6g -jar server/target/scala-2.11/science-parse-server-assembly-2.0.2-SNAPSHOT.jar
+  (setq server-port "8080")
+  (if (not (string-match-p "science-parse" (shell-command-to-string  "ps -ef | grep java")))
+      (progn
+        (async-start-process "science-parse" "java" nil "-Xmx6g" "-jar" "server/target/scala-2.11/science-parse-server-assembly-2.0.2-SNAPSHOT.jar")
+        (message "Trying to start server. This may take a couple of minutes.")
+        (sleep-for 75)))
+  (if (not (string-match-p "Usage"
+                           (shell-command-to-string (concat "curl -s localhost:" server-port))))
+      (message "[pdf-refs] ERROR! Check connections") (message "[pdf-refs] Established connection to server successfully")))
+
+(my/pdf-refs-init-droid)
