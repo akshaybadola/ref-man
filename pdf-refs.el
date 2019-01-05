@@ -34,8 +34,9 @@
 (defun firstn (x n)
   (butlast x (- (length x) n)))
 
-(defun butfirst (x n)
-  (last x (- (length x) n)))
+(defun butfirst (x &optional n)
+  (let ((n (if n n 1)))
+    (last x (- (length x) n))))
 
 (defun my/venue-pref (results)
   (if (= 1 (length results))
@@ -136,13 +137,11 @@ pairs for only the top result from my/venue-priorities."
          )
     key))
 
-
 (defun my/build-bib-assoc-from-parsed-org-bibtex (bib-assoc)
   "builds the association list. can be used to build both the bib
 entry and org entry"
   (let* ((key (my/build-bib-key-from-parsed-org-bibtex bib-assoc))
-         (author (cons "author" (my/build-bib-author
-                                 (my/trim (cdr (assoc :author bib-assoc))))))
+         (author (cons "author" (my/trim (cdr (assoc :author bib-assoc)))))
          (title (cons "title" (my/trim (cdr (assoc :title bib-assoc)))))
          (year (cons "year" (my/trim (cdr (assoc :year bib-assoc)))))
          (doi (cons "doi" (cdr (assoc :doi bib-assoc))))
@@ -151,11 +150,6 @@ entry and org entry"
          (pages  (cons "pages" (cdr (assoc :pages bib-assoc))))
          (publisher  (cons "publisher" (cdr (assoc :publisher bib-assoc))))
          (abstract (cons "abstract" (cdr (assoc :abstract bib-assoc))))
-         ;; (tmp-pages  (cdr (assoc :pages bib-assoc)))
-         ;; (pages (cons "pages" (if tmp-pages
-         ;;                          (replace-in-string
-         ;;                           (replace-in-string tmp-pages "-" "--") " " "")
-         ;;                        nil)))
          (url (cons "url" (cdr (assoc :ee bib-assoc))))
          (url (cons "url" (cdr (assoc :ee bib-assoc))))         
          (url (if url url (cons "url" (cdr (assoc :url bib-assoc)))))
@@ -189,20 +183,30 @@ entry and org entry"
       (if (> (length author) 2) (butlast author) (nconc (butlast author) '("")))
     author))
 
-
 (defun my/build-bib-author (author-str)
   "builds the \"author\" value according to bibtex format"
   (let* ((author-str (my/remove-non-ascii author-str))
          (author-str (replace-in-string (replace-in-string author-str "\\.$" "") ",$" ""))
          (authors (split-string author-str "," t))
-         (result-authors (mapcar (lambda (x)
-                                   (let ((temp-auth (my/validate-author (split-string x " " t))))
-                                     (if (= 1 (length temp-auth)) (car temp-auth)
-                                       (mapconcat 'car (list (last temp-auth) (butlast temp-auth)) ", "))
-                                     ))
-                                 authors)))
+         (result-authors
+          (mapcar (lambda (x)
+                    (let ((temp-auth (my/validate-author (split-string x " " t))))
+                      (if (= 1 (length temp-auth)) (car temp-auth)
+                        (mapconcat 'identity (list (car (last temp-auth))
+                                                   (mapconcat 'identity
+                                                              (butlast temp-auth) " ")) ", ")))) authors)))
     (mapconcat 'identity result-authors " and ")))
 
+(defun my/build-vernacular-author (author-str)
+  "Builds the \"author\" string as common spoken English. Assumes
+  that the input is in bib_author format"
+  (let* ((author-str (replace-in-string (replace-in-string author-str "\\.$" "") ",$" ""))
+         (authors (split-string author-str " and " t "[ ]+"))
+         (result-authors
+          (mapcar (lambda (x) (mapconcat 'identity (reverse (split-string x ", ")) " "))
+                  authors))
+         (result-authors (mapconcat 'identity result-authors " and ")))
+    result-authors))
 
 (defun my/build-bib-assoc (key-str &optional na)
   "builds the association list. can be used to build both the bib
@@ -224,7 +228,6 @@ entry and org entry"
          (venue (cons "venue" (car (cdr (assoc "venue" key-str))))) ;; TODO: expand venue
          )
     (list key (remove-if-not 'cdr (list author title year doi volume number pages url venue)))))
-
 
 (defun my/get-references ()
   "this is the only entry point to fetch and write the references
@@ -253,7 +256,6 @@ to a buffer right now. can change to have it in multiple steps."
     )
   nil)
 
-
 (defun my/generate-org-buffer (&optional visiting-filename)
   "Generated buffer where all the fetch results will be inserted"
   (let ((buf (get-buffer-create
@@ -262,7 +264,6 @@ to a buffer right now. can change to have it in multiple steps."
     (set-window-buffer win buf)
     (with-current-buffer buf (org-mode))
     buf))
-
 
 (defun my/get-or-create-window-on-side ()
   (let* ((orig-win (selected-window))
@@ -546,8 +547,7 @@ top level heading"
           (if (not (string-equal (symbol-name (car ent)) ":type"))
               (org-set-property (upcase (car (cdr (split-string (symbol-name (car ent)) ":"))))
                                 (cdr ent)))
-          )
-    )
+          ))
 
 (defun my/org-bibtex-write-ref-from-assoc-permissive (entry)
   "Generate an org entry from an association list retrieved via
@@ -592,7 +592,13 @@ json."
     (insert (cdr (assoc "title" entry)))
     (insert "\n")
     (org-indent-line)
-    (insert (format "- Authors: %s" (my/remove-non-ascii (cdr (assoc "author" entry)))))
+    (if (assoc "abstract" entry)
+        (progn (insert (cdr (assoc "abstract" entry)))
+               (fill-paragraph)
+               (insert "\n")
+               (org-indent-line)))
+    (insert (format "- Authors: %s"
+                    (my/build-vernacular-author (my/remove-non-ascii (cdr (assoc "author" entry))))))
     (org-insert-item)
     (insert (concat (cdr (assoc "venue" entry)) ", " (cdr (assoc "year" entry))))
     (org-insert-property-drawer)
@@ -643,16 +649,13 @@ with 'bibtex from a bibtex entry"
           (loop for entry in org-bibtex-entries
                 do
                 (progn
-                  ;; (insert (concat (cdr (assoc :type entry)) "\n"))
-                  ;;   (my/org-bibtex-write-ref-from-assoc
-                  ;;    (my/build-bib-assoc-from-parsed-org-bibtex entry))
                   (if (string-equal (cdr (assoc :type entry)) "misc")
                       (my/org-bibtex-write-ref-from-assoc-misc entry)
                     (my/org-bibtex-write-ref-from-assoc
                      (my/build-bib-assoc-from-parsed-org-bibtex entry)))
                   ))
-          ;; (goto-char (point-min))
-          ;; (delete-char 2)
+          (goto-char (point-min))
+          (delete-char 3)
           ))
     (message (format "[pdf-refs] File %s does not exist" filename)))
   )
@@ -874,7 +877,6 @@ and stores it to my/bibtex-entry"
   my/eww-buffer-links))
 
 
-
 (defun my/eww-view-and-download-if-required-pdf-from-scholar (frombegin)
   "View the pdf if it exists in the download directory and download if required"
   (interactive)
@@ -1063,7 +1065,7 @@ but that's too much work for now."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-(defun my/pdf-refs-init ()
+(defun my/pdf-refs-init-data ()
   ;; auth just to be safe
   (setq server-port "9191")
   (async-start-process "auth" "/home/joe/bin/myauth" nil)
@@ -1080,11 +1082,12 @@ but that's too much work for now."
   (setq server-port "8080")
   (if (not (string-match-p "science-parse" (shell-command-to-string  "ps -ef | grep java")))
       (progn
-        (async-start-process "science-parse" "java" nil "-Xmx6g" "-jar" "server/target/scala-2.11/science-parse-server-assembly-2.0.2-SNAPSHOT.jar")
-        (message "[pdf-refs] Trying to start server. This may take a couple of minutes.")
-        (sleep-for 75)))
+        (async-start-process "science-parse" "java" nil "-Xmx6g" "-jar" "/home/joe/lib/science-parse/server/target/scala-2.11/science-parse-server-assembly-2.0.2-SNAPSHOT.jar")
+        (message "[pdf-refs] Trying to start server. This may take a couple of minutes.")))
   (if (not (string-match-p "Usage"
                            (shell-command-to-string (concat "curl -s localhost:" server-port))))
       (message "[pdf-refs] ERROR! Check connections") (message "[pdf-refs] Established connection to server successfully")))
 
-(my/pdf-refs-init)
+(if (string-match-p "droid" (system-name))
+    (my/pdf-refs-init-droid)
+  (my/pdf-refs-init-data))
