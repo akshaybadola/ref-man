@@ -70,7 +70,7 @@
 ;;
 ;; Constants. perhaps can name them better
 ;;
-(setq org-links-file "temp-org-links")
+(setq org-links-file-path (expand-file-name "~/.temp-org-links.org"))
 (setq my/venue-priorities (let* ((confs '("icml" "nips" "iccv" "cvpr" "eccv"))
        (confs-seq (number-sequence (length confs) 1 -1)))
        (mapcar* 'cons confs confs-seq)))
@@ -754,9 +754,9 @@ Results are parsed with (BACKEND 'parse-buffer)."
 ;; End Biblio stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;
 
-;;;;;;;;;;;;;;;;;;;;;;;
-;; shr and eww hacks ;;
-;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; shr, eww hacks for my/org-bibtex ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; HACK
 ;; Redefine shr-map
 ;; TODO: remove redefine and use (bind-key)
@@ -776,7 +776,6 @@ Results are parsed with (BACKEND 'parse-buffer)."
     (define-key map "o" 'shr-save-contents)
     (define-key map "\r" 'shr-browse-url)
     map))
-
 
 (defun org-search-heading-on-gscholar-with-eww ()
   "Searches for the current heading in google scholar in eww"
@@ -806,7 +805,6 @@ Results are parsed with (BACKEND 'parse-buffer)."
         (read-only-mode))
       (kill-buffer buf))))
 
-
 (defun my/eww-get-bibtex-from-scholar ()
   "Extracts the NEXT bibtex entry from a web page rendered with eww
 and stores it to my/bibtex-entry"
@@ -817,137 +815,6 @@ and stores it to my/bibtex-entry"
                          (backward-char)
                          (car (eww-links-at-point)))))
       (my/eww-browse-url bib-url))))
-
-
-;; Much cleaner code now
-;; Although, I think I'll remove the debug code later
-(defun my/eww-get-all-links (&optional frombegin substring)
-  (interactive)
-  (save-excursion
-    (if frombegin (goto-char (point-min)))
-    (setq my/eww-buffer-links nil)
-    (setq my/prev-url (get-text-property (point) 'shr-url)) ;; was my/current-url
-    (setq my/current-url nil)
-    (setq my/url-text-start (point))
-    (setq my/url-text-end (point))
-    (while (not (eobp))
-      ;; (debug)    
-      ;; Debug info
-      ;; (message (concat (format "%s" my/url-text-start) ", " (format "%s" my/url-text-end)))
-      ;; (message (format "%s" (string-match-p substring
-      ;;                                       (buffer-substring-no-properties my/url-text-start my/url-text-end))))
-      (if my/prev-url
-          (if substring
-              ;; (if (string-match-p substring my/prev-url)
-              ;; (buffer-substring-no-properties my/url-text-start my/url-text-end))
-              ;; More Debug code
-              ;;   (message (concat substring " matches " (buffer-substring-no-properties my/url-text-start my/url-text-end)))
-              ;;   (message (concat "URL was set at " (format "%s" my/url-text-end)))
-              ;; (if
-              ;; was my/current-url
-              ;; (progn
-              ;;   (message (concat "Copying " my/current-url))
-              ;; (setq my/eww-buffer-links (nconc my/eww-buffer-links (list my/current-url)))
-              ;; 
-              ;; (let ((url (get-text-property (- my/url-text-end 1) 'shr-url)))
-              ;;   (if url (setq my/eww-buffer-links (nconc my/eww-buffer-links (list url)))
-              ;;     (setq my/eww-buffer-links
-              ;;           (nconc my/eww-buffer-links (list (get-text-property my/url-text-end 'shr-url)))
-              ;;   )))
-              ;; (progn
-              ;;   (message (concat "Copying " my/prev-url))
-              (if (string-match-p substring my/prev-url)
-                  (setq my/eww-buffer-links (nconc my/eww-buffer-links (list my/prev-url)))
-                )
-            ;; (if my/prev-url
-            (setq my/eww-buffer-links (nconc my/eww-buffer-links (list my/prev-url)))
-            ))
-    ;; (setq my/eww-buffer-links (nconc my/eww-buffer-links
-    ;;                                  (list (get-text-property (- my/url-text-end 1) 'shr-url))))))
-    (setq my/prev-url my/current-url)
-    (setq my/current-url nil)
-    (setq my/url-text-start (+ 1 (point)))
-    (setq my/url-text-end (+ 1 (point)))
-    (while (and (not (eobp))
-                (equal (get-text-property (point) 'shr-url) my/prev-url))
-      (forward-char 1))               ;; not next link (same link)
-    (setq my/url-text-end (point))
-    (setq my/current-url (get-text-property (point) 'shr-url))
-    )
-  my/eww-buffer-links))
-
-
-(defun my/eww-view-and-download-if-required-pdf-from-scholar (frombegin)
-  "View the pdf if it exists in the download directory and download if required"
-  (interactive)
-  (let* ((url (car (my/eww-get-all-links frombegin "pdf")))
-            (obj (url-generic-parse-url url))
-            (path (car (url-path-and-query obj)))
-            (file (concat eww-download-directory (file-name-nondirectory path))))
-    (if (file-exists-p file)
-        (find-file-other-window file)
-      (my/eww-download-pdf-from-scholar frombegin t url))))
-
-
-(defun my/eww-download-callback (status url)
-  (unless (plist-get status :error)
-    (let* ((obj (url-generic-parse-url url))
-           (path (car (url-path-and-query obj)))
-           (file (concat eww-download-directory (file-name-nondirectory path))))
-      (if (file-exists-p file)
-          (if (y-or-n-p "File exists. Replace?")
-              (progn (goto-char (point-min))
-                     (re-search-forward "\r?\n\r?\n")
-                     (write-region (point) (point-max) file)
-                     (message "[pdf-refs] Saved %s" file)))
-        (goto-char (point-min))
-        (re-search-forward "\r?\n\r?\n")
-        (write-region (point) (point-max) file)
-        (message "[pdf-refs] Saved %s" file))
-      )))
-
-
-;; TODO: Maybe the file should be stored in Pubs somewhere, or some
-;; other variable and the filename should be automatically inserted as
-;; a link into the org file.
-;; So instead of scholar searching I can simply view it from org.
-;;
-;; TODO: When a pdf is stored for a link, automatically extract
-;; abstract from science-parse and add it to the abstract field.
-;;
-;; TODO: Fetch and parse pdfs in the background? That's too much
-;; 
-;; TODO: Should be async with wait from callback
-(defun my/eww-download-pdf-from-scholar (frombegin &optional view url)
-  "Downloads the pdf file and optionally view it"
-  (interactive)
-  (let ((url (if url url (car (my/eww-get-all-links frombegin "pdf")))))
-    (if (not view)
-        (url-retrieve url 'my/eww-download-callback (list url))
-      (let* ((buf (url-retrieve-synchronously url t))
-             (buf-string (with-current-buffer buf (buffer-string))))
-        (if buf-string
-            (let* ((obj (url-generic-parse-url url))
-                   (path (car (url-path-and-query obj)))
-                   (file (concat eww-download-directory (file-name-nondirectory path))))
-              ;; (eww-make-unique-file-name
-              ;;  (eww-decode-url-file-name (file-name-nondirectory path))
-              ;;  eww-download-directory)
-              (if (file-exists-p file)
-                  (if (y-or-n-p "File exists. Replace?")
-                      (with-current-buffer buf
-                        (goto-char (point-min))
-                        (re-search-forward "\r?\n\r?\n")
-                        (write-region (point) (point-max) file)))
-                (with-current-buffer buf
-                  (goto-char (point-min))
-                  (re-search-forward "\r?\n\r?\n")
-                  (write-region (point) (point-max) file)))
-              (find-file-other-window file)
-              ))
-        (kill-buffer buf))
-      )))
-
 
 (defun my/sanitize-org-entry ()
   (let (retval)
@@ -966,7 +833,6 @@ and stores it to my/bibtex-entry"
       ('error (message (format "[pdf-refs] Caught exception: [%s]" ex))))
     (message (concat "[pdf-refs] " retval)))
   )
-
 
 (defun my/eww-get-bibtex-from-scholar-rest ()
   (my/sanitize-org-entry)
@@ -989,11 +855,9 @@ and stores it to my/bibtex-entry"
     (if buf (kill-buffer buf))
     ))
 
-
 (defun my/eww-render (status url buf)
   (eww-render status url nil buf)
   (my/eww-get-bibtex-from-scholar-rest))
-
 
 (defun my/eww-browse-url (url)
   (let ((buf (if (get-buffer " *scholar-entry*") (get-buffer " *scholar-entry*")
@@ -1008,7 +872,6 @@ and stores it to my/bibtex-entry"
                                        ;; (list url nil (current-buffer)) t))))
                                        (list url (current-buffer))))))
 
-
 ;; Currently no TODO attribute is set on the org entry and no
 ;; timestamp is marked. I should fix that.
 ;; 
@@ -1018,21 +881,20 @@ and stores it to my/bibtex-entry"
 ;; The keybindings also have to be added.
 ;;
 ;; Now it's datetree format
+;;
+;; Changed (org-insert-link nil link "link") to simple string insert
+;; Much easier
 (defun my/import-link-to-org-buffer ()
-"Generates a temporary buffer (currently ~/.emacs.d/temp-org-links) 
+"Generates a temporary buffer (currently ~/temp-org-links) 
 and from the current eww buffer, copies the link there with an
 org heading as title. Perhaps I can include author also there,
 but that's too much work for now."
   (interactive)
   (save-excursion
     (let* ((eww-buf (current-buffer))
-           (buf (if (get-buffer org-links-file) (get-buffer org-links-file)
-                  (progn
-                    (generate-new-buffer org-links-file)
-                    (with-current-buffer (get-buffer org-links-file)
-                      (set-visited-file-name (expand-file-name (concat "~/.emacs.d/") org-links-file-name))
-                      (org-mode))
-                    (get-buffer org-links-file))))
+           (org-links-file-name (file-name-nondirectory org-links-file-path))
+           (buf (if (get-buffer org-links-file-name) (get-buffer org-links-file-name)
+                  (find-file-noselect (expand-file-name "~/.temp-org-links.org"))))
            (link (get-text-property (point) 'shr-url))
            (link-text-begin (if link (progn
                                        (while (equal link (get-text-property (point) 'shr-url))
@@ -1047,47 +909,25 @@ but that's too much work for now."
            )
       (if (and link-text-begin link-text-end)
           (with-current-buffer buf
+            (org-mode)
             (org-datetree-find-date-create (org-date-to-gregorian (org-read-date t nil "now")))
             (goto-char (point-at-eol))
             (org-insert-subheading nil)
             (insert (concat (with-current-buffer eww-buf
                       (buffer-substring-no-properties link-text-begin link-text-end)) "\n"))
             (org-indent-line) (insert (concat metadata "\n"))
-            (org-indent-line) (org-insert-link nil link "link")
+            (org-indent-line) (insert (concat "[[" link "][link]]"))
             (message (concat "[pdf-refs] " "Imported entry " (with-current-buffer eww-buf
                                                  (buffer-substring-no-properties link-text-begin link-text-end))
-                             " into buffer " org-links-file))
+                             " into buffer " org-links-file-path))
             )
         (message "[pdf-refs] No link under point"))
       )))
-;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; End shr and eww hacks ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defun my/org-store-link-without-prompt ()
+  (push (list link "link") org-stored-links))
 
-(defun my/pdf-refs-init-data ()
-  ;; auth just to be safe
-  (setq server-port "9191")
-  (async-start-process "auth" "/home/joe/bin/myauth" nil)
-  (if (not (string-match-p "akshay@10.5.0.88" (shell-command-to-string  "ps -ef | grep ssh")))
-      (async-start-process "ssh" "ssh" nil "-N" "-L" (concat server-port ":localhost:" server-port) "akshay@10.5.0.88"))
-  (sleep-for 1)
-  (if (not (string-match-p "Usage"
-                           (shell-command-to-string (concat "curl -s localhost:" server-port))))
-      (message "[pdf-refs] ERROR! Check connections") (message "[pdf-refs] Established connection to server successfully")))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; End shr, eww hacks for my/org-bibtex ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun my/pdf-refs-init-droid ()
-  ;; auth just to be safe
-  ;; java -Xmx6g -jar server/target/scala-2.11/science-parse-server-assembly-2.0.2-SNAPSHOT.jar
-  (setq server-port "8080")
-  (if (not (string-match-p "science-parse" (shell-command-to-string  "ps -ef | grep java")))
-      (progn
-        (async-start-process "science-parse" "java" nil "-Xmx6g" "-jar" "/home/joe/lib/science-parse/server/target/scala-2.11/science-parse-server-assembly-2.0.2-SNAPSHOT.jar")
-        (message "[pdf-refs] Trying to start server. This may take a couple of minutes.")))
-  (if (not (string-match-p "Usage"
-                           (shell-command-to-string (concat "curl -s localhost:" server-port))))
-      (message "[pdf-refs] ERROR! Check connections") (message "[pdf-refs] Established connection to server successfully")))
-
-(if (string-match-p "droid" (system-name))
-    (my/pdf-refs-init-droid)
-  (my/pdf-refs-init-data))
