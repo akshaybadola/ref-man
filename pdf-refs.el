@@ -27,6 +27,12 @@
 (require 'biblio-core)
 (require 'gscholar-bibtex)
 
+;; TODO should be defcustom
+(setq my/org-store-dir "/home/joe/org/pubs_org")
+(if (string-match-p "droid" (system-name))
+    (setq my/pubs-directory "/home/joe/pubs/bibtex")
+(setq my/bib-store-dir "/home/joe/PhD/bibtex"))
+
 ;;;;;;;;;;;;;;;;;;;;;;;
 ;; utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;
@@ -70,15 +76,10 @@
 ;;
 ;; Constants. perhaps can name them better
 ;;
-(setq org-links-file-path (expand-file-name "~/.temp-org-links.org"))
-(setq temp-bib-file-path (expand-file-name "~/lib/docprocess/all.bib"))
-;; (setq temp-bib-file-path (expand-file-name "~/.temp.bib"))
 (setq my/venue-priorities (let* ((confs '("icml" "nips" "iccv" "cvpr" "eccv"))
        (confs-seq (number-sequence (length confs) 1 -1)))
        (mapcar* 'cons confs confs-seq)))
 (setq my/key-list '(authors title venue volume number pages year doi ee))
-(setq my/org-store-dir "/home/joe/org/pubs_org")
-(setq my/bib-store-dir "/home/joe/PhD/bibtex")
 (setq my/stop-words '("i" "it" "its" "what" "which" "who" "that" "these" "is" "are" "was" "were" "have" "has" "had" "having" "do" "does" "did" "a" "an" "the" "and" "because" "as" "of" "at" "by" "for" "with" "about" "against" "between" "into" "through" "during" "before" "after" "above" "below" "to" "from" "up" "down" "in" "out" "on" "off" "over" "under" "again" "further" "then" "once" "here" "there" "when" "where" "why" "how" "all" "any" "both" "each" "few" "more" "most" "other" "some" "such" "no" "nor" "not" "only" "own" "same" "so" "than" "too" "very" "s" "t" "can" "will" "just" "don" "should" "now"))
 (defun my/is-stop-word (x)
   (member x my/stop-words))
@@ -240,7 +241,7 @@ to a buffer right now. can change to have it in multiple steps."
   (let*
       ((pdf-file-name (expand-file-name (buffer-file-name (current-buffer))))
        (json-string
-        (if (string-equal major-mode pdf-view-mode)
+        (if (string-equal major-mode "pdf-view-mode")
             (shell-command-to-string (format "curl -s -H\
             \"content-type: application/pdf\" --data-binary @%s\
             \"http://localhost:%s/v1\"" pdf-file-name server-port))
@@ -251,8 +252,9 @@ to a buffer right now. can change to have it in multiple steps."
        (json-string (if json-string (json-read-from-string json-string) nil))
        ;; concats title and authors for each ref entry for easy lookup
        (refs-list (if json-string (mapcar (lambda (x)
-                                            (cons (concat (gethash "title" x) " " (string-join (gethash "authors" x) " ")) x))
-                                          (gethash "references" json-string))) nil))
+                                            (cons (concat (gethash "title" x) " "
+                                                          (string-join (gethash "authors" x) " ")) x))
+                                          (gethash "references" json-string)) nil)))
     (if json-string
         (progn
           (setq my/science-parse-data json-string)
@@ -335,7 +337,6 @@ top level heading"
                            (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit)))))
     ))
 
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Org generation and insertion stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -406,7 +407,6 @@ top level heading"
         (message "[pdf-refs] PDF Parse Error"))
       )
     ))
-
 
 (defun my/org-bibtex-write-top-heading-from-assoc (entry)
   "Generate the top level org entry for data parsed with science-parse."
@@ -513,7 +513,6 @@ top level heading"
          (author-str (replace-in-string author-str "”" "\"")))
     author-str))
 
-
 (defun my/generate-NA-entry (key-hash)
   (if (and (gethash "title" key-hash) (gethash "authors" key-hash))
       (let* ((key (mapconcat (lambda (x) (replace-in-string (downcase x) " " ""))
@@ -541,7 +540,6 @@ top level heading"
              (entry (list key (remove-if-not 'cdr (list author title year venue volume number pages))))
              )
         entry)))
-
 
 (defun my/org-bibtex-write-ref-NA-from-keyhash (key-hash)
   (my/org-bibtex-write-ref-from-assoc (my/generate-NA-entry key-hash)))
@@ -695,7 +693,6 @@ with 'bibtex from a bibtex entry"
                              (if (cdr x) (concat "  " (car x) "={" (cdr x) "},\n")))
                            bib-str "") "}\n"))
     (message "[pdf-refs] Not org mode")))
-             
 
 (defun my/org-bibtex-insert-headline-as-bib-to-file ()
   "Export current headline to kill ring as bibtex entry."
@@ -719,6 +716,24 @@ with 'bibtex from a bibtex entry"
             (`("=key=" . ,_) (org-set-property "CUSTOM_ID" (my/fix (cdr ent))))
             (`(,_ . ,_) (org-set-property (upcase (car ent)) (my/fix (cdr ent)))))
           ))))
+
+(defun my/sanitize-org-entry ()
+  (let (retval)
+    (condition-case ex
+        (setq retval
+              (cond
+               ((not (equal (with-current-buffer my/org-heading-gscholar-launch-buffer major-mode)
+                            'org-mode)) "Not org mode")
+               ((not (with-current-buffer my/org-heading-gscholar-launch-buffer
+                       (org-entry-get my/org-heading-gscholar-launch-point "CUSTOM_ID")))
+                (with-current-buffer my/org-heading-gscholar-launch-buffer
+                  (org-set-property "CUSTOM_ID" "na_"))
+                "No property drawer or no property. Fixed")
+               (t (with-current-buffer my/org-heading-gscholar-launch-buffer
+                    (org-entry-get my/org-heading-gscholar-launch-point "CUSTOM_ID")))))
+      ('error (message (format "[pdf-refs] Caught exception: [%s]" ex))))
+    (message (concat "[pdf-refs] " retval)))
+  )
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; End Org generation and insertion stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -741,7 +756,6 @@ with 'bibtex from a bibtex entry"
        (my/biblio-callback results-buffer backend))
       results-buffer)))
 
-
 (defun my/biblio-callback (results-buffer backend)
   "Generate a search results callback for RESULTS-BUFFER.
 Results are parsed with (BACKEND 'parse-buffer)."
@@ -761,11 +775,9 @@ Results are parsed with (BACKEND 'parse-buffer)."
        (set-window-buffer win my/biblio-callback-buf)
        (message "[pdf-refs] Tip: learn to browse results with `h'")))))
 
-
 (defun my/parse-selected-entry-to-org ()
   (interactive)
   (biblio--selection-forward-bibtex #'my/biblio-insert-to-org))
-
 
 (defun my/biblio-insert-to-org (bibtex entry)
   (let* ((current-key (with-current-buffer my/org-heading-gscholar-launch-buffer
@@ -787,7 +799,6 @@ Results are parsed with (BACKEND 'parse-buffer)."
     (pop-to-buffer my/org-heading-gscholar-launch-buffer)
     ))
 
-
 (defun my/biblio-insert-results (items &optional header)
   "Populate current buffer with ITEMS and HEADER, then display it."
   (let ((inhibit-read-only t))
@@ -800,121 +811,57 @@ Results are parsed with (BACKEND 'parse-buffer)."
 ;; End Biblio stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; shr, eww hacks for my/org-bibtex ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; HACK
-;; Redefine shr-map
-;; TODO: remove redefine and use (bind-key)
-(defvar shr-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map "a" 'shr-show-alt-text)
-    (define-key map "i" 'shr-browse-image)
-    (define-key map "z" 'shr-zoom-image)
-    (define-key map [?\t] 'shr-next-link)
-    (define-key map [?\M-\t] 'shr-previous-link)
-    (define-key map [follow-link] 'mouse-face)
-    (define-key map [mouse-2] 'shr-browse-url)
-    (define-key map "I" 'shr-insert-image)
-    (define-key map "w" 'shr-copy-url)
-    (define-key map "u" 'shr-copy-url)
-    (define-key map "RET" 'shr-browse-url)
-    (define-key map "o" 'shr-save-contents)
-    (define-key map "\r" 'shr-browse-url)
-    map))
 
-(defun org-search-heading-on-gscholar-with-eww ()
-  "Searches for the current heading in google scholar in eww"
-  (interactive)
-  ;; TODO: This code is repetitive. Dislike
-  (setq my/org-heading-gscholar-launch-point (point))
-  (setq my/org-heading-gscholar-launch-buffer (current-buffer))
-  (save-excursion
-    (let ((buf (generate-new-buffer " *scholar*"))
-          (query-string (org-get-heading t t)))
-      (with-current-buffer buf (insert (gscholar-bibtex-google-scholar-search-results
-                                        query-string)))
-      (shr-render-buffer buf)
-      (if (get-buffer "*google-scholar*")
-          (kill-buffer (get-buffer "*google-scholar*")))
-      (pop-to-buffer-same-window "*html*")
-      (rename-buffer "*google-scholar*")
-      (with-current-buffer (get-buffer "*google-scholar*")
-        (local-set-key (kbd "RET") 'eww-follow-link)
-        (local-set-key (kbd "b") 'my/eww-get-bibtex-from-scholar t)
-        (local-set-key (kbd "d") (lambda () (interactive)
-                                   (my/eww-download-pdf-from-scholar t)))
-        (local-set-key (kbd "i") 'my/import-link-to-org-buffer)
-        (local-set-key (kbd "q") 'quit-window)
-        (local-set-key (kbd "v") (lambda () (interactive)
-                                   (my/eww-view-and-download-if-required-pdf-from-scholar t)))
-        (read-only-mode))
-      (kill-buffer buf))))
-
-(defun my/eww-get-bibtex-from-scholar (org)
-  "Extracts the NEXT bibtex entry from a web page rendered with eww
-and stores it to my/bibtex-entry"
-  (interactive)
-  (save-excursion
-    (let
-        ((bib-url (progn (search-forward "import into bibtex")
-                         (backward-char)
-                         (car (eww-links-at-point)))))
-      (my/eww-browse-url bib-url org))))
-
-(defun my/sanitize-org-entry ()
-  (let (retval)
-    (condition-case ex
-        (setq retval
-              (cond
-               ((not (equal (with-current-buffer my/org-heading-gscholar-launch-buffer major-mode)
-                            'org-mode)) "Not org mode")
-               ((not (with-current-buffer my/org-heading-gscholar-launch-buffer
-                       (org-entry-get my/org-heading-gscholar-launch-point "CUSTOM_ID")))
-                (with-current-buffer my/org-heading-gscholar-launch-buffer
-                  (org-set-property "CUSTOM_ID" "na_"))
-                "No property drawer or no property. Fixed")
-               (t (with-current-buffer my/org-heading-gscholar-launch-buffer
-                    (org-entry-get my/org-heading-gscholar-launch-point "CUSTOM_ID")))))
-      ('error (message (format "[pdf-refs] Caught exception: [%s]" ex))))
-    (message (concat "[pdf-refs] " retval)))
-  )
-
-
-(defun my/eww-check-bibtex-buffer-from-scholar ()
-  (let* ((buf (get-buffer " *scholar-entry*"))
-         (buf-string (if buf (with-current-buffer buf (buffer-string))
-                       (progn (message "[pdf-refs] Could not create buffer for scholar entry") nil))))
-    (if buf-string (cond ((string-match-p "systems have detected unusual" buf-string)
-                          (progn (message "[pdf-refs] Scholar is detecting a robot") nil))
-                         ((string-match-p "client does not have permission" buf-string)
-                          (progn (message "[pdf-refs] Scholar doesn't like EWW") nil))
-                         (t buf-string))
-                      (progn (message "[pdf-refs] Empty reply from scholar") nil))))
-
-
-(defun my/eww-render (status url buf org)
-  (eww-render status url nil buf)
-  (let ((buf-string (my/eww-check-bibtex-buffer-from-scholar)))
-    (if buf-string
-        (if org ;; Sanitize org entry and insert into org buffer
-            (progn
-              (my/sanitize-org-entry)
-              (let ((bib-assoc (with-current-buffer buf (goto-char (point-min)) (bibtex-parse-entry)))
-                    (current-key (with-current-buffer my/org-heading-gscholar-launch-buffer
-                                   (org-entry-get (point) "CUSTOM_ID"))))
-                (cond (((string-match-p "na_" current-key)
-                        (my/org-bibtex-convert-bib-to-property bib-assoc my/org-heading-gscholar-launch-buffer))
-                       ((y-or-n-p "Authoritative entry. Really replace?")
-                        (my/org-bibtex-convert-bib-to-property bib-assoc my/org-heading-gscholar-launch-buffer))))))
-          (let* ((temp-bib-file-name (file-name-nondirectory temp-bib-file-path))
-                 (buf (if (get-buffer temp-bib-file-name) (get-buffer temp-bib-file-name)
-                        (find-file-noselect temp-bib-file-path))))
-            (with-current-buffer buf (goto-char (point-min))
-                                      (insert buf-string))))
-      (message "[pdf-refs] Could not get entry from scholar"))
-    (if buf (kill-buffer buf))))
-
+;; DEPRECATED
+;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ;; shr, eww hacks for my/org-bibtex ;;
+;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ;; HACK
+;; ;; Redefine shr-map
+;; ;; TODO: remove redefine and use (bind-key)
+;; (defvar shr-map
+;;   (let ((map (make-sparse-keymap)))
+;;     (define-key map "a" 'shr-show-alt-text)
+;;     (define-key map "i" 'shr-browse-image)
+;;     (define-key map "z" 'shr-zoom-image)
+;;     (define-key map [?\t] 'shr-next-link)
+;;     (define-key map [?\M-\t] 'shr-previous-link)
+;;     (define-key map [follow-link] 'mouse-face)
+;;     (define-key map [mouse-2] 'shr-browse-url)
+;;     (define-key map "I" 'shr-insert-image)
+;;     (define-key map "w" 'shr-copy-url)
+;;     (define-key map "u" 'shr-copy-url)
+;;     (define-key map "RET" 'shr-browse-url)
+;;     (define-key map "o" 'shr-save-contents)
+;;     (define-key map "\r" 'shr-browse-url)
+;;     map))
+;; (defun org-search-heading-on-gscholar-with-eww ()
+;;   "Searches for the current heading in google scholar in eww"
+;;   (interactive)
+;;   ;; TODO: This code is repetitive. Dislike
+;;   (setq my/org-heading-gscholar-launch-point (point))
+;;   (setq my/org-heading-gscholar-launch-buffer (current-buffer))
+;;   (save-excursion
+;;     (let ((buf (generate-new-buffer " *scholar*"))
+;;           (query-string (org-get-heading t t)))
+;;       (with-current-buffer buf (insert (gscholar-bibtex-google-scholar-search-results
+;;                                         query-string)))
+;;       (shr-render-buffer buf)
+;;       (if (get-buffer "*google-scholar*")
+;;           (kill-buffer (get-buffer "*google-scholar*")))
+;;       (pop-to-buffer-same-window "*html*")
+;;       (rename-buffer "*google-scholar*")
+;;       (with-current-buffer (get-buffer "*google-scholar*")
+;;         (local-set-key (kbd "RET") 'eww-follow-link)
+;;         (local-set-key (kbd "b") 'my/eww-get-bibtex-from-scholar t)
+;;         (local-set-key (kbd "d") (lambda () (interactive)
+;;                                    (my/eww-download-pdf-from-scholar t)))
+;;         (local-set-key (kbd "i") 'my/import-link-to-org-buffer)
+;;         (local-set-key (kbd "q") 'quit-window)
+;;         (local-set-key (kbd "v") (lambda () (interactive)
+;;                                    (my/eww-view-and-download-if-required-pdf-from-scholar t)))
+;;         (read-only-mode))
+;;       (kill-buffer buf))))
 ;; (defun my/eww-get-bibtex-from-scholar-rest ()
 ;;   (my/sanitize-org-entry)
 ;;   (let* ((buf (get-buffer " *scholar-entry*"))
@@ -935,73 +882,6 @@ and stores it to my/bibtex-entry"
 ;;            (my/org-bibtex-convert-bib-to-property bib-assoc my/org-heading-gscholar-launch-buffer)))
 ;;     (if buf (kill-buffer buf))
 ;;     ))
-
-(defun my/eww-browse-url (url org)
-  (let ((buf (if (get-buffer " *scholar-entry*") (get-buffer " *scholar-entry*")
-               (generate-new-buffer " *scholar-entry*"))))
-    (with-current-buffer buf (eww-setup-buffer)
-                         (plist-put eww-data :url url)
-                         (plist-put eww-data :title "")
-                         (eww-update-header-line-format)
-                         (let ((inhibit-read-only t))
-                           (goto-char (point-min)))
-                         (url-retrieve url 'my/eww-render
-                                       ;; (list url nil (current-buffer)) t))))
-                                       (list url (current-buffer) org)))))
-
-;; Currently no TODO attribute is set on the org entry and no
-;; timestamp is marked. I should fix that.
-;;
-;; Perhaps author and publication information can also be added as a
-;; stopgap to see which paper to read first.
-;;
-;; The keybindings also have to be added.
-;;
-;; Now it's datetree format
-;; Not used
-;; (defun my/org-store-link-without-prompt ()
-;;   (push (list link "link") org-stored-links))
-;; Changed (org-insert-link nil link "link") to simple string insert
-;; Much easier
-(defun my/import-link-to-org-buffer ()
-"Generates a temporary buffer (currently ~/temp-org-links)
-and from the current eww buffer, copies the link there with an
-org heading as title. Perhaps I can include author also there,
-but that's too much work for now."
-  (interactive)
-  (save-excursion
-    (let* ((eww-buf (current-buffer))
-           (org-links-file-name (file-name-nondirectory org-links-file-path))
-           (buf (if (get-buffer org-links-file-name) (get-buffer org-links-file-name)
-                  (find-file-noselect org-links-file-path)))
-           (link (get-text-property (point) 'shr-url))
-           (link-text-begin (if link (progn
-                                       (while (equal link (get-text-property (point) 'shr-url))
-                                         (backward-char))
-                                       (forward-char) (point)) nil))
-           (link-text-end (if link (progn
-                                     (while (equal link (get-text-property (point) 'shr-url))
-                                       (forward-char)) (point)) nil))
-           (metadata (if link (progn (forward-line 2)
-                                     (with-current-buffer eww-buf
-                                       (buffer-substring-no-properties (point-at-bol) (point-at-eol))))))
-           )
-      (if (and link-text-begin link-text-end)
-          (with-current-buffer buf
-            (org-mode)
-            (org-datetree-find-date-create (org-date-to-gregorian (org-read-date t nil "now")))
-            (goto-char (point-at-eol))
-            (org-insert-subheading nil)
-            (insert (concat (with-current-buffer eww-buf
-                      (buffer-substring-no-properties link-text-begin link-text-end)) "\n"))
-            (org-indent-line) (insert (concat metadata "\n"))
-            (org-indent-line) (insert (concat "[[" link "][link]]"))
-            (message (concat "[pdf-refs] " "Imported entry " (with-current-buffer eww-buf
-                                                 (buffer-substring-no-properties link-text-begin link-text-end))
-                             " into buffer " org-links-file-path))
-            )
-        (message "[pdf-refs] No link under point"))
-      )))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; End shr, eww hacks for my/org-bibtex ;;
