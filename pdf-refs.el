@@ -1,6 +1,6 @@
 ;; Should I put a copyright assertion here? Isn't the whole purpose of
 ;; GPL to not have a copyright? It's confusing.
-;; 
+;;
 ;; Author: Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Keywords: extensions
 
@@ -27,14 +27,22 @@
 (require 'biblio-core)
 (require 'gscholar-bibtex)
 
-;;
-;; utility functions
-;;
+;; TODO should be defcustom
+(setq my/org-store-dir "/home/joe/org/pubs_org")
+(if (string-match-p "droid" (system-name))
+    (setq my/pubs-directory "/home/joe/pubs/bibtex")
+(setq my/bib-store-dir "/home/joe/PhD/bibtex"))
+
+;;;;;;;;;;;;;;;;;;;;;;;
+;; utility functions ;;
+;;;;;;;;;;;;;;;;;;;;;;;
+
 (defun firstn (x n)
   (butlast x (- (length x) n)))
 
-(defun butfirst (x n)
-  (last x (- (length x) n)))
+(defun butfirst (x &optional n)
+  (let ((n (if n n 1)))
+    (last x (- (length x) n))))
 
 (defun my/venue-pref (results)
   (if (= 1 (length results))
@@ -60,6 +68,11 @@
 
 (defun my/is-bibtex-key (item)
   (string= (car item) "=key="))
+
+(defun my/trim (str)
+  "Trims the string and replaces multiple spaces with a single one"
+  (replace-in-string (string-trim str) "[ ]+" " "))
+
 ;;
 ;; Constants. perhaps can name them better
 ;;
@@ -67,8 +80,6 @@
        (confs-seq (number-sequence (length confs) 1 -1)))
        (mapcar* 'cons confs confs-seq)))
 (setq my/key-list '(authors title venue volume number pages year doi ee))
-(setq my/org-store-dir "/home/joe/phd/pubs/org")
-(setq my/bib-store-dir "/home/joe/phd/pubs/bibs")
 (setq my/stop-words '("i" "it" "its" "what" "which" "who" "that" "these" "is" "are" "was" "were" "have" "has" "had" "having" "do" "does" "did" "a" "an" "the" "and" "because" "as" "of" "at" "by" "for" "with" "about" "against" "between" "into" "through" "during" "before" "after" "above" "below" "to" "from" "up" "down" "in" "out" "on" "off" "over" "under" "again" "further" "then" "once" "here" "there" "when" "where" "why" "how" "all" "any" "both" "each" "few" "more" "most" "other" "some" "such" "no" "nor" "not" "only" "own" "same" "so" "than" "too" "very" "s" "t" "can" "will" "just" "don" "should" "now"))
 (defun my/is-stop-word (x)
   (member x my/stop-words))
@@ -102,18 +113,60 @@ pairs for only the top result from my/venue-priorities."
 ;; TODO: build a different function so that \{etc} aren't there in bib keys
 ;; my/remove-non-ascii does something else entirely and I don't want accents
 ;; in the keys
-(defun my/build-bib-key (key-str)
+(defun my/build-bib-key (key-str &optional na)
   "builds a unique key with the format [author year
   first-title-word] entry from the list of (key . value)"
-  (let* ((first-author-str (car (split-string (car (cdr (assoc "authors" key-str))) "," t)))
+  (let* ((first-author-str (car (split-string (my/trim (car (cdr (assoc "authors" key-str)))) "," t)))
          (first-author (my/validate-author (split-string first-author-str " " t)))
          (last-name (car (last first-author)))
-         (year-pub (car (cdr (assoc "year" key-str))))
-         (title (remove-if 'my/is-stop-word (split-string (downcase (car (cdr (assoc "title" key-str)))) " ")))
+         (year-pub (my/trim (car (cdr (assoc "year" key-str)))))
+         (title (remove-if 'my/is-stop-word (split-string (downcase (my/trim (car (cdr (assoc "title" key-str))))) " ")))
          (title-first (car (split-string (first title) "-")))
+         (key (my/remove-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))
          )
-    (my/remove-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) ""))))
+    (if na (concat "na_" key) key)))
 
+(defun my/build-bib-key-from-parsed-org-bibtex (bib-assoc)
+  "builds a unique key with the format [author year
+  first-title-word] entry from the list of (key . value). Trims
+  the entries and converts multiple spaces to a single one."
+  (let* ((first-author-str (car (split-string (my/trim (cdr (assoc :author bib-assoc))) "," t)))
+         (first-author (my/validate-author (split-string first-author-str " " t)))
+         (last-name (car (last first-author)))
+         (year-pub (my/trim (cdr (assoc :year bib-assoc))))
+         (title (remove-if 'my/is-stop-word (split-string (downcase (my/trim (cdr (assoc :title bib-assoc)))) " ")))
+         (title-first (car (split-string (first title) "-")))
+         (key (my/remove-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))
+         )
+    key))
+
+(defun my/build-bib-assoc-from-parsed-org-bibtex (bib-assoc)
+  "builds the association list. can be used to build both the bib
+entry and org entry"
+  (let* ((key (my/build-bib-key-from-parsed-org-bibtex bib-assoc))
+         (author (cons "author" (my/trim (cdr (assoc :author bib-assoc)))))
+         (title (cons "title" (my/trim (cdr (assoc :title bib-assoc)))))
+         (year (cons "year" (my/trim (cdr (assoc :year bib-assoc)))))
+         (doi (cons "doi" (cdr (assoc :doi bib-assoc))))
+         (volume (cons "volume"  (cdr (assoc :volume bib-assoc))))
+         (number (cons "number"  (cdr (assoc :number bib-assoc))))
+         (pages  (cons "pages" (cdr (assoc :pages bib-assoc))))
+         (publisher  (cons "publisher" (cdr (assoc :publisher bib-assoc))))
+         (abstract (cons "abstract" (cdr (assoc :abstract bib-assoc))))
+         (url (cons "url" (cdr (assoc :ee bib-assoc))))
+         (url (cons "url" (cdr (assoc :ee bib-assoc))))
+         (url (if url url (cons "url" (cdr (assoc :url bib-assoc)))))
+         (tmp-venue (cdr (assoc :journal bib-assoc))) ;; TODO: expand venue
+         (tmp-venue (if tmp-venue tmp-venue (cdr (assoc :booktitle bib-assoc)))) ;; TODO: expand venue
+         (tmp-venue (if tmp-venue tmp-venue (cdr (assoc :venue bib-assoc)))) ;; TODO: expand venue
+         (venue (cons "venue" tmp-venue)) ;; TODO: expand venue
+         (howpublished (cdr (assoc :howpublished bib-assoc)))
+         (howpublished (if (and howpublished (> 1 (length (split-string howpublished "{"))))
+             (if (string-match-p "url" (nth 0 (split-string howpublished "{")))
+                 (car (split-string (nth 1 (split-string howpublished "{")) "}")) nil)
+             nil))
+         )
+    (list key (remove-if-not 'cdr (list abstract author title year doi volume number pages url venue publisher howpublished)))))
 
 (defun my/build-bib-key-from-parsed-bibtex (bib-assoc)
   "builds a unique key with the format [author year
@@ -127,32 +180,41 @@ pairs for only the top result from my/venue-priorities."
          )
     (my/remove-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) ""))))
 
-
 (defun my/validate-author (author)
   (if (or (string-match-p "[0-9]+" (car (last author)))
                   (string-match-p "^i$\\|^ii$\\|^iii$\\|^iv$" (downcase (car (last author)))))
       (if (> (length author) 2) (butlast author) (nconc (butlast author) '("")))
     author))
 
-
 (defun my/build-bib-author (author-str)
   "builds the \"author\" value according to bibtex format"
   (let* ((author-str (my/remove-non-ascii author-str))
          (author-str (replace-in-string (replace-in-string author-str "\\.$" "") ",$" ""))
          (authors (split-string author-str "," t))
-         (result-authors (mapcar (lambda (x)
-                                   (let ((temp-auth (my/validate-author (split-string x " " t))))
-                                     (if (= 1 (length temp-auth)) (car temp-auth)
-                                       (mapconcat 'car (list (last temp-auth) (butlast temp-auth)) ", "))
-                                     ))
-                                 authors)))
+         (result-authors
+          (mapcar (lambda (x)
+                    (let ((temp-auth (my/validate-author (split-string x " " t))))
+                      (if (= 1 (length temp-auth)) (car temp-auth)
+                        (mapconcat 'identity (list (car (last temp-auth))
+                                                   (mapconcat 'identity
+                                                              (butlast temp-auth) " ")) ", ")))) authors)))
     (mapconcat 'identity result-authors " and ")))
 
+(defun my/build-vernacular-author (author-str)
+  "Builds the \"author\" string as common spoken English. Assumes
+  that the input is in bib_author format"
+  (let* ((author-str (replace-in-string (replace-in-string author-str "\\.$" "") ",$" ""))
+         (authors (split-string author-str " and " t "[ ]+"))
+         (result-authors
+          (mapcar (lambda (x) (mapconcat 'identity (reverse (split-string x ", ")) " "))
+                  authors))
+         (result-authors (mapconcat 'identity result-authors " and ")))
+    result-authors))
 
-(defun my/build-bib-assoc (key-str)
+(defun my/build-bib-assoc (key-str &optional na)
   "builds the association list. can be used to build both the bib
 entry and org entry"
-  (let* ((key (my/build-bib-key key-str))
+  (let* ((key (my/build-bib-key key-str na))
          (author (cons "author" (my/build-bib-author
                                  (car (cdr (assoc "authors" key-str))))))
          (title (cons "title" (car (cdr (assoc "title" key-str)))))
@@ -170,7 +232,7 @@ entry and org entry"
          )
     (list key (remove-if-not 'cdr (list author title year doi volume number pages url venue)))))
 
-
+;; TODO: Add async callback with message "DONE" when done
 (defun my/get-references ()
   "this is the only entry point to fetch and write the references
 to a buffer right now. can change to have it in multiple steps."
@@ -178,42 +240,41 @@ to a buffer right now. can change to have it in multiple steps."
   (setq my/dblp-results ())
   (let*
       ((pdf-file-name (expand-file-name (buffer-file-name (current-buffer))))
-       (json-string (shell-command-to-string (format "curl -s -H\
-       \"content-type: application/pdf\" --data-binary @%s\
-       \"http://localhost:9191/v1\"" pdf-file-name)))
+       (json-string
+        (if (string-equal major-mode "pdf-view-mode")
+            (shell-command-to-string (format "curl -s -H\
+            \"content-type: application/pdf\" --data-binary @%s\
+            \"http://localhost:%s/v1\"" pdf-file-name server-port))
+          (progn (message "[pdf-refs] not pdf-view-mode") nil)))
        (json-object-type 'hash-table)
        (json-key-type 'string)
        (json-array-type 'list)
-       (json-string (json-read-from-string json-string))
+       (json-string (if json-string (json-read-from-string json-string) nil))
        ;; concats title and authors for each ref entry for easy lookup
-       (refs-list (mapcar (lambda (x)
-                            (cons (concat (gethash "title" x) " " (string-join (gethash "authors" x) " ")) x))
-                          (gethash "references" json-string))))
-    (setq my/science-parse-data json-string)
-    (setq my/abstract (gethash "abstracttext" json-string))
-    (setq my/title (gethash "title" json-string))
-    (setq my/refs-list refs-list)
-    (setq my/bibs "")
-    (my/generate-primary-buffer)
-    (my/dblp-fetch-parallel refs-list)
+       (refs-list (if json-string (mapcar (lambda (x)
+                                            (cons (concat (gethash "title" x) " "
+                                                          (string-join (gethash "authors" x) " ")) x))
+                                          (gethash "references" json-string)) nil)))
+    (if json-string
+        (progn
+          (setq my/science-parse-data json-string)
+          (setq my/abstract (gethash "abstracttext" json-string))
+          (setq my/title (gethash "title" json-string))
+          (setq my/refs-list refs-list)
+          (setq my/bibs "")
+          (my/generate-buffer-and-fetch refs-list))
+      (progn (message "[pdf-refs] empty pdf parse") nil))
     )
   nil)
 
-;; TODO: should not rely on names. Fix
-(defun my/get-org-buffer ()
+(defun my/generate-org-buffer (&optional visiting-filename)
   "Generated buffer where all the fetch results will be inserted"
-  (let ((buf (get-buffer (concat my/title "_org"))))
-    buf))
-
-
-(defun my/generate-org-buffer ()
-  "Generated buffer where all the fetch results will be inserted"
-  (let ((buf (get-buffer-create (concat my/title "_org")))
+  (let ((buf (get-buffer-create
+              (if visiting-filename visiting-filename (concat my/title "_org"))))
         (win (my/get-or-create-window-on-side)))
     (set-window-buffer win buf)
     (with-current-buffer buf (org-mode))
     buf))
-
 
 (defun my/get-or-create-window-on-side ()
   (let* ((orig-win (selected-window))
@@ -227,7 +288,7 @@ to a buffer right now. can change to have it in multiple steps."
 ;;
 ;; Maybe python-epc would be better.
 ;;
-(defun my/dblp-fetch-parallel (refs-list)
+(defun my/dblp-fetch-parallel (refs-list org-buf)
   "Fetches all dblp queries in parallel via async"
   (loop for ref-refs in refs-list do
         (async-start
@@ -241,7 +302,7 @@ to a buffer right now. can change to have it in multiple steps."
                   (with-current-buffer buf (buffer-string))
                 (kill-buffer buf))))
          `(lambda (buf-string)
-            ,(async-inject-variables "ref-refs")
+            ,(async-inject-variables "ref-refs\\|org-buf")
             (let ((guf (generate-new-buffer "*dblp-test*")))
               (with-current-buffer guf (insert buf-string))
               (with-current-buffer guf (set-buffer-multibyte t))
@@ -252,10 +313,7 @@ to a buffer right now. can change to have it in multiple steps."
                                         (mapcar (lambda (hit)
                                                   (gscholar-bibtex--xml-get-child hit 'info))
                                                 (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit))
-                                        )
-                                       ))
-                      (org-buf (my/get-org-buffer))
-                      )
+                                        ))))
                (with-current-buffer org-buf
                  (if key-str (my/org-bibtex-write-ref-from-assoc (my/build-bib-assoc key-str))
                    (my/org-bibtex-write-ref-NA-from-keyhash (cdr ref-refs))))
@@ -263,7 +321,7 @@ to a buffer right now. can change to have it in multiple steps."
              )))))))
 
 ;;
-;; Called by my/generate-primary-buffer
+;; Called by my/generate-buffer-and-fetch
 ;;
 (defun my/dblp-fetch-serial (query)
   "Fetch the dblp data synchronously. Would be used to insert the
@@ -279,37 +337,79 @@ top level heading"
                            (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit)))))
     ))
 
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Org generation and insertion stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun my/generate-primary-buffer ()
-  (let* ((org-buf (my/generate-org-buffer))
-         (key-str (my/dblp-fetch-serial  ;; assoc list
+;; (defun my/generate-key-hash-from-science-parse ()
+;;   (let ((key-hash (make-hash-table :test 'equal)))
+;;     (if (gethash "authors" my/science-parse-data)
+;;         (puthash "authors"
+;;                  (mapcar (lambda (x) (gethash "name" x)) (gethash "authors" my/science-parse-data)) key-hash))
+;;     (if (gethash "year" my/science-parse-data)
+;;         (puthash "year" (gethash "year" my/science-parse-data) key-hash))
+;;     (if (gethash "title" my/science-parse-data)
+;;         (puthash "title" (gethash "title" my/science-parse-data) key-hash))
+;;     (if (gethash "venue" my/science-parse-data)
+;;         (puthash "venue" (gethash "venue" my/science-parse-data) key-hash))
+;;     (if (gethash "pages" my/science-parse-data)
+;;         (puthash "pages" (gethash "pages" my/science-parse-data) key-hash))
+;;     (if (gethash "volume" my/science-parse-data)
+;;         (puthash "volume" (gethash "volume" my/science-parse-data) key-hash))
+;;     key-hash))
+
+(defun my/generate-key-str-from-science-parse ()
+  (let ((key-str ()))
+         (if (gethash "authors" my/science-parse-data)
+                     (add-to-list 'key-str (cons "authors"  (list (mapconcat (lambda (x) (gethash "name" x))
+                                                    (gethash "authors" my/science-parse-data) ", ")))))
+         ;; (if (gethash "authors" my/science-parse-data)
+         ;;             (add-to-list 'key-str (cons "authors"  (list (mapcar (lambda (x) (gethash "name" x))
+         ;;                                            (gethash "authors" my/science-parse-data))))))
+         (if (gethash "year" my/science-parse-data)
+                      (add-to-list 'key-str (cons "year" (list (format "%s" (gethash "year" my/science-parse-data))))))
+         (if (gethash "title" my/science-parse-data)
+             (add-to-list 'key-str (cons "title"  (list (gethash "title" my/science-parse-data)))))
+         (if (gethash "venue" my/science-parse-data)
+                      (add-to-list 'key-str (cons "venue" (list (gethash "venue" my/science-parse-data)))))
+        key-str))
+
+;; Fixed: "What if not key-str"
+(defun my/generate-buffer-and-fetch (refs-list)
+  (let* ((key-str (my/dblp-fetch-serial  ;; assoc list
                    (concat
                     (replace-regexp-in-string "[^\t\n\r\f -~]" ""  (gethash "title" my/science-parse-data)) " "
                     (string-join (mapcar (lambda (x) (gethash "name" x))
                                          (gethash "authors" my/science-parse-data)) " "))))
-         ;; What if not key-str?
-         (filename (my/build-bib-key key-str))
+         (na (not key-str))
+         (key-str (if (not key-str) (my/generate-key-str-from-science-parse) key-str))
+         (bib-assoc (my/build-bib-assoc key-str na))
+         (filename  (car bib-assoc))
+         (visiting-filename
+          (concat (string-remove-suffix "/" my/org-store-dir)
+                  "/" (string-remove-prefix "na_" filename) ".org"))
          )
-    ;; What if not filename?
-    (if filename
-        (with-current-buffer org-buf
-          (my/org-bibtex-write-heading-from-assoc (my/build-bib-assoc key-str))
-          (org-insert-heading-after-current)
-          (org-shiftmetaright)
-          ;; TODO: fix setting of file name
-          ;; (set-visited-file-name
-          ;;  (concat (string-remove-suffix "/" my/org-store-dir) "/" filename ".org"))
-          ))
+    ;; What if not filename? I guess that's a parse error
+    (if (file-exists-p visiting-filename)
+        (progn (message "[pdf-refs] File already exists. Opening")
+               (with-current-buffer (get-buffer-create (concat filename ".org"))
+                 (insert-file-contents visiting-filename t))
+               (my/generate-org-buffer (concat filename ".org")))
+      (if filename
+          (let ((org-buf (my/generate-org-buffer visiting-filename)))
+            (with-current-buffer org-buf
+              (my/org-bibtex-write-top-heading-from-assoc bib-assoc)
+              (org-insert-heading-after-current)
+              (org-shiftmetaright)
+              (my/dblp-fetch-parallel refs-list org-buf)
+              (set-visited-file-name visiting-filename))
+            )
+        (message "[pdf-refs] PDF Parse Error"))
+      )
     ))
 
-
-(defun my/org-bibtex-write-heading-from-assoc (entry)
-  "Generate an org entry from an association list retrieved via
-json."
+(defun my/org-bibtex-write-top-heading-from-assoc (entry)
+  "Generate the top level org entry for data parsed with science-parse."
   (let* ((key (car entry))
          (entry (nth 1 entry))
          )
@@ -413,8 +513,7 @@ json."
          (author-str (replace-in-string author-str "”" "\"")))
     author-str))
 
-
-(defun my/org-bibtex-write-ref-NA-from-keyhash (key-hash)
+(defun my/generate-NA-entry (key-hash)
   (if (and (gethash "title" key-hash) (gethash "authors" key-hash))
       (let* ((key (mapconcat (lambda (x) (replace-in-string (downcase x) " " ""))
                              (list "na" "_"
@@ -440,8 +539,55 @@ json."
                                       (replace-in-string (gethash "venue" key-hash) ",$" ""))))
              (entry (list key (remove-if-not 'cdr (list author title year venue volume number pages))))
              )
-        (my/org-bibtex-write-ref-from-assoc entry))))
+        entry)))
 
+(defun my/org-bibtex-write-ref-NA-from-keyhash (key-hash)
+  (my/org-bibtex-write-ref-from-assoc (my/generate-NA-entry key-hash)))
+
+(defun my/org-bibtex-write-ref-from-assoc-misc (entry)
+    (org-insert-heading-after-current)
+    (insert (cdr (assoc :title entry)))
+    (insert "\n")
+    (org-insert-property-drawer)
+    (loop for ent in entry
+          do
+          (if (not (string-equal (symbol-name (car ent)) ":type"))
+              (org-set-property (upcase (car (cdr (split-string (symbol-name (car ent)) ":"))))
+                                (cdr ent)))
+          ))
+
+(defun my/org-bibtex-write-ref-from-assoc-permissive (entry)
+  "Generate an org entry from an association list retrieved via
+json."
+  (let* ((key (car entry))
+         (entry (nth 1 entry))
+         )
+    (org-insert-heading-after-current)
+    (insert (cdr (assoc "title" entry)))
+    (insert "\n")
+    (if (assoc "author" entry)
+        (progn
+          (org-indent-line)
+          (insert (format "- Authors: %s\n" (my/remove-non-ascii (cdr (assoc "author" entry)))))))
+    (if (and (assoc "venue" entry) (assoc "year" entry))
+        (progn
+          (org-indent-line)
+          (insert (format "- %s\n" (concat (cdr (assoc "venue" entry)) ", " (cdr (assoc "year" entry)))))))
+    (if (assoc "howpublished" entry)
+        (progn
+          (org-indent-line)
+          (insert (format "- %s\n" (concat "Published as: " (cdr (assoc "venue" entry)))))))
+    (org-insert-property-drawer)
+    (loop for ent in entry
+          do
+          (if (not (string-equal (car ent) "abstract"))
+              (org-set-property (upcase (car ent)) (my/remove-non-ascii (my/fix (cdr ent))))
+            ))
+    (org-set-property "CUSTOM_ID" key)
+    (if (string-equal (assoc :type bib-assoc) "misc")
+        (org-set-property "BTYPE" "misc")
+      (org-set-property "BTYPE" "article"))
+  ))
 
 (defun my/org-bibtex-write-ref-from-assoc (entry)
   "Generate an org entry from an association list retrieved via
@@ -453,7 +599,13 @@ json."
     (insert (cdr (assoc "title" entry)))
     (insert "\n")
     (org-indent-line)
-    (insert (format "- Authors: %s" (my/remove-non-ascii (cdr (assoc "author" entry)))))
+    (if (assoc "abstract" entry)
+        (progn (insert (cdr (assoc "abstract" entry)))
+               (fill-paragraph)
+               (insert "\n")
+               (org-indent-line)))
+    (insert (format "- Authors: %s"
+                    (my/build-vernacular-author (my/remove-non-ascii (cdr (assoc "author" entry))))))
     (org-insert-item)
     (insert (concat (cdr (assoc "venue" entry)) ", " (cdr (assoc "year" entry))))
     (org-insert-property-drawer)
@@ -491,6 +643,66 @@ with 'bibtex from a bibtex entry"
           (`(,_ . ,_) (org-set-property (upcase (car ent)) (my/fix (cdr ent)))))
         ))
 
+(defun my/org-bibtex-read-bib-file-to-buffer (filename &optional buffername)
+  (interactive "sFile: ")
+  (if (file-exists-p filename)
+      (let* ((buffername
+             (if  buffername buffername (replace-in-string filename "\\.[a-z0-9]*?$" ".org")))
+             (org-buf (my/generate-org-buffer buffername)))
+        (setq org-bibtex-entries nil)
+        (org-bibtex-read-file filename)
+        (with-current-buffer org-buf
+          (org-insert-heading)
+          (loop for entry in org-bibtex-entries
+                do
+                (progn
+                  (if (string-equal (cdr (assoc :type entry)) "misc")
+                      (my/org-bibtex-write-ref-from-assoc-misc entry)
+                    (my/org-bibtex-write-ref-from-assoc
+                     (my/build-bib-assoc-from-parsed-org-bibtex entry)))
+                  ))
+          (goto-char (point-min))
+          (delete-char 3)
+          ))
+    (message (format "[pdf-refs] File %s does not exist" filename)))
+  )
+
+(defun my/org-bibtex-read-from-headline ()
+  (interactive)
+  (if (string-equal major-mode "org-mode")
+      (let* ((props (org-entry-properties))
+             (bib-str (list
+                       (cons "type"  (concat "@" (cdr (assoc "BTYPE" props))))
+                       (cons "key"  (cdr (assoc "CUSTOM_ID" props)))
+                       (cons "title"  (cdr (assoc "TITLE" props)))
+                       (cons "author"  (cdr (assoc "AUTHOR" props)))
+                       (cons "venue"  (cdr (assoc "VENUE" props)))
+                       (cons "volume"  (cdr (assoc "VOLUME" props)))
+                       (cons "number"  (cdr (assoc "NUMBER" props)))
+                       (cons "year"  (cdr (assoc "YEAR" props)))
+                       (cons "pages"  (cdr (assoc "PAGES" props)))
+                       (cons "doi"  (cdr (assoc "DOI" props)))
+                       (cons "url"  (cdr (assoc "URL" props)))
+                       (cons "publisher"  (cdr (assoc "PUBLISHER" props)))
+                       ))
+             (header (concat (cdr (assoc "type" bib-str)) "{" (cdr (assoc "key" bib-str)) ",\n"))
+             (bib-str (delq (assoc "type" bib-str) bib-str))
+             (bib-str (delq (assoc "key" bib-str) bib-str)))
+        (concat header
+                (mapconcat (lambda (x)
+                             (if (cdr x) (concat "  " (car x) "={" (cdr x) "},\n")))
+                           bib-str "") "}\n"))
+    (message "[pdf-refs] Not org mode")))
+
+(defun my/org-bibtex-insert-headline-as-bib-to-file ()
+  "Export current headline to kill ring as bibtex entry."
+  (interactive)
+  (let* ((result (my/org-bibtex-read-from-headline))
+        (temp-bib-file-name (file-name-nondirectory temp-bib-file-path))
+        (buf (if (get-buffer temp-bib-file-name) (get-buffer temp-bib-file-name)
+               (find-file-noselect temp-bib-file-path))))
+    (with-current-buffer buf (goto-char (point-min))
+                         (insert result))))
 
 (defun my/org-bibtex-convert-bib-to-property (assoc-list &optional buf)
   (let ((buf (if buf buf (current-buffer)))
@@ -504,278 +716,6 @@ with 'bibtex from a bibtex entry"
             (`("=key=" . ,_) (org-set-property "CUSTOM_ID" (my/fix (cdr ent))))
             (`(,_ . ,_) (org-set-property (upcase (car ent)) (my/fix (cdr ent)))))
           ))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;
-;; Begin Biblio stuff ;;
-;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defun org-search-heading-on-crossref-with-biblio ()
-  "Searches for the current heading in google scholar in eww"
-  (interactive)
-  (setq my/org-heading-gscholar-launch-point (point))
-  (setq my/org-heading-gscholar-launch-buffer (current-buffer))
-  (save-excursion
-    (let* ((query (org-get-heading t t))
-           (target-buffer (window-buffer (my/get-or-create-window-on-side)))
-           (backend #'biblio-crossref-backend)
-           (results-buffer (biblio--make-results-buffer target-buffer query backend)))
-      (biblio-url-retrieve
-       (funcall backend 'url query)
-       (my/biblio-callback results-buffer backend))
-      results-buffer)))
-
-
-(defun my/biblio-callback (results-buffer backend)
-  "Generate a search results callback for RESULTS-BUFFER.
-Results are parsed with (BACKEND 'parse-buffer)."
-  (setq my/biblio-callback-buf results-buffer)
-  (biblio-generic-url-callback
-   (lambda () ;; no allowed errors, so no arguments
-     "Parse results of bibliographic search."
-     (let ((results (biblio--tag-backend 'biblio-crossref-backend
-                                         (funcall 'biblio-crossref-backend 'parse-buffer)))
-           (win (my/get-or-create-window-on-side)))
-       (with-current-buffer my/biblio-callback-buf
-         (my/biblio-insert-results results (biblio--search-results-header))
-         (local-set-key (kbd "n") 'biblio--selection-next)
-         (local-set-key (kbd "p") 'biblio--selection-previous)
-         (local-set-key (kbd "o") 'my/parse-selected-entry-to-org))
-       (set-window-buffer win my/biblio-callback-buf)
-       (message "Tip: learn to browse results with `h'")))))
-
-
-(defun my/parse-selected-entry-to-org ()
-  (interactive)
-  (biblio--selection-forward-bibtex #'my/biblio-insert-to-org))
-
-
-(defun my/biblio-insert-to-org (bibtex entry)
-  (let* ((current-key (with-current-buffer my/org-heading-gscholar-launch-buffer
-                       (org-entry-get my/org-heading-gscholar-launch-point "CUSTOM_ID")))
-         (bibtex (replace-in-string (replace-in-string
-                  (progn (set-text-properties 0 (length bibtex) nil bibtex) bibtex)
-                  "\n" "") "[[:blank:]]+" " "))
-        (bib-assoc (with-temp-buffer (insert bibtex)
-                                     (goto-char (point-min))
-                                     (bibtex-parse-entry)))
-        (new-key (my/build-bib-key-from-parsed-bibtex bib-assoc))
-        (bib-assoc (remove-if 'my/is-bibtex-key bib-assoc)))
-    (setf (alist-get "=key=" bib-assoc) new-key)
-    (cond ((not bib-assoc) (message "Received nil entry"))
-          ((string-match-p "na_" current-key)
-           (my/org-bibtex-convert-bib-to-property bib-assoc my/org-heading-gscholar-launch-buffer))
-          ((y-or-n-p "Authoritative entry. Really replace?")
-           (my/org-bibtex-convert-bib-to-property bib-assoc my/org-heading-gscholar-launch-buffer)))
-    (pop-to-buffer my/org-heading-gscholar-launch-buffer)
-    ))
-
-
-(defun my/biblio-insert-results (items &optional header)
-  "Populate current buffer with ITEMS and HEADER, then display it."
-  (let ((inhibit-read-only t))
-    (erase-buffer)
-    (biblio--insert-header header)
-    (seq-do #'biblio-insert-result items))
-  (biblio--selection-first)
-  (hl-line-highlight))
-
-
-;;;;;;;;;;;;;;;;;;;;;;
-;; End Biblio stuff ;;
-;;;;;;;;;;;;;;;;;;;;;;
-
-;; HACK
-;; Redefine shr-map
-;; TODO: remove redefine and use (bind-key)
-(defvar shr-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map "a" 'shr-show-alt-text)
-    (define-key map "i" 'shr-browse-image)
-    (define-key map "z" 'shr-zoom-image)
-    (define-key map [?\t] 'shr-next-link)
-    (define-key map [?\M-\t] 'shr-previous-link)
-    (define-key map [follow-link] 'mouse-face)
-    (define-key map [mouse-2] 'shr-browse-url)
-    (define-key map "I" 'shr-insert-image)
-    (define-key map "w" 'shr-copy-url)
-    (define-key map "u" 'shr-copy-url)
-    (define-key map "RET" 'shr-browse-url)
-    (define-key map "o" 'shr-save-contents)
-    (define-key map "\r" 'shr-browse-url)
-    map))
-
-
-(defun org-search-heading-on-gscholar-with-eww ()
-  "Searches for the current heading in google scholar in eww"
-  (interactive)
-  (setq my/org-heading-gscholar-launch-point (point))
-  (setq my/org-heading-gscholar-launch-buffer (current-buffer))
-  (save-excursion
-    (let ((buf (generate-new-buffer " *scholar*"))
-          (query-string (org-get-heading t t)))
-      (with-current-buffer buf (insert (gscholar-bibtex-google-scholar-search-results
-                                        query-string)))
-      (shr-render-buffer buf)
-      (if (get-buffer "*google-scholar*")
-          (kill-buffer (get-buffer "*google-scholar*")))
-      (pop-to-buffer-same-window "*html*")
-      (rename-buffer "*google-scholar*")
-      (with-current-buffer (get-buffer "*google-scholar*")
-        (local-set-key (kbd "RET") 'eww-follow-link)
-        (local-set-key (kbd "i") 'my/eww-get-bibtex-from-scholar)
-        (local-set-key (kbd "d") 'my/eww-download-pdf-from-scholar)
-        (local-set-key (kbd "v") 'my/eww-view-and-download-if-required-pdf-from-scholar)
-        (local-set-key (kbd "q") 'quit-window)
-        (read-only-mode))
-      (kill-buffer buf))))
-
-
-(defun my/eww-get-bibtex-from-scholar ()
-  "Extracts the NEXT bibtex entry from a web page rendered with eww
-and stores it to my/bibtex-entry"
-  (interactive)
-  (save-excursion
-    (let
-        ((bib-url (progn (search-forward "import into bibtex")
-                         (backward-char)
-                         (car (eww-links-at-point)))))
-      (my/eww-browse-url bib-url))))
-
-
-;; Much cleaner code now
-;; Although, I think I'll remove the debug code later
-(defun my/eww-get-all-links (&optional frombegin substring)
-  (interactive)
-  (save-excursion
-    (if frombegin (goto-char (point-min)))
-    (setq my/eww-buffer-links nil)
-    (setq my/prev-url (get-text-property (point) 'shr-url)) ;; was my/current-url
-    (setq my/current-url nil)
-    (setq my/url-text-start (point))
-    (setq my/url-text-end (point))
-    (while (not (eobp))
-      ;; (debug)    
-      ;; Debug info
-      ;; (message (concat (format "%s" my/url-text-start) ", " (format "%s" my/url-text-end)))
-      ;; (message (format "%s" (string-match-p substring
-      ;;                                       (buffer-substring-no-properties my/url-text-start my/url-text-end))))
-      (if my/prev-url
-          (if substring
-              ;; (if (string-match-p substring my/prev-url)
-              ;; (buffer-substring-no-properties my/url-text-start my/url-text-end))
-              ;; More Debug code
-              ;;   (message (concat substring " matches " (buffer-substring-no-properties my/url-text-start my/url-text-end)))
-              ;;   (message (concat "URL was set at " (format "%s" my/url-text-end)))
-              ;; (if
-              ;; was my/current-url
-              ;; (progn
-              ;;   (message (concat "Copying " my/current-url))
-              ;; (setq my/eww-buffer-links (nconc my/eww-buffer-links (list my/current-url)))
-              ;; 
-              ;; (let ((url (get-text-property (- my/url-text-end 1) 'shr-url)))
-              ;;   (if url (setq my/eww-buffer-links (nconc my/eww-buffer-links (list url)))
-              ;;     (setq my/eww-buffer-links
-              ;;           (nconc my/eww-buffer-links (list (get-text-property my/url-text-end 'shr-url)))
-              ;;   )))
-              ;; (progn
-              ;;   (message (concat "Copying " my/prev-url))
-              (if (string-match-p substring my/prev-url)
-                  (setq my/eww-buffer-links (nconc my/eww-buffer-links (list my/prev-url)))
-                )
-            ;; (if my/prev-url
-            (setq my/eww-buffer-links (nconc my/eww-buffer-links (list my/prev-url)))
-            ))
-    ;; (setq my/eww-buffer-links (nconc my/eww-buffer-links
-    ;;                                  (list (get-text-property (- my/url-text-end 1) 'shr-url))))))
-    (setq my/prev-url my/current-url)
-    (setq my/current-url nil)
-    (setq my/url-text-start (+ 1 (point)))
-    (setq my/url-text-end (+ 1 (point)))
-    (while (and (not (eobp))
-                (equal (get-text-property (point) 'shr-url) my/prev-url))
-      (forward-char 1))               ;; not next link (same link)
-    (setq my/url-text-end (point))
-    (setq my/current-url (get-text-property (point) 'shr-url))
-    )
-  my/eww-buffer-links))
-
-
-(defun my/eww-download-and-view-pdf-from-scholar ()
-    (interactive)
-  (my/eww-download-pdf-from-scholar t))
-
-
-(defun my/eww-view-and-download-if-required-pdf-from-scholar ()
-  "View the pdf if it exists in the download directory and download if required"
-  (interactive)
-  (let* ((url (car (my/eww-get-all-links t "pdf")))
-            (obj (url-generic-parse-url url))
-            (path (car (url-path-and-query obj)))
-            (file (concat eww-download-directory (file-name-nondirectory path))))
-    (if (file-exists-p file)
-        (find-file-other-window file)
-      (my/eww-download-pdf-from-scholar t url))))
-
-
-(defun my/eww-download-callback (status url)
-  (unless (plist-get status :error)
-    (let* ((obj (url-generic-parse-url url))
-           (path (car (url-path-and-query obj)))
-           (file (concat eww-download-directory (file-name-nondirectory path))))
-      (if (file-exists-p file)
-          (if (y-or-n-p "File exists. Replace?")
-              (progn (goto-char (point-min))
-                     (re-search-forward "\r?\n\r?\n")
-                     (write-region (point) (point-max) file)
-                     (message "Saved %s" file)))
-        (goto-char (point-min))
-        (re-search-forward "\r?\n\r?\n")
-        (write-region (point) (point-max) file)
-        (message "Saved %s" file))
-      )))
-
-
-;; TODO: Maybe the file should be stored in Pubs somewhere, or some
-;; other variable and the filename should be automatically inserted as
-;; a link into the org file.
-;; So instead of scholar searching I can simply view it from org.
-;;
-;; TODO: When a pdf is stored for a link, automatically extract
-;; abstract from science-parse and add it to the abstract field.
-;;
-;; TODO: Fetch and parse pdfs in the background? That's too much
-;; 
-;; TODO: Should be async with wait from callback
-(defun my/eww-download-pdf-from-scholar (&optional view url)
-  "Downloads the pdf file and optionally view it"
-  (interactive)
-  (let ((url (if url url (car (my/eww-get-all-links t "pdf")))))
-    (if (not view)
-        (url-retrieve url 'my/eww-download-callback (list url))
-      (let* ((buf (url-retrieve-synchronously url t))
-             (buf-string (with-current-buffer buf (buffer-string))))
-        (if buf-string
-            (let* ((obj (url-generic-parse-url url))
-                   (path (car (url-path-and-query obj)))
-                   (file (concat eww-download-directory (file-name-nondirectory path))))
-              ;; (eww-make-unique-file-name
-              ;;  (eww-decode-url-file-name (file-name-nondirectory path))
-              ;;  eww-download-directory)
-              (if (file-exists-p file)
-                  (if (y-or-n-p "File exists. Replace?")
-                      (with-current-buffer buf
-                        (goto-char (point-min))
-                        (re-search-forward "\r?\n\r?\n")
-                        (write-region (point) (point-max) file)))
-                (with-current-buffer buf
-                  (goto-char (point-min))
-                  (re-search-forward "\r?\n\r?\n")
-                  (write-region (point) (point-max) file)))
-              (find-file-other-window file)
-              ))
-        (kill-buffer buf))
-      )))
-
 
 (defun my/sanitize-org-entry ()
   (let (retval)
@@ -791,110 +731,158 @@ and stores it to my/bibtex-entry"
                 "No property drawer or no property. Fixed")
                (t (with-current-buffer my/org-heading-gscholar-launch-buffer
                     (org-entry-get my/org-heading-gscholar-launch-point "CUSTOM_ID")))))
-      ('error (message (format "Caught exception: [%s]" ex))))
-    (message retval))
+      ('error (message (format "[pdf-refs] Caught exception: [%s]" ex))))
+    (message (concat "[pdf-refs] " retval)))
   )
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; End Org generation and insertion stuff ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;;;;;;;;;;;;;;;;;;;;;;;;
+;; Begin Biblio stuff ;;
+;;;;;;;;;;;;;;;;;;;;;;;;
+(defun org-search-heading-on-crossref-with-biblio ()
+  "Searches for the current heading in google scholar in eww"
+  (interactive)
+  (setq my/org-heading-gscholar-launch-point (point))
+  (setq my/org-heading-gscholar-launch-buffer (current-buffer))
+  (save-excursion
+    (let* ((query (org-get-heading t t))
+           (target-buffer (window-buffer (my/get-or-create-window-on-side)))
+           (backend #'biblio-crossref-backend)
+           (results-buffer (biblio--make-results-buffer target-buffer query backend)))
+      (biblio-url-retrieve
+       (funcall backend 'url query)
+       (my/biblio-callback results-buffer backend))
+      results-buffer)))
 
-(defun my/eww-get-bibtex-from-scholar-rest ()
-  (my/sanitize-org-entry)
-  (let* ((buf (get-buffer " *scholar-entry*"))
-         (buf-string (if buf (with-current-buffer buf (buffer-string))
-                       (progn (message "Could not create buffer for scholar entry") nil)))
-         (bib-assoc (if buf-string (cond ((string-match-p "systems have detected unusual" buf-string)
-                                          (progn (message "Scholar is detecting a robot") nil))
-                                         ((string-match-p "client does not have permission" buf-string)
-                                          (progn (message "Scholar doesn't like EWW") nil))
-                                         (t (with-current-buffer buf (goto-char (point-min)) (bibtex-parse-entry))))
-                      (progn (message "Empty reply from scholar") nil)))
-         (current-key (with-current-buffer my/org-heading-gscholar-launch-buffer
-                        (org-entry-get (point) "CUSTOM_ID"))))
-    (cond ((not bib-assoc) (message "Could not get entry from scholar"))
+(defun my/biblio-callback (results-buffer backend)
+  "Generate a search results callback for RESULTS-BUFFER.
+Results are parsed with (BACKEND 'parse-buffer)."
+;; TODO: Did let not work here?
+  (setq my/biblio-callback-buf results-buffer)
+  (biblio-generic-url-callback
+   (lambda () ;; no allowed errors, so no arguments
+     "Parse results of bibliographic search."
+     (let ((results (biblio--tag-backend 'biblio-crossref-backend
+                                         (funcall 'biblio-crossref-backend 'parse-buffer)))
+           (win (my/get-or-create-window-on-side)))
+       (with-current-buffer my/biblio-callback-buf
+         (my/biblio-insert-results results (biblio--search-results-header))
+         (local-set-key (kbd "n") 'biblio--selection-next)
+         (local-set-key (kbd "p") 'biblio--selection-previous)
+         (local-set-key (kbd "o") 'my/parse-selected-entry-to-org))
+       (set-window-buffer win my/biblio-callback-buf)
+       (message "[pdf-refs] Tip: learn to browse results with `h'")))))
+
+(defun my/parse-selected-entry-to-org ()
+  (interactive)
+  (biblio--selection-forward-bibtex #'my/biblio-insert-to-org))
+
+(defun my/biblio-insert-to-org (bibtex entry)
+  (let* ((current-key (with-current-buffer my/org-heading-gscholar-launch-buffer
+                       (org-entry-get my/org-heading-gscholar-launch-point "CUSTOM_ID")))
+         (bibtex (replace-in-string (replace-in-string
+                  (progn (set-text-properties 0 (length bibtex) nil bibtex) bibtex)
+                  "\n" "") "[[:blank:]]+" " "))
+        (bib-assoc (with-temp-buffer (insert bibtex)
+                                     (goto-char (point-min))
+                                     (bibtex-parse-entry)))
+        (new-key (my/build-bib-key-from-parsed-bibtex bib-assoc))
+        (bib-assoc (remove-if 'my/is-bibtex-key bib-assoc)))
+    (setf (alist-get "=key=" bib-assoc) new-key)
+    (cond ((not bib-assoc) (message "[pdf-refs] Received nil entry"))
           ((string-match-p "na_" current-key)
            (my/org-bibtex-convert-bib-to-property bib-assoc my/org-heading-gscholar-launch-buffer))
           ((y-or-n-p "Authoritative entry. Really replace?")
            (my/org-bibtex-convert-bib-to-property bib-assoc my/org-heading-gscholar-launch-buffer)))
-    (if buf (kill-buffer buf))
+    (pop-to-buffer my/org-heading-gscholar-launch-buffer)
     ))
 
-
-(defun my/eww-render (status url buf)
-  (eww-render status url nil buf)
-  (my/eww-get-bibtex-from-scholar-rest))
-
-
-(defun my/eww-browse-url (url)
-  (let ((buf (if (get-buffer " *scholar-entry*") (get-buffer " *scholar-entry*")
-               (generate-new-buffer " *scholar-entry*"))))
-    (with-current-buffer buf (eww-setup-buffer)
-                         (plist-put eww-data :url url)
-                         (plist-put eww-data :title "")
-                         (eww-update-header-line-format)
-                         (let ((inhibit-read-only t))
-                           (goto-char (point-min)))
-                         (url-retrieve url 'my/eww-render
-                                       ;; (list url nil (current-buffer)) t))))
-                                       (list url (current-buffer))))))
+(defun my/biblio-insert-results (items &optional header)
+  "Populate current buffer with ITEMS and HEADER, then display it."
+  (let ((inhibit-read-only t))
+    (erase-buffer)
+    (biblio--insert-header header)
+    (seq-do #'biblio-insert-result items))
+  (biblio--selection-first)
+  (hl-line-highlight))
+;;;;;;;;;;;;;;;;;;;;;;
+;; End Biblio stuff ;;
+;;;;;;;;;;;;;;;;;;;;;;
 
 
-;; Currently no TODO attribute is set on the org entry and no
-;; timestamp is marked. I should fix that.
-;; 
-;; Perhaps author and publication information can also be added as a
-;; stopgap to see which paper to read first.
-;;
-;; The keybindings also have to be added.
-;;
-;; Now it's datetree format
-(defun my/import-link-to-org-buffer ()
-"Generates a temporary buffer (currently ~/.emacs.d/temp-org-links) 
-and from the current eww buffer, copies the link there with an
-org heading as title. Perhaps I can include author also there,
-but that's too much work for now."
-  (interactive)
-  (save-excursion
-    (let* ((eww-buf (current-buffer))
-           (buf (if (get-buffer "temp-org-links") (get-buffer "temp-org-links")
-                  (progn
-                    (generate-new-buffer "temp-org-links")
-                    (with-current-buffer (get-buffer "temp-org-links")
-                      (set-visited-file-name (expand-file-name "~/.emacs.d/temp-org-links"))
-                      (org-mode))
-                    (get-buffer "temp-org-links"))))
-           (link (get-text-property (point) 'shr-url))
-           (link-text-begin (if link (progn
-                                       (while (equal link (get-text-property (point) 'shr-url))
-                                         (backward-char))
-                                       (forward-char) (point)) nil))
-           (link-text-end (if link (progn
-                                     (while (equal link (get-text-property (point) 'shr-url))
-                                       (forward-char)) (point)) nil))
-           (metadata (if link (progn (forward-line 2)
-                                     (with-current-buffer eww-buf
-                                       (buffer-substring-no-properties (point-at-bol) (point-at-eol))))))
-           )
-      (if (and link-text-begin link-text-end)
-          (with-current-buffer buf
-            (org-datetree-find-date-create (org-date-to-gregorian (org-read-date t nil "now")))
-            (goto-char (point-at-eol))
-            (org-insert-subheading nil)
-            (insert (concat (with-current-buffer eww-buf
-                      (buffer-substring-no-properties link-text-begin link-text-end)) "\n"))
-            (org-indent-line) (insert (concat metadata "\n"))
-            (org-indent-line) (org-insert-link nil link "link")
-            )
-        (message "No link under point"))
-      )))
-          
+;; DEPRECATED
+;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ;; shr, eww hacks for my/org-bibtex ;;
+;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; ;; HACK
+;; ;; Redefine shr-map
+;; ;; TODO: remove redefine and use (bind-key)
+;; (defvar shr-map
+;;   (let ((map (make-sparse-keymap)))
+;;     (define-key map "a" 'shr-show-alt-text)
+;;     (define-key map "i" 'shr-browse-image)
+;;     (define-key map "z" 'shr-zoom-image)
+;;     (define-key map [?\t] 'shr-next-link)
+;;     (define-key map [?\M-\t] 'shr-previous-link)
+;;     (define-key map [follow-link] 'mouse-face)
+;;     (define-key map [mouse-2] 'shr-browse-url)
+;;     (define-key map "I" 'shr-insert-image)
+;;     (define-key map "w" 'shr-copy-url)
+;;     (define-key map "u" 'shr-copy-url)
+;;     (define-key map "RET" 'shr-browse-url)
+;;     (define-key map "o" 'shr-save-contents)
+;;     (define-key map "\r" 'shr-browse-url)
+;;     map))
+;; (defun org-search-heading-on-gscholar-with-eww ()
+;;   "Searches for the current heading in google scholar in eww"
+;;   (interactive)
+;;   ;; TODO: This code is repetitive. Dislike
+;;   (setq my/org-heading-gscholar-launch-point (point))
+;;   (setq my/org-heading-gscholar-launch-buffer (current-buffer))
+;;   (save-excursion
+;;     (let ((buf (generate-new-buffer " *scholar*"))
+;;           (query-string (org-get-heading t t)))
+;;       (with-current-buffer buf (insert (gscholar-bibtex-google-scholar-search-results
+;;                                         query-string)))
+;;       (shr-render-buffer buf)
+;;       (if (get-buffer "*google-scholar*")
+;;           (kill-buffer (get-buffer "*google-scholar*")))
+;;       (pop-to-buffer-same-window "*html*")
+;;       (rename-buffer "*google-scholar*")
+;;       (with-current-buffer (get-buffer "*google-scholar*")
+;;         (local-set-key (kbd "RET") 'eww-follow-link)
+;;         (local-set-key (kbd "b") 'my/eww-get-bibtex-from-scholar t)
+;;         (local-set-key (kbd "d") (lambda () (interactive)
+;;                                    (my/eww-download-pdf-from-scholar t)))
+;;         (local-set-key (kbd "i") 'my/import-link-to-org-buffer)
+;;         (local-set-key (kbd "q") 'quit-window)
+;;         (local-set-key (kbd "v") (lambda () (interactive)
+;;                                    (my/eww-view-and-download-if-required-pdf-from-scholar t)))
+;;         (read-only-mode))
+;;       (kill-buffer buf))))
+;; (defun my/eww-get-bibtex-from-scholar-rest ()
+;;   (my/sanitize-org-entry)
+;;   (let* ((buf (get-buffer " *scholar-entry*"))
+;;          (buf-string (if buf (with-current-buffer buf (buffer-string))
+;;                        (progn (message "[pdf-refs] Could not create buffer for scholar entry") nil)))
+;;          (bib-assoc (if buf-string (cond ((string-match-p "systems have detected unusual" buf-string)
+;;                                           (progn (message "[pdf-refs] Scholar is detecting a robot") nil))
+;;                                          ((string-match-p "client does not have permission" buf-string)
+;;                                           (progn (message "[pdf-refs] Scholar doesn't like EWW") nil))
+;;                                          (t (with-current-buffer buf (goto-char (point-min)) (bibtex-parse-entry))))
+;;                       (progn (message "[pdf-refs] Empty reply from scholar") nil)))
+;;          (current-key (with-current-buffer my/org-heading-gscholar-launch-buffer
+;;                         (org-entry-get (point) "CUSTOM_ID"))))
+;;     (cond ((not bib-assoc) (message "[pdf-refs] Could not get entry from scholar"))
+;;           ((string-match-p "na_" current-key)
+;;            (my/org-bibtex-convert-bib-to-property bib-assoc my/org-heading-gscholar-launch-buffer))
+;;           ((y-or-n-p "Authoritative entry. Really replace?")
+;;            (my/org-bibtex-convert-bib-to-property bib-assoc my/org-heading-gscholar-launch-buffer)))
+;;     (if buf (kill-buffer buf))
+;;     ))
 
-(defun my/pdf-refs-init ()
-  ;; auth just to be safe
-  (async-start-process "auth" "/home/joe/bin/myauth" nil)
-  (if (not (string-match-p "akshay@10.5.0.88" (shell-command-to-string  "ps -ef | grep ssh")))
-      (async-start-process "ssh" "ssh" nil "-N" "-L" "9191:localhost:9191" "akshay@10.5.0.88"))
-  (sleep-for 1)
-  (if (not (string-match-p "Usage"
-                           (shell-command-to-string "curl -s localhost:9191")))
-      (message "ERROR! Check connections") (message "Established connection to server successfully")))
-
-(my/pdf-refs-init)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; End shr, eww hacks for my/org-bibtex ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
