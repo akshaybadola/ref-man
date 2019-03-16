@@ -28,21 +28,14 @@
 (require 'gscholar-bibtex)
 
 ;; TODO should be defcustom
-(setq my/org-store-dir "/home/joe/org/pubs_org")
+(setq my/org-store-dir "/home/joe/org/pubs_org/")
 (if (string-match-p "droid" (system-name))
-    (setq my/pubs-directory "/home/joe/pubs/bibtex")
-(setq my/bib-store-dir "/home/joe/PhD/bibtex"))
+    (setq my/bib-store-dir "/home/joe/pubs/bibtex/")
+(setq my/bib-store-dir "/home/joe/PhD/bibtex/"))
 
 ;;;;;;;;;;;;;;;;;;;;;;;
 ;; utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;
-
-(defun firstn (x n)
-  (butlast x (- (length x) n)))
-
-(defun butfirst (x &optional n)
-  (let ((n (if n n 1)))
-    (last x (- (length x) n))))
 
 (defun my/venue-pref (results)
   (if (= 1 (length results))
@@ -51,17 +44,6 @@
            (prefs (mapcar (lambda (x) (cdr (assoc (car (last x)) my/venue-priorities))) venues)))
       prefs)))
 
-(defun my/max-ind (seq)
-  (let* ((my/max-val 0) (my/ind -1) (my/max 0))
-    (loop for x in seq
-          do
-          (progn
-            (setq my/ind (+ 1 my/ind))
-            (if x (if (> x my/max-val)
-                      (progn (setq my/max-val x)
-                             (setq my/max my/ind))))))
-    my/max))
-
 (defun my/fix (str)
   "gets text between parentheses {}"
   (string-remove-suffix "}" (string-remove-prefix "{" str)))
@@ -69,12 +51,9 @@
 (defun my/is-bibtex-key (item)
   (string= (car item) "=key="))
 
-(defun my/trim (str)
-  "Trims the string and replaces multiple spaces with a single one"
-  (replace-in-string (string-trim str) "[ ]+" " "))
-
 ;;
 ;; Constants. perhaps can name them better
+;; Also should be shifted to defcustom
 ;;
 (setq my/venue-priorities (let* ((confs '("icml" "nips" "iccv" "cvpr" "eccv"))
        (confs-seq (number-sequence (length confs) 1 -1)))
@@ -257,6 +236,7 @@ to a buffer right now. can change to have it in multiple steps."
                                           (gethash "references" json-string)) nil)))
     (if json-string
         (progn
+          (setq my/pdf-file-name pdf-file-name)
           (setq my/science-parse-data json-string)
           (setq my/abstract (gethash "abstracttext" json-string))
           (setq my/title (gethash "title" json-string))
@@ -386,8 +366,7 @@ top level heading"
          (bib-assoc (my/build-bib-assoc key-str na))
          (filename  (car bib-assoc))
          (visiting-filename
-          (concat (string-remove-suffix "/" my/org-store-dir)
-                  "/" (string-remove-prefix "na_" filename) ".org"))
+          (path-join (string-remove-prefix "na_" filename) ".org"))
          )
     ;; What if not filename? I guess that's a parse error
     (if (file-exists-p visiting-filename)
@@ -412,7 +391,8 @@ top level heading"
   "Generate the top level org entry for data parsed with science-parse."
   (let* ((key (car entry))
          (entry (nth 1 entry))
-         )
+         (pdf-file-name (if (string-match-p (concat "^" my/pdf-pubs-directory) my/pdf-file-name)
+                            my/pdf-file-name nil)))
     (org-insert-heading)
     (insert (cdr (assoc "title" entry)))
     (insert "\n")
