@@ -242,7 +242,7 @@ to a buffer right now. can change to have it in multiple steps."
           (setq my/title (gethash "title" json-string))
           (setq my/refs-list refs-list)
           (setq my/bibs "")
-          (my/generate-buffer-and-fetch refs-list))
+          (my/generate-buffer-and-fetch-if-required refs-list))
       (progn (message "[pdf-refs] empty pdf parse") nil))
     )
   nil)
@@ -255,6 +255,15 @@ to a buffer right now. can change to have it in multiple steps."
     (set-window-buffer win buf)
     (with-current-buffer buf (org-mode))
     buf))
+
+(defun my/generate-org-buffer-content (org-buf refs-list bib-assoc visiting-filename)
+  (with-current-buffer org-buf
+    (my/org-bibtex-write-top-heading-from-assoc bib-assoc)
+    (org-insert-heading-after-current)
+    (org-shiftmetaright)
+    (my/dblp-fetch-parallel refs-list org-buf)
+    (set-visited-file-name visiting-filename))
+  )
 
 (defun my/get-or-create-window-on-side ()
   (let* ((orig-win (selected-window))
@@ -301,7 +310,7 @@ to a buffer right now. can change to have it in multiple steps."
              )))))))
 
 ;;
-;; Called by my/generate-buffer-and-fetch
+;; Called by my/generate-buffer-and-fetch-if-required
 ;;
 (defun my/dblp-fetch-serial (query)
   "Fetch the dblp data synchronously. Would be used to insert the
@@ -355,7 +364,7 @@ top level heading"
         key-str))
 
 ;; Fixed: "What if not key-str"
-(defun my/generate-buffer-and-fetch (refs-list)
+(defun my/generate-buffer-and-fetch-if-required (refs-list)
   (let* ((key-str (my/dblp-fetch-serial  ;; assoc list
                    (concat
                     (replace-regexp-in-string "[^\t\n\r\f -~]" ""  (gethash "title" my/science-parse-data)) " "
@@ -366,25 +375,28 @@ top level heading"
          (bib-assoc (my/build-bib-assoc key-str na))
          (filename  (car bib-assoc))
          (visiting-filename
-          (path-join (string-remove-prefix "na_" filename) ".org"))
+          (path-join (list my/org-store-dir (concat (string-remove-prefix "na_" filename) ".org"))))
+         (buf (find-buffer-visiting visiting-filename))
          )
-    ;; What if not filename? I guess that's a parse error
-    (if (file-exists-p visiting-filename)
-        (progn (message "[pdf-refs] File already exists. Opening")
-               (with-current-buffer (get-buffer-create (concat filename ".org"))
-                 (insert-file-contents visiting-filename t))
-               (my/generate-org-buffer (concat filename ".org")))
-      (if filename
-          (let ((org-buf (my/generate-org-buffer visiting-filename)))
-            (with-current-buffer org-buf
-              (my/org-bibtex-write-top-heading-from-assoc bib-assoc)
-              (org-insert-heading-after-current)
-              (org-shiftmetaright)
-              (my/dblp-fetch-parallel refs-list org-buf)
-              (set-visited-file-name visiting-filename))
-            )
-        (message "[pdf-refs] PDF Parse Error"))
-      )
+    (if (not filename)
+        (message "[pdf-refs] filename could not be generated!")
+      (progn (cond ((and buf (with-current-buffer buf (buffer-string)))
+                    (progn (message "[pdf-refs] File is already opened and not empty. Switching")
+                           (my/generate-org-buffer (concat filename ".org"))))
+                   ((and buf (not (with-current-buffer buf (buffer-string)))
+                         (file-exists-p visiting-filename))
+                    (with-current-buffer (get-buffer-create (concat filename ".org"))
+                      (insert-file-contents visiting-filename t)))
+                   ((and (not buf) (file-exists-p visiting-filename))
+                    (progn (message "[pdf-refs] File already exists. Opening")
+                           (let ((org-buf (my/generate-org-buffer (concat filename ".org"))))
+                             (if (not (with-current-buffer org-buf
+                                        (insert-file-contents visiting-filename t) (buffer-string)))
+                                 (my/generate-org-buffer-content org-buf refs-list bib-assoc visiting-filename)))))
+                   ((and (not buf) (not (file-exists-p visiting-filename)))
+                           (let ((org-buf (my/generate-org-buffer (concat filename ".org"))))
+                             (my/generate-org-buffer-content org-buf refs-list bib-assoc visiting-filename)))
+                   )))
     ))
 
 (defun my/org-bibtex-write-top-heading-from-assoc (entry)
@@ -687,15 +699,18 @@ with 'bibtex from a bibtex entry"
 (defun my/org-bibtex-convert-bib-to-property (assoc-list &optional buf)
   (let ((buf (if buf buf (current-buffer)))
         (entry assoc-list))
-  (with-current-buffer buf
-    (loop for ent in entry
-          do
-          (pcase ent
-            (`("abstract" . ,_))
-            (`("=type=" . ,_) (org-set-property "BTYPE" (my/fix (cdr ent))))
-            (`("=key=" . ,_) (org-set-property "CUSTOM_ID" (my/fix (cdr ent))))
-            (`(,_ . ,_) (org-set-property (upcase (car ent)) (my/fix (cdr ent)))))
-          ))))
+    (with-current-buffer buf
+      (goto-char my/org-heading-gscholar-launch-point)
+      (if (cdr (assoc "title" assoc-list))
+          (org-edit-headline (cdr (assoc "title" assoc-list))))      
+      (loop for ent in entry
+            do
+            (pcase ent
+              (`("abstract" . ,_))
+              (`("=type=" . ,_) (org-set-property "BTYPE" (my/fix (cdr ent))))
+              (`("=key=" . ,_) (org-set-property "CUSTOM_ID" (my/fix (cdr ent))))
+              (`(,_ . ,_) (org-set-property (upcase (car ent)) (my/fix (cdr ent)))))
+            ))))
 
 (defun my/sanitize-org-entry ()
   (let (retval)
