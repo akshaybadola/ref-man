@@ -243,9 +243,7 @@ to a buffer right now. can change to have it in multiple steps."
           (setq my/refs-list refs-list)
           (setq my/bibs "")
           (my/generate-buffer-and-fetch-if-required refs-list))
-      (progn (message "[pdf-refs] empty pdf parse") nil))
-    )
-  nil)
+      (progn (message "[pdf-refs] empty pdf parse") nil))))
 
 (defun my/generate-org-buffer (&optional visiting-filename)
   "Generated buffer where all the fetch results will be inserted"
@@ -260,10 +258,12 @@ to a buffer right now. can change to have it in multiple steps."
   (with-current-buffer org-buf
     (my/org-bibtex-write-top-heading-from-assoc bib-assoc)
     (org-insert-heading-after-current)
-    (org-shiftmetaright)
+    (org-demote-subtree)
+    (insert "Refs")
+    (org-insert-heading-after-current)    
+    (org-demote-subtree)
     (my/dblp-fetch-parallel refs-list org-buf)
-    (set-visited-file-name visiting-filename))
-  )
+    (set-visited-file-name visiting-filename)))
 
 (defun my/get-or-create-window-on-side ()
   (let* ((orig-win (selected-window))
@@ -279,6 +279,7 @@ to a buffer right now. can change to have it in multiple steps."
 ;;
 (defun my/dblp-fetch-parallel (refs-list org-buf)
   "Fetches all dblp queries in parallel via async"
+  (setq my/dblp-fetch-parallel--results nil)
   (loop for ref-refs in refs-list do
         (async-start
          `(lambda ()
@@ -291,7 +292,7 @@ to a buffer right now. can change to have it in multiple steps."
                   (with-current-buffer buf (buffer-string))
                 (kill-buffer buf))))
          `(lambda (buf-string)
-            ,(async-inject-variables "ref-refs\\|org-buf")
+            ,(async-inject-variables "ref-refs\\|org-buf\\|my/dblp-fetch-parallel--results")
             (let ((guf (generate-new-buffer "*dblp-test*")))
               (with-current-buffer guf (insert buf-string))
               (with-current-buffer guf (set-buffer-multibyte t))
@@ -301,13 +302,112 @@ to a buffer right now. can change to have it in multiple steps."
                                        (my/dblp-clean
                                         (mapcar (lambda (hit)
                                                   (gscholar-bibtex--xml-get-child hit 'info))
-                                                (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit))
-                                        ))))
-               (with-current-buffer org-buf
-                 (if key-str (my/org-bibtex-write-ref-from-assoc (my/build-bib-assoc key-str))
-                   (my/org-bibtex-write-ref-NA-from-keyhash (cdr ref-refs))))
-               (kill-buffer guf)
-             )))))))
+                                                (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit))))))
+                  (with-current-buffer org-buf
+                    (if key-str (my/org-bibtex-write-ref-from-assoc (my/build-bib-assoc key-str))
+                      (my/org-bibtex-write-ref-NA-from-keyhash (cdr ref-refs))))
+                  (kill-buffer guf))))))))
+
+;; ;;
+;; ;; Maybe python-epc would be better.
+;; ;;
+;; (defun my/dblp-fetch-parallel-new (refs-list org-buf)
+;;   "Fetches all dblp queries in parallel via async"
+;;   (setq my/all-ready nil)
+;;   (setq my/dblp-fetch-parallel--results nil)
+;;   (loop for ref-refs in refs-list do
+;;         (push (async-start
+;;                `(lambda ()
+;;                   ;; (defun replace-in-string (what with in)
+;;                   ;;   (replace-regexp-in-string (regexp-quote what) with in nil 'literal))
+;;                   ,(async-inject-variables "ref-refs")
+;;                   (let* ((mah-url (format "http://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" (car ref-refs)))
+;;                          (buf (url-retrieve-synchronously mah-url)))
+;;                     (prog2 (with-current-buffer buf (set-buffer-multibyte t))
+;;                         (with-current-buffer buf (buffer-string))
+;;                       (kill-buffer buf))))
+;;                `(lambda (buf-string)
+;;                   ,(async-inject-variables "ref-refs\\|org-buf\\|my/dblp-fetch-parallel--results")
+;;                   (let ((guf (generate-new-buffer "*dblp-test*")))
+;;                     (with-current-buffer guf (insert buf-string))
+;;                     (with-current-buffer guf (set-buffer-multibyte t))
+;;                     (pcase-let ((`(,(and result `(result . ,_)))
+;;                                  (xml-parse-region nil nil guf)))
+;;                       (let ((key-str (remove nil
+;;                                              (my/dblp-clean
+;;                                               (mapcar (lambda (hit)
+;;                                                         (gscholar-bibtex--xml-get-child hit 'info))
+;;                                                       (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit))))))
+;;                         (with-current-buffer org-buf
+;;                           (if key-str (my/org-bibtex-write-ref-from-assoc (my/build-bib-assoc key-str))
+;;                             (my/org-bibtex-write-ref-NA-from-keyhash (cdr ref-refs))))
+;;                         (kill-buffer guf))))))
+;;               my/dblp-fetch-parallel--results))
+;;   (while (not my/all-ready)
+;;     (setq my/all-ready
+;;           (reduce (lambda (x y) (and x y))
+;;                   (mapcar 'async-ready my/dblp-fetch-parallel--futures) :initial-value t))
+;;     (message (format "%s" my/all-ready))
+;;     (sleep-for 1))
+;;   (with-current-buffer org-buf
+;;     (org-next-visible-heading 1)
+;;     (delete-char 1)
+;;     (org-demote-subtree)
+;;     (end-of-line)
+;;     (insert "Refs")))
+;; ;;
+;; ;; Maybe python-epc would be better.
+;; ;;
+;; (defun my/dblp-fetch-parallel-new (refs-list org-buf)
+;;   "Fetches all dblp queries in parallel via async"
+;;   (setq my/dblp-fetch-parallel--futures nil)
+;;   (setq my/all-ready nil)
+;;   (loop for ref-refs in refs-list do
+;;         (push (async-start
+;;               `(lambda ()
+;;                  ;; (defun replace-in-string (what with in)
+;;                  ;;   (replace-regexp-in-string (regexp-quote what) with in nil 'literal))
+;;                  ,(async-inject-variables "ref-refs")
+;;                  (let* ((mah-url (format "http://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" (car ref-refs)))
+;;                         (buf (url-retrieve-synchronously mah-url)))
+;;                    (prog2 (with-current-buffer buf (set-buffer-multibyte t))
+;;                        (with-current-buffer buf (buffer-string))
+;;                      (kill-buffer buf)))))
+;;               my/dblp-fetch-parallel--futures))
+;;   (while (not my/all-ready)
+;;     (setq my/all-ready
+;;           (reduce (lambda (x y) (and x y))
+;;                   (mapcar 'async-ready my/dblp-fetch-parallel--futures) :initial-value t))
+;;     (sleep-for 1))
+;;   (loop for future in my/dblp-fetch-parallel--futures do
+;;         (let ((buf-string (async-get future))
+;;               (guf (generate-new-buffer "*dblp-test*")))
+;;           (with-current-buffer guf (insert buf-string))
+;;           (with-current-buffer guf (set-buffer-multibyte t))
+;;           (pcase-let ((`(,(and result `(result . ,_)))
+;;                        (xml-parse-region nil nil guf)))
+;;             (let ((key-str (remove nil
+;;                                    (my/dblp-clean
+;;                                     (mapcar (lambda (hit)
+;;                                               (gscholar-bibtex--xml-get-child hit 'info))
+;;                                             (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit))))))
+;;               (with-current-buffer org-buf
+;;                 (if key-str (my/org-bibtex-write-ref-from-assoc (my/build-bib-assoc key-str))
+;;                   (my/org-bibtex-write-ref-NA-from-keyhash (cdr ref-refs))))
+;;               (kill-buffer guf)))))
+;;   (with-current-buffer org-buf
+;;     (beginning-of-buffer)
+;;     (org-next-visible-heading 1)
+;;     (delete-char 1)
+;;     (org-demote-subtree)
+;;     (end-of-line)
+;;     (insert "Refs")))
+;;   ;; (org-next-visible-heading)
+;;   ;; (delete-char)
+;;   ;; (org-demote-subtree)
+;;   ;; (end-of-line)
+;;   ;; (insert "Refs")))
+
 
 ;;
 ;; Called by my/generate-buffer-and-fetch-if-required
@@ -323,8 +423,7 @@ top level heading"
       (remove nil (my/dblp-clean
                    (mapcar (lambda (hit)
                              (gscholar-bibtex--xml-get-child hit 'info))
-                           (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit)))))
-    ))
+                           (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Org generation and insertion stuff ;;
@@ -395,16 +494,12 @@ top level heading"
                                  (my/generate-org-buffer-content org-buf refs-list bib-assoc visiting-filename)))))
                    ((and (not buf) (not (file-exists-p visiting-filename)))
                            (let ((org-buf (my/generate-org-buffer (concat filename ".org"))))
-                             (my/generate-org-buffer-content org-buf refs-list bib-assoc visiting-filename)))
-                   )))
-    ))
+                             (my/generate-org-buffer-content org-buf refs-list bib-assoc visiting-filename))))))))
 
 (defun my/org-bibtex-write-top-heading-from-assoc (entry)
   "Generate the top level org entry for data parsed with science-parse."
   (let* ((key (car entry))
-         (entry (nth 1 entry))
-         (pdf-file-name (if (string-match-p (concat "^" my/pdf-pubs-directory) my/pdf-file-name)
-                            my/pdf-file-name nil)))
+         (entry (nth 1 entry)))
     (org-insert-heading)
     (insert (cdr (assoc "title" entry)))
     (insert "\n")
@@ -419,7 +514,7 @@ top level heading"
             ))
     (org-set-property "CUSTOM_ID" key)
     (org-set-property "BTYPE" "article")
-  ))
+    (org-set-property "PDF-FILE" (concat "[[" my/pdf-file-name "]]"))))
 
 ;; The characters directly borrowed from org-ref.
 ;; The function is too long and is an ugly hack because I couldnt'
@@ -545,8 +640,7 @@ top level heading"
           do
           (if (not (string-equal (symbol-name (car ent)) ":type"))
               (org-set-property (upcase (car (cdr (split-string (symbol-name (car ent)) ":"))))
-                                (cdr ent)))
-          ))
+                                (cdr ent)))))
 
 (defun my/org-bibtex-write-ref-from-assoc-permissive (entry)
   "Generate an org entry from an association list retrieved via
@@ -578,8 +672,7 @@ json."
     (org-set-property "CUSTOM_ID" key)
     (if (string-equal (assoc :type bib-assoc) "misc")
         (org-set-property "BTYPE" "misc")
-      (org-set-property "BTYPE" "article"))
-  ))
+      (org-set-property "BTYPE" "article"))))
 
 (defun my/org-bibtex-write-ref-from-assoc (entry)
   "Generate an org entry from an association list retrieved via
@@ -607,8 +700,7 @@ json."
               (org-set-property (upcase (car ent)) (my/remove-non-ascii (my/fix (cdr ent))))
             ))
     (org-set-property "CUSTOM_ID" key)
-    (org-set-property "BTYPE" "article")
-  ))
+    (org-set-property "BTYPE" "article")))
 
 ;; This isn't used apparently?
 ;; TODO: Have to write functions for conversion to and from
@@ -632,8 +724,7 @@ with 'bibtex from a bibtex entry"
           (`("abstract" . ,_))
           (`("=type=" . ,_) (org-set-property "BTYPE" (my/fix (cdr ent))))
           (`("=key=" . ,_) (org-set-property "CUSTOM_ID" (my/fix (cdr ent))))
-          (`(,_ . ,_) (org-set-property (upcase (car ent)) (my/fix (cdr ent)))))
-        ))
+          (`(,_ . ,_) (org-set-property (upcase (car ent)) (my/fix (cdr ent)))))))
 
 (defun my/org-bibtex-read-bib-file-to-buffer (filename &optional buffername)
   (interactive "sFile: ")
@@ -656,8 +747,7 @@ with 'bibtex from a bibtex entry"
           (goto-char (point-min))
           (delete-char 3)
           ))
-    (message (format "[pdf-refs] File %s does not exist" filename)))
-  )
+    (message (format "[pdf-refs] File %s does not exist" filename))))
 
 (defun my/org-bibtex-read-from-headline ()
   (interactive)
@@ -679,14 +769,17 @@ with 'bibtex from a bibtex entry"
                        ))
              (header (concat (cdr (assoc "type" bib-str)) "{" (cdr (assoc "key" bib-str)) ",\n"))
              (bib-str (delq (assoc "type" bib-str) bib-str))
-             (bib-str (delq (assoc "key" bib-str) bib-str)))
-        (concat header
-                (mapconcat (lambda (x)
-                             (if (cdr x) (concat "  " (car x) "={" (cdr x) "},\n")))
-                           bib-str "") "}\n"))
-    (message "[pdf-refs] Not org mode")))
+             (bib-str (delq (assoc "key" bib-str) bib-str))
+             (bib-str (concat header
+                              (mapconcat (lambda (x)
+                                           (if (cdr x) (concat "  " (car x) "={" (cdr x) "},\n")))
+                                         bib-str "") "}\n")))
+        (if (called-interactively-p 'interactive)
+            (kill-new bib-str)
+          bib-str))
+        (message "[pdf-refs] Not org mode")))
 
-(defun my/org-bibtex-insert-headline-as-bib-to-file ()
+(defun my/org-bibtex-insert-headline-as-bib-to-file (&optional file)
   "Export current headline to kill ring as bibtex entry."
   (interactive)
   (let* ((result (my/org-bibtex-read-from-headline))
@@ -709,8 +802,7 @@ with 'bibtex from a bibtex entry"
               (`("abstract" . ,_))
               (`("=type=" . ,_) (org-set-property "BTYPE" (my/fix (cdr ent))))
               (`("=key=" . ,_) (org-set-property "CUSTOM_ID" (my/fix (cdr ent))))
-              (`(,_ . ,_) (org-set-property (upcase (car ent)) (my/fix (cdr ent)))))
-            ))))
+              (`(,_ . ,_) (org-set-property (upcase (car ent)) (my/fix (cdr ent)))))))))
 
 (defun my/sanitize-org-entry ()
   (let (retval)
@@ -727,8 +819,7 @@ with 'bibtex from a bibtex entry"
                (t (with-current-buffer my/org-heading-gscholar-launch-buffer
                     (org-entry-get my/org-heading-gscholar-launch-point "CUSTOM_ID")))))
       ('error (message (format "[pdf-refs] Caught exception: [%s]" ex))))
-    (message (concat "[pdf-refs] " retval)))
-  )
+    (message (concat "[pdf-refs] " retval))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; End Org generation and insertion stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -791,8 +882,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
            (my/org-bibtex-convert-bib-to-property bib-assoc my/org-heading-gscholar-launch-buffer))
           ((y-or-n-p "Authoritative entry. Really replace?")
            (my/org-bibtex-convert-bib-to-property bib-assoc my/org-heading-gscholar-launch-buffer)))
-    (pop-to-buffer my/org-heading-gscholar-launch-buffer)
-    ))
+    (pop-to-buffer my/org-heading-gscholar-launch-buffer)))
 
 (defun my/biblio-insert-results (items &optional header)
   "Populate current buffer with ITEMS and HEADER, then display it."
