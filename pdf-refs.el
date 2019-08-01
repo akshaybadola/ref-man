@@ -759,6 +759,7 @@ with 'bibtex from a bibtex entry"
                        (cons "title"  (cdr (assoc "TITLE" props)))
                        (cons "author"  (cdr (assoc "AUTHOR" props)))
                        (cons "venue"  (cdr (assoc "VENUE" props)))
+                       (cons "booktitle"  (cdr (assoc "BOOKTITLE" props)))
                        (cons "volume"  (cdr (assoc "VOLUME" props)))
                        (cons "number"  (cdr (assoc "NUMBER" props)))
                        (cons "year"  (cdr (assoc "YEAR" props)))
@@ -766,6 +767,7 @@ with 'bibtex from a bibtex entry"
                        (cons "doi"  (cdr (assoc "DOI" props)))
                        (cons "url"  (cdr (assoc "URL" props)))
                        (cons "publisher"  (cdr (assoc "PUBLISHER" props)))
+                       (cons "organization"  (cdr (assoc "ORGANIZATION" props)))
                        ))
              (header (concat (cdr (assoc "type" bib-str)) "{" (cdr (assoc "key" bib-str)) ",\n"))
              (bib-str (delq (assoc "type" bib-str) bib-str))
@@ -791,9 +793,12 @@ with 'bibtex from a bibtex entry"
 
 (defun my/org-bibtex-convert-bib-to-property (assoc-list &optional buf)
   (let ((buf (if buf buf (current-buffer)))
-        (entry assoc-list))
+        (entry assoc-list)
+        (buf-point (if (not my/org-heading-gscholar-launch-point)
+                       (with-current-buffer buf (point))
+                     my/org-heading-gscholar-launch-point)))
     (with-current-buffer buf
-      (goto-char my/org-heading-gscholar-launch-point)
+      (goto-char buf-point)
       (if (cdr (assoc "title" assoc-list))
           (org-edit-headline (my/fix (cdr (assoc "title" assoc-list)))))
       (loop for ent in entry
@@ -804,20 +809,31 @@ with 'bibtex from a bibtex entry"
               (`("=key=" . ,_) (org-set-property "CUSTOM_ID" (my/fix (cdr ent))))
               (`(,_ . ,_) (org-set-property (upcase (car ent)) (my/fix (cdr ent)))))))))
 
-(defun my/sanitize-org-entry ()
+(defun my/sanitize-org-entry (&optional org-buf)
   (let (retval)
     (condition-case ex
         (setq retval
-              (cond
-               ((not (equal (with-current-buffer my/org-heading-gscholar-launch-buffer major-mode)
-                            'org-mode)) "Not org mode")
-               ((not (with-current-buffer my/org-heading-gscholar-launch-buffer
-                       (org-entry-get my/org-heading-gscholar-launch-point "CUSTOM_ID")))
-                (with-current-buffer my/org-heading-gscholar-launch-buffer
-                  (org-set-property "CUSTOM_ID" "na_"))
-                "No property drawer or no CUSOM_ID in property. Fixed")
-               (t (with-current-buffer my/org-heading-gscholar-launch-buffer
-                    (org-entry-get my/org-heading-gscholar-launch-point "CUSTOM_ID")))))
+              (let ((org-buf (cond (org-buf org-buf)
+                                   (my/org-gscholar-launch-buffer my/org-gscholar-launch-buffer)
+                                   (my/org-heading-gscholar-launch-buffer my/org-heading-gscholar-launch-buffer)))
+                    (org-point (cond ((and my/org-gscholar-launch-buffer my/org-gscholar-launch-point)
+                                      my/org-gscholar-launch-point)
+                                     ((and my/org-heading-gscholar-launch-buffer
+                                           my/org-heading-gscholar-launch-point)
+                                       my/org-heading-gscholar-launch-point)
+                                      (org-buf (with-current-buffer org-buf (point)))
+                                      (t nil))))
+                (cond
+                 ((not org-buf) "No suitable org buffer found")
+                 ((not (equal (with-current-buffer org-buf major-mode)
+                              'org-mode)) "Not org mode")
+                 ((not (with-current-buffer org-buf
+                         (org-entry-get org-point "CUSTOM_ID")))
+                  (with-current-buffer org-buf
+                    (org-set-property "CUSTOM_ID" "na_"))
+                  "No property drawer or no property. Fixed")
+                 (t (with-current-buffer org-buf
+                      (org-entry-get org-point "CUSTOM_ID"))))))
       ('error (message (format "[pdf-refs] Caught exception: [%s]" ex))))
     (message (concat "[pdf-refs] " retval))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
