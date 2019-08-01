@@ -774,7 +774,7 @@ with 'bibtex from a bibtex entry"
                               (mapconcat (lambda (x)
                                            (if (cdr x) (concat "  " (car x) "={" (cdr x) "},\n")))
                                          bib-str "") "}\n")))
-        (if (called-interactively-p 'interactive)
+        (if (called-interactively-p 'any)
             (kill-new bib-str)
           bib-str))
         (message "[pdf-refs] Not org mode")))
@@ -795,7 +795,7 @@ with 'bibtex from a bibtex entry"
     (with-current-buffer buf
       (goto-char my/org-heading-gscholar-launch-point)
       (if (cdr (assoc "title" assoc-list))
-          (org-edit-headline (cdr (assoc "title" assoc-list))))      
+          (org-edit-headline (my/fix (cdr (assoc "title" assoc-list)))))
       (loop for ent in entry
             do
             (pcase ent
@@ -815,7 +815,7 @@ with 'bibtex from a bibtex entry"
                        (org-entry-get my/org-heading-gscholar-launch-point "CUSTOM_ID")))
                 (with-current-buffer my/org-heading-gscholar-launch-buffer
                   (org-set-property "CUSTOM_ID" "na_"))
-                "No property drawer or no property. Fixed")
+                "No property drawer or no CUSOM_ID in property. Fixed")
                (t (with-current-buffer my/org-heading-gscholar-launch-buffer
                     (org-entry-get my/org-heading-gscholar-launch-point "CUSTOM_ID")))))
       ('error (message (format "[pdf-refs] Caught exception: [%s]" ex))))
