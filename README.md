@@ -1,11 +1,9 @@
-# Pdf Refs
-
-## ~~I'm archiving this repo as the functionality here is enough for my needs right now and I can't maintain it at the moment~~
-
-## Unarchived and updated.
+# Reference Manager
 
 Emacs plugin to generate bibliography file automatically from a given plugin using various other libraries.
 Also added functionality for browing gscholar with *eww*.
+
+This is a work in progress and I hope I'll be able to continue it for some time. This is my attempt to integrate all manner of article browsing, reading and archiving from inside of emacs.
 
 The references are extracted from a pdf using allenai's [science parse](https://github.com/allenai/science-parse).
 
