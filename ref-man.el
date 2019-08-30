@@ -482,19 +482,23 @@ to a buffer right now. can change to have it in multiple steps."
 (defun ref-man--dblp-fetch-parallel (refs-list org-buf)
   "Fetches all dblp queries in parallel via async"
   (setq ref-man--dblp-fetch-parallel-results nil)
-  (loop for ref-refs in refs-list do
+  (setq ref-man--temp-ref nil)
+  (loop for ref-ref in refs-list do
+        (setq ref-man--temp-ref ref-ref)
+        (setq ref-man--temp-buf org-buf)
         (async-start
          `(lambda ()
-            ;; (defun replace-in-string (what with in)
-            ;;   (replace-regexp-in-string (regexp-quote what) with in nil 'literal))
-            ,(async-inject-variables "ref-refs")
-            (let* ((query-url (format "http://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" (car ref-refs)))
+            ,(async-inject-variables "ref-man--temp-ref")
+            (defun replace-in-string (what with in)
+              (replace-regexp-in-string (regexp-quote what) with in nil 'literal))
+            (let* ((query-url
+                    (format "http://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" (car ref-man--temp-ref)))
                    (buf (url-retrieve-synchronously query-url)))
               (prog2 (with-current-buffer buf (set-buffer-multibyte t))
                   (with-current-buffer buf (buffer-string))
                 (kill-buffer buf))))
          `(lambda (buf-string)
-            ,(async-inject-variables "ref-refs\\|org-buf\\|ref-man--dblp-fetch-parallel-results")
+            ,(async-inject-variables "ref-man--temp-ref\\|ref-man--temp-buf\\|ref-man--dblp-fetch-parallel-results")
             (let ((guf (generate-new-buffer "*dblp-test*")))
               (with-current-buffer guf (insert buf-string))
               (with-current-buffer guf (set-buffer-multibyte t))
@@ -504,10 +508,11 @@ to a buffer right now. can change to have it in multiple steps."
                                        (ref-man--dblp-clean
                                         (mapcar (lambda (hit)
                                                   (gscholar-bibtex--xml-get-child hit 'info))
-                                                (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit))))))
-                  (with-current-buffer org-buf
+                                                (xml-get-children
+                                                 (gscholar-bibtex--xml-get-child result 'hits) 'hit))))))
+                  (with-current-buffer ref-man--temp-buf
                     (if key-str (ref-man--org-bibtex-write-ref-from-assoc (ref-man--build-bib-assoc key-str))
-                      (ref-man--org-bibtex-write-ref-NA-from-keyhash (cdr ref-refs))))
+                      (ref-man--org-bibtex-write-ref-NA-from-keyhash (cdr ref-man--temp-ref))))
                   (kill-buffer guf))))))))
 
 ;; ;;
@@ -683,22 +688,22 @@ top level heading"
          (buf (find-buffer-visiting visiting-filename)))
     (if (not filename)
         (message "[pdf-refs] filename could not be generated!")
-      (progn (cond ((and buf (with-current-buffer buf (buffer-string)))
-                    (progn (message "[pdf-refs] File is already opened and not empty. Switching")
-                           (ref-man--generate-org-buffer (concat filename ".org"))))
-                   ((and buf (not (with-current-buffer buf (buffer-string)))
-                         (file-exists-p visiting-filename))
-                    (with-current-buffer (get-buffer-create (concat filename ".org"))
-                      (insert-file-contents visiting-filename t)))
-                   ((and (not buf) (file-exists-p visiting-filename))
-                    (progn (message "[pdf-refs] File already exists. Opening")
-                           (let ((org-buf (ref-man--generate-org-buffer (concat filename ".org"))))
-                             (if (not (with-current-buffer org-buf
-                                        (insert-file-contents visiting-filename t) (buffer-string)))
-                                 (ref-man--generate-org-buffer-content org-buf refs-list bib-assoc visiting-filename)))))
-                   ((and (not buf) (not (file-exists-p visiting-filename)))
-                    (let ((org-buf (ref-man--generate-org-buffer (concat filename ".org"))))
-                      (ref-man--generate-org-buffer-content org-buf refs-list bib-assoc visiting-filename))))))))
+      (cond ((and buf (with-current-buffer buf (buffer-string)))
+             (message "[pdf-refs] File is already opened and not empty. Switching")
+             (ref-man--generate-org-buffer (concat filename ".org")))
+            ((and buf (not (with-current-buffer buf (buffer-string)))
+                  (file-exists-p visiting-filename))
+             (with-current-buffer (get-buffer-create (concat filename ".org"))
+               (insert-file-contents visiting-filename t)))
+            ((and (not buf) (file-exists-p visiting-filename))
+             (message "[pdf-refs] File already exists. Opening")
+             (let ((org-buf (ref-man--generate-org-buffer (concat filename ".org"))))
+               (unless (with-current-buffer org-buf
+                         (insert-file-contents visiting-filename t) (buffer-string))
+                 (ref-man--generate-org-buffer-content org-buf refs-list bib-assoc visiting-filename))))
+            ((and (not buf) (not (file-exists-p visiting-filename)))
+             (let ((org-buf (ref-man--generate-org-buffer (concat filename ".org"))))
+               (ref-man--generate-org-buffer-content org-buf refs-list bib-assoc visiting-filename)))))))
 
 (defun ref-man--org-bibtex-write-top-heading-from-assoc (entry)
   "Generate the top level org entry for data parsed with science-parse."
@@ -1725,7 +1730,7 @@ corresponding headline and insert."
           ((string-match-p "arxiv.org" url)
            (concat (replace-in-string url "/abs/" "/pdf/") ".pdf"))
           ((string-match-p "aclweb.org" url)
-           (concat url ".pdf"))
+           (concat (replace-regexp-in-string "/$" "" url) ".pdf"))
           ((string-match-p "papers.nips.cc" url)
            (ref-man--get-pdf-link-from-nips-url url))
           ((string-match-p "openaccess.thecvf.com" url)
