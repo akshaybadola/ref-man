@@ -1080,6 +1080,8 @@ Results are parsed with (BACKEND 'parse-buffer)."
               (string-match-p "/download/" url))
              ((string-match-p "openreview.net" url)
               (string-match-p "pdf" url))
+             ((string-match-p "dl.acm.org" url)
+              (string-match-p "gateway.cfm" url))
              (t (string-match-p "\\.pdf" url)))))
 
 (defun ref-man--url-matches-filename-p (url filename)
@@ -1098,6 +1100,8 @@ Results are parsed with (BACKEND 'parse-buffer)."
                               "." "pdf"))
                      ((string-match-p "aaai.org" url)
                       (concat "aaai_" (string-join (last (split-string url "/") 2) "_") ".pdf"))
+                     ((string-match-p "dl.acm.org" url)
+                      (concat "acm_" (car (split-string (nth 1 (split-string url "?id=")) "&")) ".pdf"))
                      (t (car (url-path-and-query obj)))))
          (file (path-join (list ref-man-pubs-directory (file-name-nondirectory path)))))
     file))
@@ -1463,6 +1467,7 @@ If the input doesn't look like a URL or a domain name."
 
 ;; Much cleaner code now
 ;; Although, I think I'll remove the debug code later
+;; FIXME: The point remains at the end when the function is called again
 ;; TODO: if the cursor is on a link, I get two pdf links
 ;; TODO: ref-man-eww-keypress-d and maybe some others don't work
 ;;       as expected. The keypresses on regions of google-scholar
@@ -1476,11 +1481,13 @@ If the input doesn't look like a URL or a domain name."
   (save-excursion
     (let ((buf (if buf buf (get-buffer "*eww*"))))
       (with-current-buffer buf            ; should be an shr buffer; usually *eww*
+        (setq ref-man--egal--save-point (point))
         (if before-point (setq ref-man--eww-buffer-endpoint (point))
           (setq ref-man--eww-buffer-endpoint (buffer-end 1)))
         (if frombegin (goto-char (point-min)))
         (setq ref-man--eww-buffer-links nil)
         ;; Below was ref-man--egal--current-url
+        ;; WTF is egal? eww-get-all-links?
         (setq ref-man--egal--prev-url (get-text-property (point) 'shr-url))
         (setq ref-man--egal--current-url nil)
         (setq ref-man--egal--url-text-start (point))
@@ -1508,8 +1515,9 @@ If the input doesn't look like a URL or a domain name."
                       (equal (get-text-property (point) 'shr-url) ref-man--egal--prev-url))
             (forward-char 1))               ;; not next link (same link)
           (setq ref-man--egal--url-text-end (point))
-          (setq ref-man--egal--current-url (get-text-property (point) 'shr-url)))))
-    ref-man--eww-buffer-links))
+          (setq ref-man--egal--current-url (get-text-property (point) 'shr-url)))
+        (goto-char ref-man--egal--save-point))))
+  ref-man--eww-buffer-links)
 
 ;; ONLY Called from ref-man-eww-keypress-b
 (defun ref-man-eww-get-bibtex-from-scholar (&optional to-org)
@@ -1665,19 +1673,53 @@ corresponding headline and insert."
               (org-set-property "URL" link-str))))))))
 
 (defun ref-man--get-first-pdf-link-from-buffer (buf)
-  (car (ref-man-eww-get-all-links buf nil nil "pdf")))
+  (let* ((temp-buf (get-buffer-create " *temp-buf*"))
+        (link (with-current-buffer temp-buf
+            (shr-insert-document
+             (with-current-buffer buf
+               (libxml-parse-html-region (point-min) (point-max))))
+            (goto-char (point-min))
+            (car (ref-man-eww-get-all-links (current-buffer) t nil "pdf")))))
+    (kill-buffer temp-buf)
+    link))
 
-;; TODO: Get supllementary material also
-(defun ref-man--get-pdf-link-from-nips-url (url)
-  (let* ((buf (url-retrieve-synchronously url t))
-         (temp-buf (get-buffer-create " *temp-buf*"))
-         (link (with-current-buffer temp-buf 
+(defun ref-man--get-last-pdf-link-from-buffer (buf)
+  (let* ((temp-buf (get-buffer-create " *temp-buf*"))
+        (link (with-current-buffer temp-buf
+            (shr-insert-document
+             (with-current-buffer buf
+               (libxml-parse-html-region (point-min) (point-max))))
+            (goto-char (point-min))
+            (car (last (ref-man-eww-get-all-links (current-buffer) nil nil "pdf"))))))
+    (kill-buffer temp-buf)
+    link))
+
+(defun ref-man--get-first-link-from-buffer (buf)
+  (let* ((temp-buf (get-buffer-create " *temp-buf*"))
+        (link (with-current-buffer temp-buf
+            (shr-insert-document
+             (with-current-buffer buf
+               (libxml-parse-html-region (point-min) (point-max))))
+            (goto-char (point-min))
+            (car (ref-man-eww-get-all-links (current-buffer))))))
+    (kill-buffer temp-buf)
+    link))
+
+(defun ref-man--get-last-link-from-buffer (buf)
+  (let* ((temp-buf (get-buffer-create " *temp-buf*"))
+         (link (with-current-buffer temp-buf
                  (shr-insert-document
                   (with-current-buffer buf
                     (libxml-parse-html-region (point-min) (point-max))))
                  (goto-char (point-min))
-                 (ref-man--get-first-pdf-link-from-buffer (current-buffer)))))
+                 (car (last (ref-man-eww-get-all-links (current-buffer) nil nil))))))
     (kill-buffer temp-buf)
+    link))
+
+;; TODO: Get supllementary material also
+(defun ref-man--get-pdf-link-from-nips-url (url)
+  (let* ((buf (url-retrieve-synchronously url t))
+         (link (ref-man--get-first-pdf-link-from-buffer buf)))
     (cond ((string-match-p "^[http|https]" link) link)
           ((string-match-p "^/paper/" link)
            (concat (string-join (firstn (split-string url "/") 3) "/") link))
@@ -1685,17 +1727,13 @@ corresponding headline and insert."
 
 (defun ref-man--get-pdf-link-from-aaai-url (url)
   (let* ((buf (url-retrieve-synchronously url t))
-         (temp-buf (get-buffer-create " *temp-buf*"))
-         (link (with-current-buffer temp-buf
-                 (shr-insert-document
-                  (with-current-buffer buf
-                    (libxml-parse-html-region (point-min) (point-max))))
-                 (goto-char (point-min))
-                 (car (last (ref-man-eww-get-all-links (current-buffer)))))))
-    (kill-buffer temp-buf)
+         (buf (if (string-match-p "This page requires frames."
+                                  (with-current-buffer buf (buffer-string)))
+                  (url-retrieve-synchronously (ref-man--get-last-link-from-buffer buf) t) buf))
+         (link (ref-man--get-last-link-from-buffer buf)))
     (replace-in-string link "view" "download")))
 
-(defun ref-man--get-pdf-link-from-cvf-url (url)
+(defun ref-man--get-pdf-link-from-acm-url (url)
   (let* ((buf (url-retrieve-synchronously url t))
          (temp-buf (get-buffer-create " *temp-buf*"))
          (link (with-current-buffer temp-buf
@@ -1703,8 +1741,14 @@ corresponding headline and insert."
                   (with-current-buffer buf
                     (libxml-parse-html-region (point-min) (point-max))))
                  (goto-char (point-min))
-                 (ref-man--get-first-pdf-link-from-buffer (current-buffer)))))
-    (kill-buffer temp-buf)
+                 (car (ref-man-eww-get-all-links (current-buffer) nil nil "gateway")))))
+    (if (string-prefix-p "https://dl.acm.org/" link)
+        link
+      (concat "https://dl.acm.org/" link))))
+
+(defun ref-man--get-pdf-link-from-cvf-url (url)
+  (let* ((buf (url-retrieve-synchronously url t))
+         (link (ref-man--get-first-pdf-link-from-buffer buf)))
     (cond ((string-match-p "^[http|https]" link) link)
           ((string-match-p "^../../content_.*" link)
            (concat (string-join (firstn (split-string url "/") 3) "/") "/"
@@ -1713,14 +1757,7 @@ corresponding headline and insert."
 
 (defun ref-man--get-pdf-link-from-openreview-url (url)
   (let* ((buf (url-retrieve-synchronously url t))
-         (temp-buf (get-buffer-create " *temp-buf*"))
-         (link (with-current-buffer temp-buf
-                 (shr-insert-document
-                  (with-current-buffer buf
-                    (libxml-parse-html-region (point-min) (point-max))))
-                 (goto-char (point-min))
-                 (concat "https://openreview.net" (ref-man--get-first-pdf-link-from-buffer (current-buffer))))))
-    (kill-buffer temp-buf)
+         (link (concat "https://openreview.net" (ref-man--get-first-pdf-link-from-buffer buf))))
     (when (string-match-p "^[http|https]" link) link)))
 
 (defun ref-man--get-pdf-url-according-to-source (url)
@@ -1737,6 +1774,8 @@ corresponding headline and insert."
            (ref-man--get-pdf-link-from-cvf-url url))
           ((string-match-p "aaai.org" url)
            (ref-man--get-pdf-link-from-aaai-url url))
+          ((string-match-p "dl.acm.org" url)
+           (ref-man--get-pdf-link-from-acm-url url))
           ((string-match-p "openreview.net" url)
            (ref-man--get-pdf-link-from-openreview-url url))
           (t url))))
@@ -1755,6 +1794,8 @@ corresponding headline and insert."
            (ref-man--get-bibtex-link-from-cvf-url url))
           ((string-match-p "aaai.org" url)
            (ref-man--get-bibtex-link-from-aaai-url url))
+          ((string-match-p "dl.acm.org" url)
+           (ref-man--get-bibtex-link-from-acm-url url))
           ((string-match-p "openreview.net" url)
            (ref-man--get-bibtex-link-from-openreview-url url))
           (t url))))
@@ -1773,6 +1814,8 @@ corresponding headline and insert."
            (ref-man--get-abstract-from-cvf-url url))
           ((string-match-p "aaai.org" url)
            (ref-man--get-abstract-from-aaai-url url))
+          ((string-match-p "dl.acm.org" url)
+           (ref-man--get-abstract-link-from-acm-url url))
           ((string-match-p "openreview.net" url)
            (ref-man--get-abstract-from-openreview-url url))
           (t url))))
@@ -1788,6 +1831,19 @@ corresponding headline and insert."
   can't really download from there"
   ;; If link is cvpr or iccv, then find the cvf link and go to that site
   (message "Not Implemented yet") nil)
+
+(defun ref-man--parse-ieee-page (url)
+  (let* ((buf (url-retrieve-synchronously url t))
+         (ieee-xml-parse (with-current-buffer buf
+                           (libxml-parse-html-region (point-min) (point-max)))))
+    (setq ref-man--ieee-parse nil)
+    (seq-do
+     (lambda (x) (when (string-match-p "global.document.metadata" x)
+                   (setq ref-man--ieee-parse
+                         (json-read-from-string
+                          (car (split-string (nth 1 (split-string x "global.document.metadata=")) "\n"))))))
+     (dom-strings ieee-xml-parse))
+    ref-man--ieee-parse))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; End org utility functions ;;
@@ -1845,6 +1901,13 @@ buffer is not gscholar"
         (eww-browse-url url)))))
 
 (defun ref-man-try-fetch-and-store-pdf-in-org-subtree-entries ()
+  "Fetches and stores pdfs for all entries in the subtree. Only
+traverses one level depth as of now"
+  ;; What I'll have to do is:
+  ;; 1. Make the buffer read only
+  ;; 2. Call the function to fetch the pdfs async on the entire subtree
+  ;;    (the download is already async)
+  ;; 3. Hold all the information in a temp buffer and update when done
   (interactive)
   (message "Not Implemented right now"))
 
@@ -1870,7 +1933,7 @@ buffer is not gscholar"
           ((and (not pdf-file) (assoc "URL" props))
            (ref-man-try-fetch-pdf-from-url (cdr (assoc "URL" props))))
           ((not pdf-file) (ref-man-try-fetch-and-store-pdf-in-org-entry-text))
-          (t (message "Reached default state. Please check!")))))
+          (t (message "PDF already exists or wrong pdf inserted!. Please check!")))))
 
 ;; FIXED: Since the retrieval is now async, if I move to another
 ;;        headline while the file is being downloaded, the file link
