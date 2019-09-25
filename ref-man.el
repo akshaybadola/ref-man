@@ -452,7 +452,11 @@ to a buffer right now. can change to have it in multiple steps."
         (progn
           (setq ref-man--current-pdf-file-name pdf-file-name)
           (setq ref-man--science-parse-data json-string)
-          (setq ref-man--document-title (gethash "title" json-string))
+          (setq ref-man--document-title (if (gethash "title" json-string)
+                                            (gethash "title" json-string)
+                                          (puthash "title" (read-from-minibuffer "ENTER TITLE (could not infer): ")
+                                                   json-string)
+                                          (gethash "title" json-string)))
           (ref-man--generate-buffer-and-fetch-if-required refs-list))
       (progn (message "[pdf-refs] Empty PDF parse") nil))))
 
@@ -922,6 +926,7 @@ with 'bibtex from a bibtex entry"
               (`("=key=" . ,_) (org-set-property "CUSTOM_ID" (ref-man--fix-curly (cdr ent))))
               (`(,_ . ,_) (org-set-property (upcase (car ent)) (ref-man--fix-curly (cdr ent)))))))))
 
+;; TODO: "No property drawer" should not come when property drawer is present
 (defun ref-man--sanitize-org-entry (&optional org-buf)
   (let (retval)
     (condition-case ex
@@ -1403,8 +1408,7 @@ If the input doesn't look like a URL or a domain name."
   (if (eq major-mode 'org-mode)
       (progn (setq ref-man--org-gscholar-launch-buffer (current-buffer))
              (setq ref-man--org-gscholar-launch-point (point)))
-    (setq ref-man--org-gscholar-launch-buffer nil)
-    )
+    (setq ref-man--org-gscholar-launch-buffer nil))
   (setq url (string-trim url))
   (cond ((string-match-p "\\`file:/" url))
 	;; Don't mangle file: URLs at all.
@@ -1725,8 +1729,15 @@ corresponding headline and insert."
            (concat (string-join (firstn (split-string url "/") 3) "/") link))
           (t nil))))
 
-(defun ref-man--get-pdf-link-from-aaai-url (url)
+(defun ref-man--get-pdf-link-from-mlr-url (url)
   (let* ((buf (url-retrieve-synchronously url t))
+         (link (ref-man--get-first-pdf-link-from-buffer buf)))
+    (when (string-match-p "^[http|https]" link) link)))
+
+(defun ref-man--get-pdf-link-from-aaai-url (url)
+  (let* ((url (if (string-prefix-p "http://" url)
+                  (replace-in-string url "http://" "https://") url))
+         (buf (url-retrieve-synchronously url t))
          (buf (if (string-match-p "This page requires frames."
                                   (with-current-buffer buf (buffer-string)))
                   (url-retrieve-synchronously (ref-man--get-last-link-from-buffer buf) t) buf))
@@ -1770,6 +1781,8 @@ corresponding headline and insert."
            (concat (replace-regexp-in-string "/$" "" url) ".pdf"))
           ((string-match-p "papers.nips.cc" url)
            (ref-man--get-pdf-link-from-nips-url url))
+          ((string-match-p "mlr.press" url)
+           (ref-man--get-pdf-link-from-mlr-url url))
           ((string-match-p "openaccess.thecvf.com" url)
            (ref-man--get-pdf-link-from-cvf-url url))
           ((string-match-p "aaai.org" url)
@@ -1801,6 +1814,26 @@ corresponding headline and insert."
           (t url))))
 
 (defun ref-man--try-get-abstract-according-to-source (url)
+  (when url
+    (cond ((string-match-p "doi.org" url)
+           (ref-man--get-abstract-from-doi url))
+          ((string-match-p "arxiv.org" url)
+           (concat (replace-in-string url "/abs/" "/pdf/") ".pdf"))
+          ((string-match-p "aclweb.org" url)
+           (concat url ".pdf"))
+          ((string-match-p "papers.nips.cc" url)
+           (ref-man--get-abstract-from-nips-url url))
+          ((string-match-p "openaccess.thecvf.com" url)
+           (ref-man--get-abstract-from-cvf-url url))
+          ((string-match-p "aaai.org" url)
+           (ref-man--get-abstract-from-aaai-url url))
+          ((string-match-p "dl.acm.org" url)
+           (ref-man--get-abstract-link-from-acm-url url))
+          ((string-match-p "openreview.net" url)
+           (ref-man--get-abstract-from-openreview-url url))
+          (t url))))
+
+(defun ref-man--try-get-suppl-according-to-source (url)
   (when url
     (cond ((string-match-p "doi.org" url)
            (ref-man--get-abstract-from-doi url))
@@ -1908,7 +1941,7 @@ traverses one level depth as of now"
   ;; 2. Call the function to fetch the pdfs async on the entire subtree
   ;;    (the download is already async)
   ;; 3. Hold all the information in a temp buffer and update when done
-  (interactive)
+  ;; (interactive)
   (message "Not Implemented right now"))
 
 ;; TODO: I have not incorporated dblp extracted entries as they refer
@@ -1953,7 +1986,6 @@ link is not a pdf link, call eww-browse-url. If the file exists,
 don't retrieve the pdf file.
 In both cases, store the file link in PDF-FILE property in the org
 property drawer for the headline at point."
-  (interactive)
   (let* ((props (text-properties-at (point)))
          (url (car (mapcar (lambda (x) (cadr x))
                            (remove-if-not #'ref-man--org-property-is-url-p props))))
@@ -2025,7 +2057,8 @@ eww. Stores the buffer and the position from where it was called."
         (setq ref-man--org-heading-gscholar-launch-point (point)) ; must be at heading?
         (setq org-buf (current-buffer))
         (save-excursion
-          (let ((query-string (org-get-heading t t)))
+          (let ((query-string (replace-regexp-in-string ":\\|/" " "
+                               (substring-no-properties (org-get-heading t t)))))
             (ref-man-eww-gscholar query-string))))
     (message "[ref-man] Not in org-mode")))
 
