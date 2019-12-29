@@ -36,9 +36,6 @@
 (require 'xml)
 (require 'async)
 ;; Primary function I use from 'bibtex is 'bibtex-parse-entry
-;; I should investigate 'bibtex more
-;; It has a bunch of features which I've implemented already. Probably
-;; can use them.
 (require 'bibtex)
 ;; It's only required for one function 'org-bibtex-read-file
 ;; But it's a pretty complicated function
@@ -47,27 +44,12 @@
 (require 'gscholar-bibtex)
 
 ;;
-;; TODO: Add function for scanning the directory and adding the
-;;       pdf files not in research.org with the help of science-parse
-;;       to Unclassified or something
-;; TODO: Add function to search for pdf files files in `pubdir`, either by
-;;       name or by keywords. I'm not expecting a full keyword search as of
-;;       yet, but soon I think.
-;; TODO: Add "cited-by" entry into the org while importing
-;; TODO: Clean up the dependencies from eww_stuff etc and util.el
-;; TODO: Add function to prepend Date and Venue to each org-article heading
-;; TODO: Build some automated tests into it
 ;; 
 (setq ref-man-org-links-file-path (expand-file-name "~/.temp-org-links.org"))
 (setq ref-man-pubs-directory (expand-file-name "~/org/pdfs/"))
 ;; (setq ref-man-temp-bib-file-path (expand-file-name "~/lib/docprocess/all.bib"))
 (setq ref-man-temp-bib-file-path (expand-file-name "~/.temp.bib"))
 (setq ref-man-org-store-dir (expand-file-name "~/org/pubs_org/"))
-
-;; TODO: This is not used
-;; (if (string-match-p "droid" (system-name))
-;;     (setq my/bib-store-dir "/home/joe/pubs/bibtex/")
-;; (setq my/bib-store-dir "/home/joe/PhD/bibtex/"))
 
 ;; Internal global variables
 (setq ref-man--org-heading-gscholar-launch-buffer nil)
@@ -313,9 +295,6 @@ pairs for only the top result from ref-man-venue-priorities"
 ;; redirects to the real url or may not even in some cases. If a pdf
 ;; url exists, don't mess with it and insert it as doi.
 ;;
-;; TODO: build a different function so that \{etc} aren't there in bib keys
-;; ref-man--remove-non-ascii does something else entirely and I don't want accents
-;; in the keys
 ;; 
 (defun ref-man--build-bib-key (key-str &optional na)
   "builds a unique key with the format [author year first-title-word]
@@ -510,107 +489,6 @@ to a buffer right now. can change to have it in multiple steps."
                       (ref-man--org-bibtex-write-ref-NA-from-keyhash (cdr ref-refs))))
                   (kill-buffer guf))))))))
 
-;; ;;
-;; ;; Maybe python-epc would be better.
-;; ;;
-;; (defun my/dblp-fetch-parallel-new (refs-list org-buf)
-;;   "Fetches all dblp queries in parallel via async"
-;;   (setq my/all-ready nil)
-;;   (setq ref-man--dblp-fetch-parallel-results nil)
-;;   (loop for ref-refs in refs-list do
-;;         (push (async-start
-;;                `(lambda ()
-;;                   ;; (defun replace-in-string (what with in)
-;;                   ;;   (replace-regexp-in-string (regexp-quote what) with in nil 'literal))
-;;                   ,(async-inject-variables "ref-refs")
-;;                   (let* ((query-url (format "http://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" (car ref-refs)))
-;;                          (buf (url-retrieve-synchronously query-url)))
-;;                     (prog2 (with-current-buffer buf (set-buffer-multibyte t))
-;;                         (with-current-buffer buf (buffer-string))
-;;                       (kill-buffer buf))))
-;;                `(lambda (buf-string)
-;;                   ,(async-inject-variables "ref-refs\\|org-buf\\|ref-man--dblp-fetch-parallel-results")
-;;                   (let ((guf (generate-new-buffer "*dblp-test*")))
-;;                     (with-current-buffer guf (insert buf-string))
-;;                     (with-current-buffer guf (set-buffer-multibyte t))
-;;                     (pcase-let ((`(,(and result `(result . ,_)))
-;;                                  (xml-parse-region nil nil guf)))
-;;                       (let ((key-str (remove nil
-;;                                              (ref-man--dblp-clean
-;;                                               (mapcar (lambda (hit)
-;;                                                         (gscholar-bibtex--xml-get-child hit 'info))
-;;                                                       (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit))))))
-;;                         (with-current-buffer org-buf
-;;                           (if key-str (ref-man--org-bibtex-write-ref-from-assoc (ref-man--build-bib-assoc key-str))
-;;                             (ref-man--org-bibtex-write-ref-NA-from-keyhash (cdr ref-refs))))
-;;                         (kill-buffer guf))))))
-;;               ref-man--dblp-fetch-parallel-results))
-;;   (while (not my/all-ready)
-;;     (setq my/all-ready
-;;           (reduce (lambda (x y) (and x y))
-;;                   (mapcar 'async-ready my/dblp-fetch-parallel--futures) :initial-value t))
-;;     (message (format "%s" my/all-ready))
-;;     (sleep-for 1))
-;;   (with-current-buffer org-buf
-;;     (org-next-visible-heading 1)
-;;     (delete-char 1)
-;;     (org-demote-subtree)
-;;     (end-of-line)
-;;     (insert "Refs")))
-;; ;;
-;; ;; Maybe python-epc would be better.
-;; ;;
-;; (defun my/dblp-fetch-parallel-new (refs-list org-buf)
-;;   "Fetches all dblp queries in parallel via async"
-;;   (setq my/dblp-fetch-parallel--futures nil)
-;;   (setq my/all-ready nil)
-;;   (loop for ref-refs in refs-list do
-;;         (push (async-start
-;;               `(lambda ()
-;;                  ;; (defun replace-in-string (what with in)
-;;                  ;;   (replace-regexp-in-string (regexp-quote what) with in nil 'literal))
-;;                  ,(async-inject-variables "ref-refs")
-;;                  (let* ((query-url (format "http://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" (car ref-refs)))
-;;                         (buf (url-retrieve-synchronously query-url)))
-;;                    (prog2 (with-current-buffer buf (set-buffer-multibyte t))
-;;                        (with-current-buffer buf (buffer-string))
-;;                      (kill-buffer buf)))))
-;;               my/dblp-fetch-parallel--futures))
-;;   (while (not my/all-ready)
-;;     (setq my/all-ready
-;;           (reduce (lambda (x y) (and x y))
-;;                   (mapcar 'async-ready my/dblp-fetch-parallel--futures) :initial-value t))
-;;     (sleep-for 1))
-;;   (loop for future in my/dblp-fetch-parallel--futures do
-;;         (let ((buf-string (async-get future))
-;;               (guf (generate-new-buffer "*dblp-test*")))
-;;           (with-current-buffer guf (insert buf-string))
-;;           (with-current-buffer guf (set-buffer-multibyte t))
-;;           (pcase-let ((`(,(and result `(result . ,_)))
-;;                        (xml-parse-region nil nil guf)))
-;;             (let ((key-str (remove nil
-;;                                    (ref-man--dblp-clean
-;;                                     (mapcar (lambda (hit)
-;;                                               (gscholar-bibtex--xml-get-child hit 'info))
-;;                                             (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit))))))
-;;               (with-current-buffer org-buf
-;;                 (if key-str (ref-man--org-bibtex-write-ref-from-assoc (ref-man--build-bib-assoc key-str))
-;;                   (ref-man--org-bibtex-write-ref-NA-from-keyhash (cdr ref-refs))))
-;;               (kill-buffer guf)))))
-;;   (with-current-buffer org-buf
-;;     (beginning-of-buffer)
-;;     (org-next-visible-heading 1)
-;;     (delete-char 1)
-;;     (org-demote-subtree)
-;;     (end-of-line)
-;;     (insert "Refs")))
-;;   ;; (org-next-visible-heading)
-;;   ;; (delete-char)
-;;   ;; (org-demote-subtree)
-;;   ;; (end-of-line)
-;;   ;; (insert "Refs")))
-
-
 ;;
 ;; Called by ref-man--generate-buffer-and-fetch-if-required
 ;;
@@ -714,8 +592,7 @@ top level heading"
     (loop for ent in entry
           do
           (if (not (string-equal (car ent) "abstract"))
-              (org-set-property (upcase (car ent)) (ref-man--fix-curly (cdr ent)))
-            ))
+              (org-set-property (upcase (car ent)) (ref-man--fix-curly (cdr ent)))))
     (org-set-property "CUSTOM_ID" key)
     (org-set-property "BTYPE" "article")
     (org-set-property "PDF-FILE" (concat "[[" ref-man--current-pdf-file-name "]]"))))
@@ -814,9 +691,6 @@ json."
     (org-set-property "CUSTOM_ID" key)
     (org-set-property "BTYPE" "article")))
 
-;; This isn't used apparently?
-;; TODO: Have to write functions for conversion to and from
-;; org properties to bibtex.
 (defun ref-man--org-bibtex-write-heading-from-bibtex (entry)
   "Generate an org entry from a bibtex association list, parsed
 with 'bibtex from a bibtex entry"
@@ -1148,8 +1022,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
                 ;;            (throw 'retval t)))
       (eww-next-url))))
 
-;; TODO: Add option for other sites, especially for ARXIV
-;; TODO: import link to org-buffer doesn't attach the pdf file automatically
+;; CHECK: import link to org-buffer doesn't attach the pdf file automatically
 ;;       if it's already downloaded.
 ;;       Same should be there for import first and download later.
 ;;       However, link to the article and link to pdf may not be the same in general
@@ -1256,8 +1129,7 @@ download, get the link which corresponds to it"
 
 ;; ONLY called from ref-man-eww-get-bibtex-from-scholar
 (defun ref-man--eww-browse-url (url org)
-  (let ((buf (if (get-buffer " *scholar-entry*") (get-buffer " *scholar-entry*")
-               (generate-new-buffer " *scholar-entry*"))))
+  (let ((buf (get-buffer-create " *scholar-entry*")))
     (with-current-buffer buf (eww-setup-buffer)
                          (plist-put eww-data :url url)
                          (plist-put eww-data :title "")
@@ -1265,7 +1137,6 @@ download, get the link which corresponds to it"
                          (let ((inhibit-read-only t))
                            (goto-char (point-min)))
                          (url-retrieve url #'ref-man--eww-render
-                                       ;; (list url nil (current-buffer)) t))))
                                        (list url (current-buffer) org)))))
 
 ;; FIXED: Fix this! ref-man--org-heading-gscholar-launch-point is used only
@@ -1381,7 +1252,6 @@ the *previous* non-google link"
 ;; If eww is called from any other place, set the
 ;; ref-man--org-heading-gscholar-launch-buffer and
 ;; ref-man--org-heading-gscholar-launch-point to nil
-;; Called from M-x
 (defun ref-man-eww-gscholar (url)
   "Fetch URL and render the page.
 If the input doesn't look like a URL or a domain name."
@@ -1394,8 +1264,7 @@ If the input doesn't look like a URL or a domain name."
   (if (eq major-mode 'org-mode)
       (progn (setq ref-man--org-gscholar-launch-buffer (current-buffer))
              (setq ref-man--org-gscholar-launch-point (point)))
-    (setq ref-man--org-gscholar-launch-buffer nil)
-    )
+    (setq ref-man--org-gscholar-launch-buffer nil))
   (setq url (string-trim url))
   (cond ((string-match-p "\\`file:/" url))
 	;; Don't mangle file: URLs at all.
@@ -1421,25 +1290,20 @@ If the input doesn't look like a URL or a domain name."
            (progn (setq query-string url)
                   (setq url (concat "https://scholar.google.com/scholar?q="
                                     (replace-regexp-in-string " " "+" url)))))))
-  (if (string-match-p "scholar\\.google\\.com\\?q=" url)
+  ;; FIXME: Fix this code!
+  ;; CHECK: Did I write the chrome code for nothing?
+  (if (string-match-p "scholar\\.google\\.com" url)
       (let ((buf (generate-new-buffer " *scholar*")))
         (with-current-buffer buf (insert (gscholar-bibtex-google-scholar-search-results
                                           query-string)))
-        (shr-render-buffer buf)
         (if (get-buffer "*google-scholar*")
             (kill-buffer (get-buffer "*google-scholar*")))
+        (when (get-buffer "*html*")
+          (with-current-buffer (get-buffer "*html*")
+            (setq-local buffer-read-only nil)))
+        (shr-render-buffer buf)
         (pop-to-buffer-same-window "*html*")
         (rename-buffer "*google-scholar*")
-        ;; (with-current-buffer (get-buffer "*google-scholar*")
-        ;;   (local-set-key (kbd "RET") 'eww-follow-link)
-        ;;   (local-set-key (kbd "b") 'ref-man-eww-get-bibtex-from-scholar nil)
-        ;;   (local-set-key (kbd "d") (lambda () (interactive)
-        ;;                              (ref-man-eww-download-pdf t)))
-        ;;   (local-set-key (kbd "i") 'my/import-link-to-org-buffer)
-        ;;   (local-set-key (kbd "q") 'quit-window)
-        ;;   (local-set-key (kbd "v") (lambda () (interactive)
-        ;;                              (ref-man-eww-view-and-download-if-required-pdf t)))
-        ;;   (read-only-mode))
         (kill-buffer buf))
     (progn
       (pop-to-buffer-same-window
