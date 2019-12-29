@@ -1813,6 +1813,15 @@ corresponding headline and insert."
                    (string-join (butfirst (split-string link "/") 2) "/")))
           (t nil))))
 
+(defun ref-man--get-pdf-link-from-cvf-old-url (url)
+  (let* ((buf (url-retrieve-synchronously url t))
+         (link (ref-man--get-first-pdf-link-from-buffer buf)))
+    (cond ((string-match-p "^[http|https]" link) link)
+          ((string-match-p "^../../content_.*" link)
+           (concat (string-join (firstn (split-string url "/") 4) "/") "/"
+                   (string-join (butfirst (split-string link "/") 2) "/")))
+          (t nil))))
+
 (defun ref-man--get-pdf-link-from-openreview-url (url)
   (let* ((buf (url-retrieve-synchronously url t))
          (link (concat "https://openreview.net" (ref-man--get-first-pdf-link-from-buffer buf))))
@@ -1832,6 +1841,8 @@ corresponding headline and insert."
            (ref-man--get-pdf-link-from-mlr-url url))
           ((string-match-p "openaccess.thecvf.com" url)
            (ref-man--get-pdf-link-from-cvf-url url))
+          ((string-match-p "cv-foundation.org" url)
+           (ref-man--get-pdf-link-from-cvf-old-url url))          
           ((string-match-p "aaai.org" url)
            (ref-man--get-pdf-link-from-aaai-url url))
           ((string-match-p "dl.acm.org" url)
