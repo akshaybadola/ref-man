@@ -172,68 +172,68 @@
 ;; And setting a global variable was causing trouble with parallel
 ;; implementation.
 (defun ref-man--remove-non-ascii (str)
-  (let* ((str (replace-in-string str "í" "{\\\\'i}"))
-         (str (replace-in-string str "æ" "{\\\\ae}"))
-         (str (replace-in-string str "ć" "{\\\\'c}"))
-         (str (replace-in-string str "é" "{\\\\'e}"))
-         (str (replace-in-string str "ä" "{\\\\\"a}"))
-         (str (replace-in-string str "è" "{\\\\`e}"))
-         (str (replace-in-string str "à" "{\\\\`a}"))
-         (str (replace-in-string str "á" "{\\\\'a}"))
-         (str (replace-in-string str "ø" "{\\\\o}"))
-         (str (replace-in-string str "ë" "{\\\\\"e}"))
-         (str (replace-in-string str "ü" "{\\\\\"u}"))
-         (str (replace-in-string str "ñ" "{\\\\~n}"))
-         (str (replace-in-string str "ņ" "{\\\\c{n}}"))
-         (str (replace-in-string str "ñ" "{\\\\~n}"))
-         (str (replace-in-string str "å" "{\\\\aa}"))
-         (str (replace-in-string str "ö" "{\\\\\"o}"))
-         (str (replace-in-string str "á" "{\\\\'a}"))
-         (str (replace-in-string str "í" "{\\\\'i}"))
-         (str (replace-in-string str "ó" "{\\\\'o}"))
-         (str (replace-in-string str "ó" "{\\\\'o}"))
-         (str (replace-in-string str "ú" "{\\\\'u}"))
-         (str (replace-in-string str "ú" "{\\\\'u}"))
-         (str (replace-in-string str "ý" "{\\\\'y}"))
-         (str (replace-in-string str "š" "{\\\\v{s}}"))
-         (str (replace-in-string str "č" "{\\\\v{c}}"))
-         (str (replace-in-string str "ř" "{\\\\v{r}}"))
-         (str (replace-in-string str "š" "{\\\\v{s}}"))
-         (str (replace-in-string str "İ" "{\\\\.i}"))
-         (str (replace-in-string str "ğ" "{\\\\u{g}}"))
-         (str (replace-in-string str "δ" "$\\\\delta$"))
-         (str (replace-in-string str "ç" "{\\\\c{c}}"))
-         (str (replace-in-string str "ß" "{\\\\ss}"))
-         (str (replace-in-string str "≤" "$\\\\le$"))
-         (str (replace-in-string str "≥" "$\\\\ge$"))
+  (let* ((str (replace-in-string str "í" "{\\'i}"))
+         (str (replace-in-string str "æ" "{\\ae}"))
+         (str (replace-in-string str "ć" "{\\'c}"))
+         (str (replace-in-string str "é" "{\\'e}"))
+         (str (replace-in-string str "ä" "{\\\"a}"))
+         (str (replace-in-string str "è" "{\\`e}"))
+         (str (replace-in-string str "à" "{\\`a}"))
+         (str (replace-in-string str "á" "{\\'a}"))
+         (str (replace-in-string str "ø" "{\\o}"))
+         (str (replace-in-string str "ë" "{\\\"e}"))
+         (str (replace-in-string str "ü" "{\\\"u}"))
+         (str (replace-in-string str "ñ" "{\\~n}"))
+         (str (replace-in-string str "ņ" "{\\c{n}}"))
+         (str (replace-in-string str "ñ" "{\\~n}"))
+         (str (replace-in-string str "å" "{\\aa}"))
+         (str (replace-in-string str "ö" "{\\\"o}"))
+         (str (replace-in-string str "á" "{\\'a}"))
+         (str (replace-in-string str "í" "{\\'i}"))
+         (str (replace-in-string str "ó" "{\\'o}"))
+         (str (replace-in-string str "ó" "{\\'o}"))
+         (str (replace-in-string str "ú" "{\\'u}"))
+         (str (replace-in-string str "ú" "{\\'u}"))
+         (str (replace-in-string str "ý" "{\\'y}"))
+         (str (replace-in-string str "š" "{\\v{s}}"))
+         (str (replace-in-string str "č" "{\\v{c}}"))
+         (str (replace-in-string str "ř" "{\\v{r}}"))
+         (str (replace-in-string str "š" "{\\v{s}}"))
+         (str (replace-in-string str "İ" "{\\.i}"))
+         (str (replace-in-string str "ğ" "{\\u{g}}"))
+         (str (replace-in-string str "δ" "$\\delta$"))
+         (str (replace-in-string str "ç" "{\\c{c}}"))
+         (str (replace-in-string str "ß" "{\\ss}"))
+         (str (replace-in-string str "≤" "$\\le$"))
+         (str (replace-in-string str "≥" "$\\ge$"))
          (str (replace-in-string str "<" "$<$"))
-         (str (replace-in-string str "θ" "$\\\\theta$"))
-         (str (replace-in-string str "μ" "$\\\\mu$"))
-         (str (replace-in-string str "→" "$\\\\rightarrow$"))
-         (str (replace-in-string str "⇌" "$\\\\leftrightharpoons$"))
-         (str (replace-in-string str "×" "$\\\\times$"))
-         (str (replace-in-string str "°" "$\\\\deg$"))
-         (str (replace-in-string str "ş" "{\\\\c{s}}"))
-         (str (replace-in-string str "γ" "$\\\\gamma$"))
-         (str (replace-in-string str "ɣ" "$\\\\gamma$"))
+         (str (replace-in-string str "θ" "$\\theta$"))
+         (str (replace-in-string str "μ" "$\\mu$"))
+         (str (replace-in-string str "→" "$\\rightarrow$"))
+         (str (replace-in-string str "⇌" "$\\leftrightharpoons$"))
+         (str (replace-in-string str "×" "$\\times$"))
+         (str (replace-in-string str "°" "$\\deg$"))
+         (str (replace-in-string str "ş" "{\\c{s}}"))
+         (str (replace-in-string str "γ" "$\\gamma$"))
+         (str (replace-in-string str "ɣ" "$\\gamma$"))
          (str (replace-in-string str "º" "degc"))
-         (str (replace-in-string str "η" "$\\\\eta$"))
-         (str (replace-in-string str "µ" "$\\\\mu$"))
-         (str (replace-in-string str "α" "$\\\\alpha$"))
-         (str (replace-in-string str "β" "$\\\\beta$"))
-         (str (replace-in-string str "ɛ" "$\\\\epsilon$"))
-         (str (replace-in-string str "ⅵ" "\\textrm{vi}"))
-         (str (replace-in-string str "ⅲ" "\\textrm{iii}"))
-         (str (replace-in-string str "ⅴ" "\\textrm{v}"))
-         (str (replace-in-string str "λ" "$\\\\lambda$"))
-         (str (replace-in-string str "π" "$\\\\pi$"))
-         (str (replace-in-string str "∞" "$\\\\infty$"))
-         (str (replace-in-string str "χ" "$\\\\chi$"))
-         (str (replace-in-string str "∼" "\\\\textasciitilde{}"))
-         (str (replace-in-string str "‑" "\\\\textemdash{}"))
+         (str (replace-in-string str "η" "$\\eta$"))
+         (str (replace-in-string str "µ" "$\\mu$"))
+         (str (replace-in-string str "α" "$\\alpha$"))
+         (str (replace-in-string str "β" "$\\beta$"))
+         (str (replace-in-string str "ɛ" "$\\epsilon$"))
+         (str (replace-in-string str "ⅵ" "\textrm{vi}"))
+         (str (replace-in-string str "ⅲ" "\textrm{iii}"))
+         (str (replace-in-string str "ⅴ" "\textrm{v}"))
+         (str (replace-in-string str "λ" "$\\lambda$"))
+         (str (replace-in-string str "π" "$\\pi$"))
+         (str (replace-in-string str "∞" "$\\infty$"))
+         (str (replace-in-string str "χ" "$\\chi$"))
+         (str (replace-in-string str "∼" "\\textasciitilde{}"))
+         (str (replace-in-string str "‑" "\\textemdash{}"))
          (str (replace-in-string str " " " "))
          (str (replace-in-string str "…" "..."))
-         (str (replace-in-string str "•" "\\\\textbullet "))
+         (str (replace-in-string str "•" "\\textbullet "))
          (str (replace-in-string str " " " "))
          (str (replace-in-string str " " " "))
          (str (replace-in-string str " " " "))
@@ -241,7 +241,7 @@
          (str (replace-in-string str "−" "-"))
          (str (replace-in-string str "–" "-"))
          (str (replace-in-string str "—" "-"))
-         (str (replace-in-string str "‒" "\\\\textemdash{}"))
+         (str (replace-in-string str "‒" "\\textemdash{}"))
          (str (replace-in-string str "‘" "'"))
          (str (replace-in-string str "’" "'"))
          (str (replace-in-string str "’" "'"))
@@ -294,6 +294,15 @@ pairs for only the top result from ref-man-venue-priorities"
                            (last (gscholar-bibtex--xml-get-child result x)))))
                  ref-man-key-list)))))
 
+(defun ref-man--transcribe (str &optional change-list)
+  (let ((content str)
+        (change-list (if change-list change-list bibtex-autokey-transcriptions)))
+    (dolist (pattern change-list)
+      (setq content (replace-regexp-in-string (car pattern)
+                                              (cdr pattern)
+                                              content t)))
+    content))
+
 ;;
 ;; TODO: crossref and dblp insert URL as dx.doi.org something which
 ;; redirects to the real url or may not even in some cases. If a pdf
@@ -309,7 +318,8 @@ entry from the list of (key . value)"
          (year-pub (ref-man--trim-whitespace (car (cdr (assoc "year" key-str)))))
          (title (remove-if 'ref-man--is-stop-word (split-string (downcase (ref-man--trim-whitespace (cadr (assoc "title" key-str)))) " ")))
          (title-first (car (split-string (first title) "-")))
-         (key (ref-man--remove-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) ""))))
+         (key (ref-man--remove-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))
+         (key (ref-man--transcribe key)))
     (if na (concat "na_" key) key)))
 
 (defun ref-man--build-bib-key-from-parsed-org-bibtex (bib-assoc)
@@ -420,7 +430,7 @@ to a buffer right now. can change to have it in multiple steps."
             (shell-command-to-string (format "curl -s -H\
             \"content-type: application/pdf\" --data-binary @%s\
             \"http://localhost:%s/v1\"" pdf-file-name server-port))
-          (progn (message "[pdf-refs] not pdf-view-mode") nil)))
+          (progn (message "[ref-man] not pdf-view-mode") nil)))
        (json-object-type 'hash-table)
        (json-key-type 'string)
        (json-array-type 'list)
@@ -441,7 +451,7 @@ to a buffer right now. can change to have it in multiple steps."
                                                    json-string)
                                           (gethash "title" json-string)))
           (ref-man--generate-buffer-and-fetch-if-required refs-list))
-      (progn (message "[pdf-refs] Empty PDF parse") nil))))
+      (progn (message "[ref-man] Empty PDF parse") nil))))
 
 (defun ref-man--generate-org-buffer (&optional visiting-filename)
   "Generated buffer where all the fetch results will be inserted"
@@ -573,16 +583,16 @@ top level heading"
           (path-join (list ref-man-org-store-dir (concat (string-remove-prefix "na_" filename) ".org"))))
          (buf (find-buffer-visiting visiting-filename)))
     (if (not filename)
-        (message "[pdf-refs] filename could not be generated!")
+        (message "[ref-man] filename could not be generated!")
       (cond ((and buf (with-current-buffer buf (buffer-string)))
-             (message "[pdf-refs] File is already opened and not empty. Switching")
+             (message "[ref-man] File is already opened and not empty. Switching")
              (ref-man--generate-org-buffer (concat filename ".org")))
             ((and buf (not (with-current-buffer buf (buffer-string)))
                   (file-exists-p visiting-filename))
              (with-current-buffer (get-buffer-create (concat filename ".org"))
                (insert-file-contents visiting-filename t)))
             ((and (not buf) (file-exists-p visiting-filename))
-             (message "[pdf-refs] File already exists. Opening")
+             (message "[ref-man] File already exists. Opening")
              (let ((org-buf (ref-man--generate-org-buffer (concat filename ".org"))))
                (unless (with-current-buffer org-buf
                          (insert-file-contents visiting-filename t) (buffer-string))
@@ -746,7 +756,7 @@ with 'bibtex from a bibtex entry"
                      (ref-man--build-bib-assoc-from-parsed-org-bibtex entry)))))
           (goto-char (point-min))
           (delete-char 3)))
-    (message (format "[pdf-refs] File %s does not exist" filename))))
+    (message (format "[ref-man] File %s does not exist" filename))))
 
 (defun ref-man-org-bibtex-read-from-headline ()
   (interactive)
@@ -776,7 +786,7 @@ with 'bibtex from a bibtex entry"
                                        bib-str "") "}\n")))
       (if (called-interactively-p 'any)
           (kill-new bib-str) bib-str))
-    (message "[pdf-refs] Not org mode")))
+    (message "[ref-man] Not org mode")))
 
 (defun ref-man-org-bibtex-insert-headline-as-bib-to-file (&optional file)
   "Export current headline to kill ring as bibtex entry."
@@ -832,8 +842,8 @@ with 'bibtex from a bibtex entry"
                   "No property drawer or no property. Fixed")
                  (t (with-current-buffer org-buf
                       (org-entry-get org-point "CUSTOM_ID"))))))
-      ('error (message (format "[pdf-refs] Caught exception: [%s]" ex))))
-    (message (concat "[pdf-refs] " retval))))
+      ('error (message (format "[ref-man] Caught exception: [%s]" ex))))
+    (message (concat "[ref-man] " retval))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; End Org generation and insertion stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -874,7 +884,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
          (local-set-key (kbd "p") 'biblio--selection-previous)
          (local-set-key (kbd "o") 'ref-man--parse-selected-entry-to-org))
        (set-window-buffer win my/biblio-callback-buf)
-       (message "[pdf-refs] Tip: learn to browse results with `h'")))))
+       (message "[ref-man] Tip: learn to browse results with `h'")))))
 
 (defun ref-man--parse-selected-entry-to-org ()
   (interactive)
@@ -892,7 +902,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
         (new-key (ref-man--build-bib-key-from-parsed-bibtex bib-assoc))
         (bib-assoc (remove-if 'ref-man--is-bibtex-key bib-assoc)))
     (setf (alist-get "=key=" bib-assoc) new-key)
-    (cond ((not bib-assoc) (message "[pdf-refs] Received nil entry"))
+    (cond ((not bib-assoc) (message "[ref-man] Received nil entry"))
           ((string-match-p "na_" current-key)
            (ref-man--org-bibtex-convert-bib-to-property bib-assoc ref-man--org-heading-gscholar-launch-buffer))
           ((y-or-n-p "Authoritative entry. Really replace?")
@@ -1202,14 +1212,14 @@ download, get the link which corresponds to it"
     (if buf-string
         (progn
           (setq my/bibtex-entry buf-string) ; TODO: Not used
-          (message "Saved bibtex to my/bibtex-entry")
+          (message "[ref-man] Saved bibtex to my/bibtex-entry")
           ;; Sanitize org entry and insert into org buffer
           (let ((org-buf (cond ((stringp org) (get-buffer org))
                                (ref-man--org-gscholar-launch-buffer ref-man--org-gscholar-launch-buffer)
                                (t nil))))
             (if org-buf
                 (progn
-                  (message (concat "Trying to insert into org buffer: "
+                  (message (concat "[ref-man] Trying to insert into org buffer: "
                                    (buffer-name org-buf)))
                   (ref-man--sanitize-org-entry org-buf)
                   (let ((bib-assoc (with-current-buffer buf (goto-char (point-min)) (bibtex-parse-entry)))
@@ -1632,7 +1642,7 @@ corresponding headline and insert."
     (kill-buffer temp-buf)
     link))
 
-;; TODO: Get supllementary material also
+;; TODO: Get suplementary material also
 (defun ref-man--get-pdf-link-from-nips-url (url)
   (let* ((buf (url-retrieve-synchronously url t))
          (link (ref-man--get-first-pdf-link-from-buffer buf)))
@@ -1721,9 +1731,9 @@ corresponding headline and insert."
     (cond ((string-match-p "doi.org" url)
            (ref-man--get-bibtex-link-from-doi url))
           ((string-match-p "arxiv.org" url)
-           (concat (replace-in-string url "/abs/" "/pdf/") ".pdf"))
+           (ref-man--get-bibtex-link-from-arxiv url))
           ((string-match-p "aclweb.org" url)
-           (concat url ".pdf"))
+           (ref-man--get-bibtex-link-from-acl url))
           ((string-match-p "papers.nips.cc" url)
            (ref-man--get-bibtex-link-from-nips-url url))
           ((string-match-p "openaccess.thecvf.com" url)
@@ -1736,14 +1746,14 @@ corresponding headline and insert."
            (ref-man--get-bibtex-link-from-openreview-url url))
           (t url))))
 
-(defun ref-man--try-get-abstract-according-to-source (url)
+(defun ref-man--try-get-bib-url-according-to-source (url)
   (when url
     (cond ((string-match-p "doi.org" url)
            (ref-man--get-abstract-from-doi url))
           ((string-match-p "arxiv.org" url)
-           (concat (replace-in-string url "/abs/" "/pdf/") ".pdf"))
+           (ref-man--get-abstract-from-arxiv url))
           ((string-match-p "aclweb.org" url)
-           (concat url ".pdf"))
+           (ref-man--get-abstract-from-acl url))
           ((string-match-p "papers.nips.cc" url)
            (ref-man--get-abstract-from-nips-url url))
           ((string-match-p "openaccess.thecvf.com" url)
@@ -1751,42 +1761,42 @@ corresponding headline and insert."
           ((string-match-p "aaai.org" url)
            (ref-man--get-abstract-from-aaai-url url))
           ((string-match-p "dl.acm.org" url)
-           (ref-man--get-abstract-link-from-acm-url url))
+           (ref-man--get-abstract-from-acm-url url))
           ((string-match-p "openreview.net" url)
            (ref-man--get-abstract-from-openreview-url url))
           (t url))))
 
-(defun ref-man--try-get-suppl-according-to-source (url)
+(defun ref-man--try-get-supplementary-url-according-to-source (url)
   (when url
     (cond ((string-match-p "doi.org" url)
-           (ref-man--get-abstract-from-doi url))
+           (ref-man--get-supplementary-url-from-doi url))
           ((string-match-p "arxiv.org" url)
-           (concat (replace-in-string url "/abs/" "/pdf/") ".pdf"))
+           (ref-man--get-supplementary-url-from-arxiv url))
           ((string-match-p "aclweb.org" url)
-           (concat url ".pdf"))
+           (ref-man--get-supplementary-url-from-acl url))
           ((string-match-p "papers.nips.cc" url)
-           (ref-man--get-abstract-from-nips-url url))
+           (ref-man--get-supplementary-url-from-nips-url url))
           ((string-match-p "openaccess.thecvf.com" url)
-           (ref-man--get-abstract-from-cvf-url url))
+           (ref-man--get-supplementary-url-from-cvf-url url))
           ((string-match-p "aaai.org" url)
-           (ref-man--get-abstract-from-aaai-url url))
+           (ref-man--get-supplementary-url-from-aaai-url url))
           ((string-match-p "dl.acm.org" url)
-           (ref-man--get-abstract-link-from-acm-url url))
+           (ref-man--get-supplementary-url-from-acm-url url))
           ((string-match-p "openreview.net" url)
-           (ref-man--get-abstract-from-openreview-url url))
+           (ref-man--get-supplementary-url-from-openreview-url url))
           (t url))))
 
 (defun ref-man--get-pdf-link-from-doi (url)
   "Buffer redirects correctly to IEEE (or some other site), but I
   can't really download from there"
   ;; If link is cvpr or iccv, then find the cvf link and go to that site
-  (message "Not Implemented yet") nil)
+  (message "[ref-man] Not Implemented yet") nil)
 
 (defun ref-man--get-bibtex-link-from-doi (url)
   "Buffer redirects correctly to IEEE (or some other site), but I
   can't really download from there"
   ;; If link is cvpr or iccv, then find the cvf link and go to that site
-  (message "Not Implemented yet") nil)
+  (message "[ref-man] Not Implemented yet") nil)
 
 (defun ref-man--parse-ieee-page (url)
   (let* ((buf (url-retrieve-synchronously url t))
@@ -1814,7 +1824,7 @@ corresponding headline and insert."
 ;;       ref-man--insert-org-pdf-file-property
 
 (defun ref-man-import-arxiv-link-to-org-buffer (url)
-  (message "Not Implemented"))
+  (message "[ref-man] Not Implemented"))
 
 ;; TODO: Currently no TODO attribute is set on the org entry and no
 ;;       timestamp is marked. I should fix that.
@@ -1843,7 +1853,7 @@ buffer is not gscholar"
 (defun ref-man--download-pdf-redirect (callback url &optional point)
   (if (not point)
       (progn
-        (message (concat "Fetching " url))
+        (message (concat "[ref-man] Fetching " url))
         (url-retrieve url callback (list url))))
   (url-retrieve url callback (list url point)))
   
@@ -1876,12 +1886,12 @@ buffer is not gscholar"
           ((and url (not (ref-man--downloadable-pdf-url-p url)))
            (if storep
                (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) "NOT-PDF"))
-             (message (concat "Browsing " url))
+             (message (concat "[ref-man] Browsing " url))
              (eww-browse-url url)))
           ((not url)
            (if storep
                (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) "BAD-URL"))
-             (message (concat "Bad URL " url))))
+             (message (concat "[ref-man] Bad URL " url))))
           (t (message "[ref-man--try-fetch-pdf-from-url] Some strange error occured. Check")))))
 
 ;; FIXME: Although it works in principle, but for a large subtree it sort of
@@ -1899,7 +1909,7 @@ buffer is not gscholar"
 traverses one level depth as of now"
   ;; Need callback to update buffer when done and set/unset READONLY also
   (interactive)
-  (message "Fetching PDFs in subtree. Wait for completion...")
+  (message "[ref-man] Fetching PDFs in subtree. Wait for completion...")
   (setq ref-man--current-org-buffer (current-buffer))
   (setq ref-man--subtree-list nil)
   (save-restriction
@@ -1929,30 +1939,56 @@ traverses one level depth as of now"
                    (ref-man--insert-org-pdf-file-property pdf-file)
                    ))))))
 
+(defun ref-man--check-fix-url-property ()
+  "Make sure URL property exists in either property drawer or
+text and if no URL could be found return nil."
+  (let* ((props (org-entry-properties))
+         (url-prop (cdr (assoc "URL" props))))
+    (unless url-prop
+      (let ((prop (org-element-property :raw-link (ref-man--get-first-link-from-text))))
+        (when prop
+          (org-entry-put (point) "URL" prop)
+          (setq url-prop prop))))
+  url-prop))
+
+(defun ref-man--check-fix-pdf-file-property ()
+  (let* ((props (org-entry-properties))
+         (pdf-file (cond ((assoc "PDF-FILE" props)
+                          (cdr (assoc "PDF-FILE" props)))
+                         ((assoc "FILE_NAME" props)
+                          (ref-man--insert-org-pdf-file-property
+                           (replace-regexp-in-string "\\[\\|\\]" "" (cdr (assoc "FILE_NAME" props))))
+                          (t nil)))))
+    (when (assoc "FILE_NAME" props)
+      (org-delete-property "FILE_NAME"))
+    pdf-file))
+
 ;; TODO: I have not incorporated dblp extracted entries as they refer
 ;;       to DOIs or direct arxiv links. Have to fix that.
 ;; TODO: If the pdf is extracted from a site like cvf, or nips
 ;;       or whatever, the corresponding bibtex should also be
 ;;       extracted and stored from the website itself.
+;; TODO: What if entry exists but the file doesn't?
 (defun ref-man-try-fetch-and-store-pdf-in-org-entry (&optional storep)
   (interactive)
   (let* ((props (org-entry-properties))
-         (pdf-file (cond ((assoc "PDF-FILE" props)
-                          (cdr (assoc "PDF-FILE" props)))
-                         ((assoc "FILE_NAME" props)
-                          (cdr (assoc "FILE_NAME" props)))
-                         (t nil))))
-    (cond ((and pdf-file (assoc "FILE_NAME" props))
-           ;; Don't need ref-man--org-gscholar-launch-buffer or point here
-           (ref-man--insert-org-pdf-file-property pdf-file)
-           (org-delete-property "FILE_NAME"))
-          ((and pdf-file (not (assoc "URL" props)))
-           (org-element-property :raw-link (ref-man--get-first-link-from-text)))
-          ((and (not pdf-file) (assoc "URL" props))
-           (ref-man-try-fetch-pdf-from-url (cdr (assoc "URL" props)) storep))
-          ((not pdf-file)
-           (ref-man-try-fetch-and-store-pdf-in-org-entry-text storep))
-          (t (message "PDF already exists or wrong pdf inserted!. Please check!")))))
+         (pdf-file (ref-man--check-fix-pdf-file-property))
+         (url-prop (ref-man--check-fix-url-property)))
+         ;; FIXME: Make sure pdf file exists on disk, else remove prop
+         ;; FIXME: Actually I should get the :link property from text but MEH!
+    (cond ((and pdf-file url-prop)
+           (message (concat "[ref-man] PDF already exists."
+                            (if (string= (replace-regexp-in-string "\\[\\|\\]" "" pdf-file)
+                                         (ref-man--filename-from-url url-prop))
+                                " And is the same as URL"
+                              " But is different from URL"))))
+          ((and pdf-file (not url-prop))
+           (message "[ref-man] PDF exists, but no URL! What to do?!!"))
+          ((and (not pdf-file) url-prop)
+           (message "[ref-man] Fetching PDF from URL")
+           (ref-man-try-fetch-pdf-from-url url-prop storep))
+          ((and (not pdf-file) (not url-prop))
+           (message "[ref-man] Nothing to be done here")))))
 
 ;; FIXED: Since the retrieval is now async, if I move to another
 ;;        headline while the file is being downloaded, the file link
@@ -1964,30 +2000,30 @@ traverses one level depth as of now"
 ;;       the issue that if I call the function on two org entries, the
 ;;       global variable will be over written and there's no way to
 ;;       avoid that except by using assoc lists and mutexes.
-(defun ref-man-try-fetch-and-store-pdf-in-org-entry-text (&optional storep)
-  "For the first link in text, ascertain if the corresponding pdf
-file exists or not. In case it doesn't, retrieve the pdf file
-from the url if it is a downloadable url or an arxiv url. If the
-link is not a pdf link, call eww-browse-url. If the file exists,
-don't retrieve the pdf file.
-In both cases, store the file link in PDF-FILE property in the org
-property drawer for the headline at point."
-  (let* ((props (text-properties-at (point)))
-         (url (car (mapcar (lambda (x) (cadr x))
-                           (remove-if-not #'ref-man--org-property-is-url-p props))))
-         (url (if url url (org-element-property :raw-link
-                                                (ref-man--get-first-link-from-text)))))
-    (when url
-      (cond ((= 1 (ref-man--get-number-of-links-from-text))
-             (ref-man--move-only-link-to-property))
-            ((< 1 (ref-man--get-number-of-links-from-text))
-             (y-or-n-p "Move first link to property?")
-             (let* ((link (ref-man--get-first-link-from-text))
-                    (link-str (org-element-property :raw-link link)))
-               (delete-region (org-element-property :begin link)
-                              (org-element-property :end link))
-               (org-set-property "URL" link-str))))
-      (ref-man-try-fetch-pdf-from-url url storep))))
+;; (defun ref-man-try-fetch-and-store-pdf-in-org-entry-text (&optional storep)
+;;   "For the first link in text, ascertain if the corresponding pdf
+;; file exists or not. In case it doesn't, retrieve the pdf file
+;; from the url if it is a downloadable url or an arxiv url. If the
+;; link is not a pdf link, call eww-browse-url. If the file exists,
+;; don't retrieve the pdf file.
+;; In both cases, store the file link in PDF-FILE property in the org
+;; property drawer for the headline at point."
+;;   (let* ((props (text-properties-at (point)))
+;;          (url (car (mapcar (lambda (x) (cadr x))
+;;                            (remove-if-not #'ref-man--org-property-is-url-p props))))
+;;          (url (if url url (org-element-property :raw-link
+;;                                                 (ref-man--get-first-link-from-text)))))
+;;     (when url
+;;       (cond ((= 1 (ref-man--get-number-of-links-from-text))
+;;              (ref-man--move-only-link-to-property))
+;;             ((< 1 (ref-man--get-number-of-links-from-text))
+;;              (y-or-n-p "Move first link to property?")
+;;              (let* ((link (ref-man--get-first-link-from-text))
+;;                     (link-str (org-element-property :raw-link link)))
+;;                (delete-region (org-element-property :begin link)
+;;                               (org-element-property :end link))
+;;                (org-set-property "URL" link-str))))
+;;       (ref-man-try-fetch-pdf-from-url url storep))))
 
 ;; TODO: This should always be async with callback
 ;;       One issue then will be, how to correspond between threads
@@ -2103,11 +2139,11 @@ a) org-gscholar-launch-buffer is checked for the entry"
     ;; Descend into subtree
     ;; On all children do recursive call to self
         )
-    (message "Not at heading"))                             ; HERE
+    (message "[ref-man] Not at heading"))                             ; HERE
   (when (ref-man--at-bib-heading-p)
     (ref-man-parse-subtree-to-buffer-as-bibtex bib-buf))
   (if (not bib-buf)
-      (progn (message "bib-buf is required when called non-interactively") nil)
+      (progn (message "[ref-man] bib-buf is required when called non-interactively") nil)
     (with-current-buffer (get-buffer bib-buf)
       (goto-char (point-min))
       ;; Insert stuff
