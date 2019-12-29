@@ -52,11 +52,15 @@
 (setq ref-man-org-store-dir (expand-file-name "~/org/pubs_org/"))
 
 ;; Internal global variables
-(setq ref-man--org-heading-gscholar-launch-buffer nil)
-(setq ref-man--org-heading-gscholar-launch-point nil)
-(setq ref-man--org-gscholar-launch-buffer nil)
-(setq ref-man--org-gscholar-launch-point nil)
-(setq ref-man--eww-import-link nil)
+;; FIXME: ref-man--org-heading-gscholar-launch-buffer etc. are still being
+;;        used causing confusion
+(defvar ref-man--org-heading-gscholar-launch-buffer nil)
+(defvar ref-man--org-heading-gscholar-launch-point nil)
+(defvar ref-man--org-gscholar-launch-buffer nil)
+(defvar ref-man--org-gscholar-launch-point nil)
+(defvar ref-man--eww-import-link nil)
+(defvar ref-man--subtree-list nil)
+(defvar ref-man--current-org-buffer nil)
 
 (defvar shr-map
   (let ((map (make-sparse-keymap)))
@@ -431,7 +435,11 @@ to a buffer right now. can change to have it in multiple steps."
         (progn
           (setq ref-man--current-pdf-file-name pdf-file-name)
           (setq ref-man--science-parse-data json-string)
-          (setq ref-man--document-title (gethash "title" json-string))
+          (setq ref-man--document-title (if (gethash "title" json-string)
+                                            (gethash "title" json-string)
+                                          (puthash "title" (read-from-minibuffer "ENTER TITLE (could not infer): ")
+                                                   json-string)
+                                          (gethash "title" json-string)))
           (ref-man--generate-buffer-and-fetch-if-required refs-list))
       (progn (message "[pdf-refs] Empty PDF parse") nil))))
 
@@ -461,19 +469,23 @@ to a buffer right now. can change to have it in multiple steps."
 (defun ref-man--dblp-fetch-parallel (refs-list org-buf)
   "Fetches all dblp queries in parallel via async"
   (setq ref-man--dblp-fetch-parallel-results nil)
-  (loop for ref-refs in refs-list do
+  (setq ref-man--temp-ref nil)
+  (loop for ref-ref in refs-list do
+        (setq ref-man--temp-ref ref-ref)
+        (setq ref-man--temp-buf org-buf)
         (async-start
          `(lambda ()
-            ;; (defun replace-in-string (what with in)
-            ;;   (replace-regexp-in-string (regexp-quote what) with in nil 'literal))
-            ,(async-inject-variables "ref-refs")
-            (let* ((query-url (format "http://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" (car ref-refs)))
+            ,(async-inject-variables "ref-man--temp-ref")
+            (defun replace-in-string (what with in)
+              (replace-regexp-in-string (regexp-quote what) with in nil 'literal))
+            (let* ((query-url
+                    (format "http://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" (car ref-man--temp-ref)))
                    (buf (url-retrieve-synchronously query-url)))
               (prog2 (with-current-buffer buf (set-buffer-multibyte t))
                   (with-current-buffer buf (buffer-string))
                 (kill-buffer buf))))
          `(lambda (buf-string)
-            ,(async-inject-variables "ref-refs\\|org-buf\\|ref-man--dblp-fetch-parallel-results")
+            ,(async-inject-variables "ref-man--temp-ref\\|ref-man--temp-buf\\|ref-man--dblp-fetch-parallel-results")
             (let ((guf (generate-new-buffer "*dblp-test*")))
               (with-current-buffer guf (insert buf-string))
               (with-current-buffer guf (set-buffer-multibyte t))
@@ -483,10 +495,11 @@ to a buffer right now. can change to have it in multiple steps."
                                        (ref-man--dblp-clean
                                         (mapcar (lambda (hit)
                                                   (gscholar-bibtex--xml-get-child hit 'info))
-                                                (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit))))))
-                  (with-current-buffer org-buf
+                                                (xml-get-children
+                                                 (gscholar-bibtex--xml-get-child result 'hits) 'hit))))))
+                  (with-current-buffer ref-man--temp-buf
                     (if key-str (ref-man--org-bibtex-write-ref-from-assoc (ref-man--build-bib-assoc key-str))
-                      (ref-man--org-bibtex-write-ref-NA-from-keyhash (cdr ref-refs))))
+                      (ref-man--org-bibtex-write-ref-NA-from-keyhash (cdr ref-man--temp-ref))))
                   (kill-buffer guf))))))))
 
 ;;
@@ -561,22 +574,22 @@ top level heading"
          (buf (find-buffer-visiting visiting-filename)))
     (if (not filename)
         (message "[pdf-refs] filename could not be generated!")
-      (progn (cond ((and buf (with-current-buffer buf (buffer-string)))
-                    (progn (message "[pdf-refs] File is already opened and not empty. Switching")
-                           (ref-man--generate-org-buffer (concat filename ".org"))))
-                   ((and buf (not (with-current-buffer buf (buffer-string)))
-                         (file-exists-p visiting-filename))
-                    (with-current-buffer (get-buffer-create (concat filename ".org"))
-                      (insert-file-contents visiting-filename t)))
-                   ((and (not buf) (file-exists-p visiting-filename))
-                    (progn (message "[pdf-refs] File already exists. Opening")
-                           (let ((org-buf (ref-man--generate-org-buffer (concat filename ".org"))))
-                             (if (not (with-current-buffer org-buf
-                                        (insert-file-contents visiting-filename t) (buffer-string)))
-                                 (ref-man--generate-org-buffer-content org-buf refs-list bib-assoc visiting-filename)))))
-                   ((and (not buf) (not (file-exists-p visiting-filename)))
-                    (let ((org-buf (ref-man--generate-org-buffer (concat filename ".org"))))
-                      (ref-man--generate-org-buffer-content org-buf refs-list bib-assoc visiting-filename))))))))
+      (cond ((and buf (with-current-buffer buf (buffer-string)))
+             (message "[pdf-refs] File is already opened and not empty. Switching")
+             (ref-man--generate-org-buffer (concat filename ".org")))
+            ((and buf (not (with-current-buffer buf (buffer-string)))
+                  (file-exists-p visiting-filename))
+             (with-current-buffer (get-buffer-create (concat filename ".org"))
+               (insert-file-contents visiting-filename t)))
+            ((and (not buf) (file-exists-p visiting-filename))
+             (message "[pdf-refs] File already exists. Opening")
+             (let ((org-buf (ref-man--generate-org-buffer (concat filename ".org"))))
+               (unless (with-current-buffer org-buf
+                         (insert-file-contents visiting-filename t) (buffer-string))
+                 (ref-man--generate-org-buffer-content org-buf refs-list bib-assoc visiting-filename))))
+            ((and (not buf) (not (file-exists-p visiting-filename)))
+             (let ((org-buf (ref-man--generate-org-buffer (concat filename ".org"))))
+               (ref-man--generate-org-buffer-content org-buf refs-list bib-assoc visiting-filename)))))))
 
 (defun ref-man--org-bibtex-write-top-heading-from-assoc (entry)
   "Generate the top level org entry for data parsed with science-parse."
@@ -586,7 +599,9 @@ top level heading"
     (insert (cdr (assoc "title" entry)))
     (insert "\n")
     (org-indent-line)
-    (insert (gethash "abstractText" ref-man--science-parse-data)) ;; Hack to get abstractText
+    (if (gethash "abstractText" ref-man--science-parse-data)
+        (insert (gethash "abstractText" ref-man--science-parse-data))
+      (insert "No abstract found")) ;; Hack to get abstractText
     (fill-paragraph)
     (org-insert-property-drawer)
     (loop for ent in entry
@@ -791,6 +806,7 @@ with 'bibtex from a bibtex entry"
               (`("=key=" . ,_) (org-set-property "CUSTOM_ID" (ref-man--fix-curly (cdr ent))))
               (`(,_ . ,_) (org-set-property (upcase (car ent)) (ref-man--fix-curly (cdr ent)))))))))
 
+;; TODO: "No property drawer" should not come when property drawer is present
 (defun ref-man--sanitize-org-entry (&optional org-buf)
   (let (retval)
     (condition-case ex
@@ -925,10 +941,15 @@ Results are parsed with (BACKEND 'parse-buffer)."
 ;; BEGIN string utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defun ref-man--on-gscholar-page-p ()
+  (and (eq major-mode 'eww-mode)
+       (string-match-p "scholar\\.google\\.com" (plist-get eww-data :url))))
+
 (defun ref-man--non-gscholar-url-p (url)
-  (and (not (string-match-p "javascript" url))
-       (not (string-match-p "scholar" url))
-       (not (string-match-p "google" url))))
+  (or (string-match-p "semanticscholar.org" url)
+      (and (not (string-match-p "javascript" url))
+           (not (string-match-p "scholar" url))
+           (not (string-match-p "google" url)))))
 
 (defun ref-man--filter-eww-non-gscholar (url-list)
   (remove-if
@@ -940,7 +961,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
      url-list))))
 
 (defun ref-man--downloadable-pdf-url-p (url)
-  "Does the given url contain a pdf to download"
+  "Does the given url contain a pdf to download."
   (and (ref-man--non-gscholar-url-p url)
        ;; add exception for arxiv.org
        (cond ((string-match-p "arxiv.org" url)
@@ -949,7 +970,9 @@ Results are parsed with (BACKEND 'parse-buffer)."
               (string-match-p "/download/" url))
              ((string-match-p "openreview.net" url)
               (string-match-p "pdf" url))
-             (t (string-match-p "\\.pdf" url)))))
+             ((string-match-p "dl.acm.org" url)
+              (string-match-p "gateway.cfm" url))
+             (t (string-match-p "\\.pdf$" url)))))
 
 (defun ref-man--url-matches-filename-p (url filename)
   (let* ((obj (url-generic-parse-url url))
@@ -965,8 +988,12 @@ Results are parsed with (BACKEND 'parse-buffer)."
                                    (cdr (url-path-and-query
                                          (url-generic-parse-url url))) "="))
                               "." "pdf"))
+                     ((string-match-p "springer.com" url)
+                      (concat (string-join (last (split-string url "/") 2) "-") ".pdf"))
                      ((string-match-p "aaai.org" url)
                       (concat "aaai_" (string-join (last (split-string url "/") 2) "_") ".pdf"))
+                     ((string-match-p "dl.acm.org" url)
+                      (concat "acm_" (car (split-string (nth 1 (split-string url "?id=")) "&")) ".pdf"))
                      (t (car (url-path-and-query obj)))))
          (file (path-join (list ref-man-pubs-directory (file-name-nondirectory path)))))
     file))
@@ -1034,12 +1061,15 @@ Results are parsed with (BACKEND 'parse-buffer)."
       (eww-view-source))))
 
 (defun ref-man-eww-keypress-v ()
-  "View and download if required url. If no url under point get
-the first one from top"
+  "View and download if required url. Calls
+`ref-man-eww-view-and-download-if-required-pdf` If in
+google-scholar buffer then call the function, else check if it's
+a pdf url first. Views source of the page if both of those can't
+be applied."
   (interactive)
   ;; assuming already in eww or shr mode
   (let ((url (get-text-property (point) 'shr-url)))
-    (if (and url (ref-man--downloadable-pdf-url-p url))
+    (if (or (ref-man--on-gscholar-page-p) (and url (ref-man--downloadable-pdf-url-p url)))
         (ref-man-eww-view-and-download-if-required-pdf url)
       (eww-view-source))))
 
@@ -1055,23 +1085,42 @@ Goes to the next pdf link and cycles round if the last link is reached."
                   (ref-man-eww-get-all-links buf nil nil "\\.pdf"))))))
  
 (defun ref-man-eww-keypress-b (&optional org-buf)
-  (interactive (list (if (and current-prefix-arg (not (boundp 'org-buf)))
-                         (completing-read "Org buffer: " (mapcar (lambda (x) (format "%s" x)) (buffer-list)))
-                       nil)))
+  (interactive (list (when (and current-prefix-arg (not (boundp 'org-buf)))
+                       (completing-read "Org buffer: "
+                                        (mapcar (lambda (x) (format "%s" x)) (buffer-list))))))
   (let ((url (with-current-buffer (get-buffer "*eww*") (plist-get eww-data :url))))
     (if (string-match-p "scholar\\.google\\.com" url)
         (ref-man-eww-get-bibtex-from-scholar org-buf)
       (eww-add-bookmark))))
 
+;; TODO: Fix this thing. Previous pdf link of gscholar may not be the link
+;;       corresponding to that document. As in the previous link may be an html
+;;       It downloads the previous downloadable pdf link instead in that case.
+;; TODO: There should be a uniform interface to all downloads and view requests
+;;       so additional downloads aren't done. At present, the file is downloaded
+;;       again, which should be the case only with a prefix key
+;; TODO: keypress-d from arxiv.org doesn't store the pdf file in properties of
+;;       corresponding org file. Maybe it's because when I follow the link from
+;;       org-buffer, `ref-man--org-gscholar-launch-buffer' is not set
 (defun ref-man-eww-keypress-d ()
   (interactive)
   ;; was here for scholar.google.com checking
   ;; * ((url (with-current-buffer (get-buffer "*eww*") (plist-get eww-data :url)))
   (let ((url (get-text-property (point) 'shr-url)))
-    (if (and url (ref-man--downloadable-pdf-url-p url))
-        (ref-man-eww-download-pdf url)
-      (ref-man-eww-download-pdf url))
-    (eww-download)))
+    (cond ((ref-man--on-gscholar-page-p)
+           (ref-man-eww-download-pdf (ref-man--eww-gscholar-get-previous-pdf-link (current-buffer))))
+          ((ref-man--downloadable-pdf-url-p url)
+           (ref-man-eww-download-pdf url))
+          (t (message "[ref-man] Nothing to download here")))))
+
+    ;; (and url (ref-man--downloadable-pdf-url-p url))
+    ;;     (ref-man-eww-download-pdf url)
+    ;;     (message "[ref-man] Nothing to download here"))))
+
+    ;; (if (and url (ref-man--downloadable-pdf-url-p url))
+    ;;     (ref-man-eww-download-pdf url)
+    ;;   (ref-man-eww-download-pdf url))
+    ;; (eww-download)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END eww navigation ;;
@@ -1322,6 +1371,7 @@ If the input doesn't look like a URL or a domain name."
 
 ;; Much cleaner code now
 ;; Although, I think I'll remove the debug code later
+;; FIXME: The point remains at the end when the function is called again
 ;; TODO: if the cursor is on a link, I get two pdf links
 ;; TODO: ref-man-eww-keypress-d and maybe some others don't work
 ;;       as expected. The keypresses on regions of google-scholar
@@ -1335,11 +1385,13 @@ If the input doesn't look like a URL or a domain name."
   (save-excursion
     (let ((buf (if buf buf (get-buffer "*eww*"))))
       (with-current-buffer buf            ; should be an shr buffer; usually *eww*
+        (setq ref-man--egal--save-point (point))
         (if before-point (setq ref-man--eww-buffer-endpoint (point))
           (setq ref-man--eww-buffer-endpoint (buffer-end 1)))
         (if frombegin (goto-char (point-min)))
         (setq ref-man--eww-buffer-links nil)
         ;; Below was ref-man--egal--current-url
+        ;; WTF is egal? eww-get-all-links?
         (setq ref-man--egal--prev-url (get-text-property (point) 'shr-url))
         (setq ref-man--egal--current-url nil)
         (setq ref-man--egal--url-text-start (point))
@@ -1367,8 +1419,9 @@ If the input doesn't look like a URL or a domain name."
                       (equal (get-text-property (point) 'shr-url) ref-man--egal--prev-url))
             (forward-char 1))               ;; not next link (same link)
           (setq ref-man--egal--url-text-end (point))
-          (setq ref-man--egal--current-url (get-text-property (point) 'shr-url)))))
-    ref-man--eww-buffer-links))
+          (setq ref-man--egal--current-url (get-text-property (point) 'shr-url)))
+        (goto-char ref-man--egal--save-point))))
+  ref-man--eww-buffer-links)
 
 ;; ONLY Called from ref-man-eww-keypress-b
 (defun ref-man-eww-get-bibtex-from-scholar (&optional to-org)
@@ -1458,13 +1511,25 @@ corresponding headline and insert."
             (org-set-property "PDF-FILE" file-entry))
       (org-set-property "PDF-FILE" file-entry))))
 
+(defun ref-man--eww-pdf-download-callback-store (status url point)
+  "Store pdf too `ref-man--subtree-list' and be silent"
+  (unless (plist-get status :error)
+    (let ((file (ref-man--filename-from-url url)))
+        (goto-char (point-min))
+        (re-search-forward "\r?\n\r?\n")
+        (write-region (point) (point-max) file)
+        (message "[ref-man] Saved %s" file)
+        (setq ref-man--subtree-list
+              (plist-put ref-man--subtree-list point file)))))
+
 (defun ref-man--eww-pdf-download-callback (status url)
   (unless (plist-get status :error)
     (let ((file (ref-man--filename-from-url url)))
-      (with-current-buffer ref-man--org-gscholar-launch-buffer
-        (save-excursion
-          (goto-char ref-man--org-heading-gscholar-launch-point)
-          (ref-man--insert-org-pdf-file-property file)))
+      (when ref-man--org-gscholar-launch-buffer
+        (with-current-buffer ref-man--org-gscholar-launch-buffer
+          (save-excursion
+            (goto-char ref-man--org-heading-gscholar-launch-point)
+            (ref-man--insert-org-pdf-file-property file))))
       (if (file-exists-p file)
           (when (y-or-n-p "File exists. Replace?")
             (goto-char (point-min))
@@ -1524,25 +1589,74 @@ corresponding headline and insert."
               (org-set-property "URL" link-str))))))))
 
 (defun ref-man--get-first-pdf-link-from-buffer (buf)
-  (car (ref-man-eww-get-all-links buf nil nil "pdf")))
+  (let* ((temp-buf (get-buffer-create " *temp-buf*"))
+        (link (with-current-buffer temp-buf
+            (shr-insert-document
+             (with-current-buffer buf
+               (libxml-parse-html-region (point-min) (point-max))))
+            (goto-char (point-min))
+            (car (ref-man-eww-get-all-links (current-buffer) t nil "pdf")))))
+    (kill-buffer temp-buf)
+    link))
 
-;; TODO: Get supllementary material also
-(defun ref-man--get-pdf-link-from-nips-url (url)
-  (let* ((buf (url-retrieve-synchronously url t))
-         (temp-buf (get-buffer-create " *temp-buf*"))
-         (link (with-current-buffer temp-buf 
+(defun ref-man--get-last-pdf-link-from-buffer (buf)
+  (let* ((temp-buf (get-buffer-create " *temp-buf*"))
+        (link (with-current-buffer temp-buf
+            (shr-insert-document
+             (with-current-buffer buf
+               (libxml-parse-html-region (point-min) (point-max))))
+            (goto-char (point-min))
+            (car (last (ref-man-eww-get-all-links (current-buffer) nil nil "pdf"))))))
+    (kill-buffer temp-buf)
+    link))
+
+(defun ref-man--get-first-link-from-buffer (buf)
+  (let* ((temp-buf (get-buffer-create " *temp-buf*"))
+        (link (with-current-buffer temp-buf
+            (shr-insert-document
+             (with-current-buffer buf
+               (libxml-parse-html-region (point-min) (point-max))))
+            (goto-char (point-min))
+            (car (ref-man-eww-get-all-links (current-buffer))))))
+    (kill-buffer temp-buf)
+    link))
+
+(defun ref-man--get-last-link-from-buffer (buf)
+  (let* ((temp-buf (get-buffer-create " *temp-buf*"))
+         (link (with-current-buffer temp-buf
                  (shr-insert-document
                   (with-current-buffer buf
                     (libxml-parse-html-region (point-min) (point-max))))
                  (goto-char (point-min))
-                 (ref-man--get-first-pdf-link-from-buffer (current-buffer)))))
+                 (car (last (ref-man-eww-get-all-links (current-buffer) nil nil))))))
     (kill-buffer temp-buf)
+    link))
+
+;; TODO: Get supllementary material also
+(defun ref-man--get-pdf-link-from-nips-url (url)
+  (let* ((buf (url-retrieve-synchronously url t))
+         (link (ref-man--get-first-pdf-link-from-buffer buf)))
     (cond ((string-match-p "^[http|https]" link) link)
           ((string-match-p "^/paper/" link)
            (concat (string-join (firstn (split-string url "/") 3) "/") link))
           (t nil))))
 
+(defun ref-man--get-pdf-link-from-mlr-url (url)
+  (let* ((buf (url-retrieve-synchronously url t))
+         (link (ref-man--get-first-pdf-link-from-buffer buf)))
+    (when (string-match-p "^[http|https]" link) link)))
+
 (defun ref-man--get-pdf-link-from-aaai-url (url)
+  (let* ((url (if (string-prefix-p "http://" url)
+                  (replace-in-string url "http://" "https://") url))
+         (buf (url-retrieve-synchronously url t))
+         (buf (if (string-match-p "This page requires frames."
+                                  (with-current-buffer buf (buffer-string)))
+                  (url-retrieve-synchronously (ref-man--get-last-link-from-buffer buf) t) buf))
+         (link (ref-man--get-last-link-from-buffer buf)))
+    (replace-in-string link "view" "download")))
+
+(defun ref-man--get-pdf-link-from-acm-url (url)
   (let* ((buf (url-retrieve-synchronously url t))
          (temp-buf (get-buffer-create " *temp-buf*"))
          (link (with-current-buffer temp-buf
@@ -1550,36 +1664,32 @@ corresponding headline and insert."
                   (with-current-buffer buf
                     (libxml-parse-html-region (point-min) (point-max))))
                  (goto-char (point-min))
-                 (car (last (ref-man-eww-get-all-links (current-buffer)))))))
-    (kill-buffer temp-buf)
-    (replace-in-string link "view" "download")))
+                 (car (ref-man-eww-get-all-links (current-buffer) nil nil "gateway")))))
+    (if (string-prefix-p "https://dl.acm.org/" link)
+        link
+      (concat "https://dl.acm.org/" link))))
 
 (defun ref-man--get-pdf-link-from-cvf-url (url)
   (let* ((buf (url-retrieve-synchronously url t))
-         (temp-buf (get-buffer-create " *temp-buf*"))
-         (link (with-current-buffer temp-buf
-                 (shr-insert-document
-                  (with-current-buffer buf
-                    (libxml-parse-html-region (point-min) (point-max))))
-                 (goto-char (point-min))
-                 (ref-man--get-first-pdf-link-from-buffer (current-buffer)))))
-    (kill-buffer temp-buf)
+         (link (ref-man--get-first-pdf-link-from-buffer buf)))
     (cond ((string-match-p "^[http|https]" link) link)
           ((string-match-p "^../../content_.*" link)
            (concat (string-join (firstn (split-string url "/") 3) "/") "/"
                    (string-join (butfirst (split-string link "/") 2) "/")))
           (t nil))))
 
+(defun ref-man--get-pdf-link-from-cvf-old-url (url)
+  (let* ((buf (url-retrieve-synchronously url t))
+         (link (ref-man--get-first-pdf-link-from-buffer buf)))
+    (cond ((string-match-p "^[http|https]" link) link)
+          ((string-match-p "^../../content_.*" link)
+           (concat (string-join (firstn (split-string url "/") 4) "/") "/"
+                   (string-join (butfirst (split-string link "/") 2) "/")))
+          (t nil))))
+
 (defun ref-man--get-pdf-link-from-openreview-url (url)
   (let* ((buf (url-retrieve-synchronously url t))
-         (temp-buf (get-buffer-create " *temp-buf*"))
-         (link (with-current-buffer temp-buf
-                 (shr-insert-document
-                  (with-current-buffer buf
-                    (libxml-parse-html-region (point-min) (point-max))))
-                 (goto-char (point-min))
-                 (concat "https://openreview.net" (ref-man--get-first-pdf-link-from-buffer (current-buffer))))))
-    (kill-buffer temp-buf)
+         (link (concat "https://openreview.net" (ref-man--get-first-pdf-link-from-buffer buf))))
     (when (string-match-p "^[http|https]" link) link)))
 
 (defun ref-man--get-pdf-url-according-to-source (url)
@@ -1589,13 +1699,19 @@ corresponding headline and insert."
           ((string-match-p "arxiv.org" url)
            (concat (replace-in-string url "/abs/" "/pdf/") ".pdf"))
           ((string-match-p "aclweb.org" url)
-           (concat url ".pdf"))
+           (concat (replace-regexp-in-string "/$" "" url) ".pdf"))
           ((string-match-p "papers.nips.cc" url)
            (ref-man--get-pdf-link-from-nips-url url))
+          ((string-match-p "mlr.press" url)
+           (ref-man--get-pdf-link-from-mlr-url url))
           ((string-match-p "openaccess.thecvf.com" url)
            (ref-man--get-pdf-link-from-cvf-url url))
+          ((string-match-p "cv-foundation.org" url)
+           (ref-man--get-pdf-link-from-cvf-old-url url))          
           ((string-match-p "aaai.org" url)
            (ref-man--get-pdf-link-from-aaai-url url))
+          ((string-match-p "dl.acm.org" url)
+           (ref-man--get-pdf-link-from-acm-url url))
           ((string-match-p "openreview.net" url)
            (ref-man--get-pdf-link-from-openreview-url url))
           (t url))))
@@ -1614,6 +1730,8 @@ corresponding headline and insert."
            (ref-man--get-bibtex-link-from-cvf-url url))
           ((string-match-p "aaai.org" url)
            (ref-man--get-bibtex-link-from-aaai-url url))
+          ((string-match-p "dl.acm.org" url)
+           (ref-man--get-bibtex-link-from-acm-url url))
           ((string-match-p "openreview.net" url)
            (ref-man--get-bibtex-link-from-openreview-url url))
           (t url))))
@@ -1632,6 +1750,28 @@ corresponding headline and insert."
            (ref-man--get-abstract-from-cvf-url url))
           ((string-match-p "aaai.org" url)
            (ref-man--get-abstract-from-aaai-url url))
+          ((string-match-p "dl.acm.org" url)
+           (ref-man--get-abstract-link-from-acm-url url))
+          ((string-match-p "openreview.net" url)
+           (ref-man--get-abstract-from-openreview-url url))
+          (t url))))
+
+(defun ref-man--try-get-suppl-according-to-source (url)
+  (when url
+    (cond ((string-match-p "doi.org" url)
+           (ref-man--get-abstract-from-doi url))
+          ((string-match-p "arxiv.org" url)
+           (concat (replace-in-string url "/abs/" "/pdf/") ".pdf"))
+          ((string-match-p "aclweb.org" url)
+           (concat url ".pdf"))
+          ((string-match-p "papers.nips.cc" url)
+           (ref-man--get-abstract-from-nips-url url))
+          ((string-match-p "openaccess.thecvf.com" url)
+           (ref-man--get-abstract-from-cvf-url url))
+          ((string-match-p "aaai.org" url)
+           (ref-man--get-abstract-from-aaai-url url))
+          ((string-match-p "dl.acm.org" url)
+           (ref-man--get-abstract-link-from-acm-url url))
           ((string-match-p "openreview.net" url)
            (ref-man--get-abstract-from-openreview-url url))
           (t url))))
@@ -1647,6 +1787,19 @@ corresponding headline and insert."
   can't really download from there"
   ;; If link is cvpr or iccv, then find the cvf link and go to that site
   (message "Not Implemented yet") nil)
+
+(defun ref-man--parse-ieee-page (url)
+  (let* ((buf (url-retrieve-synchronously url t))
+         (ieee-xml-parse (with-current-buffer buf
+                           (libxml-parse-html-region (point-min) (point-max)))))
+    (setq ref-man--ieee-parse nil)
+    (seq-do
+     (lambda (x) (when (string-match-p "global.document.metadata" x)
+                   (setq ref-man--ieee-parse
+                         (json-read-from-string
+                          (car (split-string (nth 1 (split-string x "global.document.metadata=")) "\n"))))))
+     (dom-strings ieee-xml-parse))
+    ref-man--ieee-parse))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; End org utility functions ;;
@@ -1687,32 +1840,101 @@ buffer is not gscholar"
           (message "[ref-man] Could not get link to import")))
       (message "[ref-man] Not gscholar buffer"))))
 
-(defun ref-man-try-fetch-pdf-from-url (url)
+(defun ref-man--download-pdf-redirect (callback url &optional point)
+  (if (not point)
+      (progn
+        (message (concat "Fetching " url))
+        (url-retrieve url callback (list url))))
+  (url-retrieve url callback (list url point)))
+  
+(defun ref-man-try-fetch-pdf-from-url (url &optional storep)
   ;; Here I'll have to write rules to fetch pdfs from different urls,
   ;; e.g. arxiv.org, nips, cvpr, iccv, aaai, tacl, aclweb, pmlr (jmlr, icml)
   ;; Should it just return a downloadable link or download the file itself?
   (setq ref-man--org-gscholar-launch-buffer (current-buffer)) ; needn't be at heading
   (setq ref-man--org-heading-gscholar-launch-point (point))
   (let ((url (ref-man--get-pdf-url-according-to-source url)))
-    (when url
-      (if (ref-man--downloadable-pdf-url-p url)
-          (if (ref-man--check-pdf-file-exists url)
-              (ref-man--insert-org-pdf-file-property (ref-man--check-pdf-file-exists url))
-            (message (concat "Fetching " url))
-            (url-retrieve url #'ref-man--eww-pdf-download-callback (list url)))
-        (message (concat "Browsing " url))
-        (eww-browse-url url)))))
+    ;; (when url
+    ;;   (if (ref-man--downloadable-pdf-url-p url)
+    ;;       (if (ref-man--check-pdf-file-exists url)
+    ;;           (ref-man--insert-org-pdf-file-property (ref-man--check-pdf-file-exists url))
+    ;;         (message (concat "Fetching " url))
+    ;;         (url-retrieve url #'ref-man--eww-pdf-download-callback (list url)))
+    ;;     (message (concat "Browsing " url))
+    ;;     (eww-browse-url url)))))
+    (cond ((and url (ref-man--downloadable-pdf-url-p url)
+                (ref-man--check-pdf-file-exists url))
+           (let ((file (ref-man--check-pdf-file-exists url)))
+             (if storep
+                 (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) file))
+               (ref-man--insert-org-pdf-file-property file))))
+          ((and url (ref-man--downloadable-pdf-url-p url)
+                (not (ref-man--check-pdf-file-exists url)))
+           (if storep
+               (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback-store url (point))
+             (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback url)))
+          ((and url (not (ref-man--downloadable-pdf-url-p url)))
+           (if storep
+               (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) "NOT-PDF"))
+             (message (concat "Browsing " url))
+             (eww-browse-url url)))
+          ((not url)
+           (if storep
+               (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) "BAD-URL"))
+             (message (concat "Bad URL " url))))
+          (t (message "[ref-man--try-fetch-pdf-from-url] Some strange error occured. Check")))))
 
+;; FIXME: Although it works in principle, but for a large subtree it sort of
+;;        hangs and the multithreading is not really that great in emacs.
+;;
+;; TODO: How to make a region read only of the org file and then replace the
+;;       contents in there later
+;;       (defun set-region-read-only (begin end)
+;;         (interactive "r")
+;;        (add-text-properties begin end '(read-only t)))
+;;        https://www.gnu.org/software/emacs/manual/html_node/elisp/Text-Properties.html#Text-Properties
+;;        https://www.gnu.org/software/emacs/manual/html_node/elisp/Special-Properties.html#Special-Properties
 (defun ref-man-try-fetch-and-store-pdf-in-org-subtree-entries ()
+  "Fetches and stores pdfs for all entries in the subtree. Only
+traverses one level depth as of now"
+  ;; Need callback to update buffer when done and set/unset READONLY also
   (interactive)
-  (message "Not Implemented right now"))
+  (message "Fetching PDFs in subtree. Wait for completion...")
+  (setq ref-man--current-org-buffer (current-buffer))
+  (setq ref-man--subtree-list nil)
+  (save-restriction
+    (org-narrow-to-subtree)
+    (org-content t)
+    (setq ref-man--subtree-num-entries 0)
+    (while (not (eobp))
+      (when (outline-next-heading)
+        (incf ref-man--subtree-num-entries)
+        (ref-man-try-fetch-and-store-pdf-in-org-entry t))))
+  (async-start
+   `(lambda ()
+      ,(async-inject-variables "ref-man--subtree-list\\|ref-man--subtree-num-entries")
+      (while (< (length ref-man--subtree-list) (* 2 ref-man--subtree-num-entries))
+        (sleep-for 2)))
+   (lambda (result)
+      (with-current-buffer ref-man--current-org-buffer
+        (message "Done")
+        (previous-line)
+        (outline-up-heading 1)
+        (org-show-all)
+        (widen)
+        (loop for x from 0 below (/ (length ref-man--subtree-list) 2)
+              do (let ((point (nth (* 2 x) ref-man--subtree-list))
+                       (pdf-file (plist-get ref-man--subtree-list (nth (* 2 x) ref-man--subtree-list))))
+                   (outline-next-heading)
+                   (ref-man--insert-org-pdf-file-property pdf-file)
+                   ))))))
 
 ;; TODO: I have not incorporated dblp extracted entries as they refer
 ;;       to DOIs or direct arxiv links. Have to fix that.
 ;; TODO: If the pdf is extracted from a site like cvf, or nips
 ;;       or whatever, the corresponding bibtex should also be
 ;;       extracted and stored from the website itself.
-(defun ref-man-try-fetch-and-store-pdf-in-org-entry ()
+(defun ref-man-try-fetch-and-store-pdf-in-org-entry (&optional storep)
   (interactive)
   (let* ((props (org-entry-properties))
          (pdf-file (cond ((assoc "PDF-FILE" props)
@@ -1727,9 +1949,10 @@ buffer is not gscholar"
           ((and pdf-file (not (assoc "URL" props)))
            (org-element-property :raw-link (ref-man--get-first-link-from-text)))
           ((and (not pdf-file) (assoc "URL" props))
-           (ref-man-try-fetch-pdf-from-url (cdr (assoc "URL" props))))
-          ((not pdf-file) (ref-man-try-fetch-and-store-pdf-in-org-entry-text))
-          (t (message "Reached default state. Please check!")))))
+           (ref-man-try-fetch-pdf-from-url (cdr (assoc "URL" props)) storep))
+          ((not pdf-file)
+           (ref-man-try-fetch-and-store-pdf-in-org-entry-text storep))
+          (t (message "PDF already exists or wrong pdf inserted!. Please check!")))))
 
 ;; FIXED: Since the retrieval is now async, if I move to another
 ;;        headline while the file is being downloaded, the file link
@@ -1741,7 +1964,7 @@ buffer is not gscholar"
 ;;       the issue that if I call the function on two org entries, the
 ;;       global variable will be over written and there's no way to
 ;;       avoid that except by using assoc lists and mutexes.
-(defun ref-man-try-fetch-and-store-pdf-in-org-entry-text ()
+(defun ref-man-try-fetch-and-store-pdf-in-org-entry-text (&optional storep)
   "For the first link in text, ascertain if the corresponding pdf
 file exists or not. In case it doesn't, retrieve the pdf file
 from the url if it is a downloadable url or an arxiv url. If the
@@ -1749,7 +1972,6 @@ link is not a pdf link, call eww-browse-url. If the file exists,
 don't retrieve the pdf file.
 In both cases, store the file link in PDF-FILE property in the org
 property drawer for the headline at point."
-  (interactive)
   (let* ((props (text-properties-at (point)))
          (url (car (mapcar (lambda (x) (cadr x))
                            (remove-if-not #'ref-man--org-property-is-url-p props))))
@@ -1765,7 +1987,7 @@ property drawer for the headline at point."
                (delete-region (org-element-property :begin link)
                               (org-element-property :end link))
                (org-set-property "URL" link-str))))
-      (ref-man-try-fetch-pdf-from-url url))))
+      (ref-man-try-fetch-pdf-from-url url storep))))
 
 ;; TODO: This should always be async with callback
 ;;       One issue then will be, how to correspond between threads
@@ -1781,7 +2003,7 @@ property drawer for the headline at point."
 ;;       - If I'm already viewing some pdf, the other one can just
 ;;         message, else it opens it up in the adjacent window.
 (defun ref-man-eww-download-pdf (url &optional view)
-  "Download the pdf file from google scholar and optionally view it"
+  "Download the pdf file from a website and optionally view it"
   (interactive)
   (if (not view)
       (url-retrieve url #'ref-man--eww-pdf-download-callback (list url))
@@ -1819,13 +2041,14 @@ eww. Stores the buffer and the position from where it was called."
   (if (eq major-mode 'org-mode)
       (progn
         (setq ref-man--org-heading-gscholar-launch-point (point)) ; must be at heading?
-        (setq org-buf (current-buffer))
+        (setq ref-man--org-heading-gscholar-launch-buffer (current-buffer))
         (save-excursion
-          (let ((query-string (org-get-heading t t)))
+          (let ((query-string (replace-regexp-in-string ":\\|/" " "
+                               (substring-no-properties (org-get-heading t t)))))
             (ref-man-eww-gscholar query-string))))
     (message "[ref-man] Not in org-mode")))
 
-;; TODO: Fix this
+;; FIXME:
 ;; This function may take up a lot of processing. Should implement some cache for it
 ;; Can be called after downloading pdf from any website
 (defun ref-man-maybe-create-or-insert-org-heading-and-property (file)
@@ -1870,9 +2093,9 @@ a) org-gscholar-launch-buffer is checked for the entry"
 
 (defun ref-man-parse-subtree-to-buffer-as-bibtex (&optional bib-buf)
   "Inserts contents of an org-subtree as bibtex entries to a bib file"
-  (interactive (list (if (not (boundp 'bib-buf))
-                         (completing-read "Bib buffer: " (mapcar (lambda (x) (format "%s" x)) (buffer-list)))
-                       nil)))
+  (interactive (list (unless (boundp 'bib-buf))
+                     (completing-read "Bib buffer: "
+                                      (mapcar (lambda (x) (format "%s" x)) (buffer-list)))))
   (if (org-at-heading-p)
       (when heading-has-children
           
