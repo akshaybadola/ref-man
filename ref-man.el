@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Thu May 16 14:54:32 IST 2019>
+;; Time-stamp:	<Sun Dec 29 17:11:29 IST 2019>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -24,27 +24,29 @@
 ;; GNU Emacs; see the file COPYING.  If not, write to the Free Software
 ;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+;;
+;;
 ;; Have to restructure it
 ;; Separating org-config from org-functions in the package
 
+(require 'async)
+(require 'biblio-core)
+;; Primary function I use from 'bibtex is 'bibtex-parse-entry
+(require 'bibtex)
 (require 'cl)
 (require 'eww)
+(require 'gscholar-bibtex)
+(require 'json)
 (require 'org)
+;; It's only required for one function 'org-bibtex-read-file
+;; But it's a pretty complicated function
+(require 'org-bibtex)                   
 (require 'seq)
 (require 'shr)
 (require 'url)
 (require 'xml)
-(require 'async)
-;; Primary function I use from 'bibtex is 'bibtex-parse-entry
-(require 'bibtex)
-;; It's only required for one function 'org-bibtex-read-file
-;; But it's a pretty complicated function
-(require 'org-bibtex)                   
-(require 'biblio-core)
-(require 'gscholar-bibtex)
 
-;;
-;; 
+
 (setq ref-man-org-links-file-path (expand-file-name "~/.temp-org-links.org"))
 (setq ref-man-pubs-directory (expand-file-name "~/org/pdfs/"))
 ;; (setq ref-man-temp-bib-file-path (expand-file-name "~/lib/docprocess/all.bib"))
@@ -1070,6 +1072,14 @@ Results are parsed with (BACKEND 'parse-buffer)."
         (ref-man-import-gscholar-link-to-org-buffer (get-text-property (point) 'shr-url))
       (eww-view-source))))
 
+;; ;; FIXME: Should go back to URL
+;; (defun ref-man-eww-keypress-i ()
+;;   (interactive)
+;;   (let ((url (plist-get eww-data :url)))
+;;     (if (string-match-p "scholar\\.google\\.com" url) ; Only imports from scholar for now
+;;         (ref-man-import-gscholar-link-to-org-buffer (get-text-property (point) 'shr-url))
+;;       (eww-view-source))))
+
 (defun ref-man-eww-keypress-v ()
   "View and download if required url. Calls
 `ref-man-eww-view-and-download-if-required-pdf` If in
@@ -1198,14 +1208,18 @@ download, get the link which corresponds to it"
                          (url-retrieve url #'ref-man--eww-render
                                        (list url (current-buffer) org)))))
 
-;; FIXED: Fix this! ref-man--org-heading-gscholar-launch-point is used only
-;;       for inserting bibtex. The other variable
-;;       ref-man--org-gscholar-launch-buffer is used to insert children and
-;;       other stuff and is used in other functions - They can cause
-;;       confusion.
-;; TODO: Have changed some of my/org-*gscholar*launch* variables
-;;       Should change the rest.
+;; FIXED: Fix this! ref-man--org-heading-gscholar-launch-point is used only for
+;;        inserting bibtex. The other variable
+;;        ref-man--org-gscholar-launch-buffer is used to insert children and
+;;        other stuff and is used in other functions - They can cause confusion.
+;;        
+;; TODO: Have changed some of my/org-*gscholar*launch* variables. Should change
+;;       the rest.
+;;       
 ;; TODO: Why does it save my/bibtex-entry?
+;; 
+;; TODO: It doesn't store URL while inserting bibtex.  URL Will have to be
+;;       fetched by going back and finding the first non-google URL I guess.
 (defun ref-man--eww-render (status url buf org)
   (eww-render status url nil buf)
   (let ((buf-string (ref-man--eww-check-bibtex-buffer-from-scholar)))
@@ -1351,33 +1365,35 @@ If the input doesn't look like a URL or a domain name."
                                     (replace-regexp-in-string " " "+" url)))))))
   ;; FIXME: Fix this code!
   ;; CHECK: Did I write the chrome code for nothing?
-  (if (string-match-p "scholar\\.google\\.com" url)
-      (let ((buf (generate-new-buffer " *scholar*")))
-        (with-current-buffer buf (insert (gscholar-bibtex-google-scholar-search-results
-                                          query-string)))
-        (if (get-buffer "*google-scholar*")
-            (kill-buffer (get-buffer "*google-scholar*")))
-        (when (get-buffer "*html*")
-          (with-current-buffer (get-buffer "*html*")
-            (setq-local buffer-read-only nil)))
-        (shr-render-buffer buf)
-        (pop-to-buffer-same-window "*html*")
-        (rename-buffer "*google-scholar*")
-        (kill-buffer buf))
-    (progn
-      (pop-to-buffer-same-window
-       (if (eq major-mode 'eww-mode)
-           (current-buffer)
-         (get-buffer-create "*eww*")))
-      (eww-setup-buffer)
-      (plist-put eww-data :url url)
-      (plist-put eww-data :title "")
-      (eww-update-header-line-format)
-      (let ((inhibit-read-only t))
-        (insert (format "Loading %s..." url))
-        (goto-char (point-min)))
-      (url-retrieve url 'eww-render
-		    (list url nil (current-buffer))))))
+  ;; CHECK: I think this is broken [2020-01-12 Sun 20:40]
+  ;; NOTE: Commented out below section [2020-01-12 Sun 21:01]
+  ;; (string-match-p "scholar\\.google\\.com" url)
+  ;; (let ((buf (generate-new-buffer " *scholar*")))
+  ;;   (with-current-buffer buf (insert (gscholar-bibtex-google-scholar-search-results
+  ;;                                     query-string)))
+  ;;   (if (get-buffer "*google-scholar*")
+  ;;       (kill-buffer (get-buffer "*google-scholar*")))
+  ;;   (when (get-buffer "*html*")
+  ;;     (with-current-buffer (get-buffer "*html*")
+  ;;       (setq-local buffer-read-only nil)))
+  ;;   (shr-render-buffer buf)
+  ;;   (pop-to-buffer-same-window "*html*")
+  ;;   (rename-buffer "*google-scholar*")
+  ;;   (kill-buffer buf))
+  (progn
+    (pop-to-buffer-same-window
+     (if (eq major-mode 'eww-mode)
+         (current-buffer)
+       (get-buffer-create "*eww*")))
+    (eww-setup-buffer)
+    (plist-put eww-data :url url)
+    (plist-put eww-data :title "")
+    (eww-update-header-line-format)
+    (let ((inhibit-read-only t))
+      (insert (format "Loading %s..." url))
+      (goto-char (point-min)))
+    (url-retrieve url 'eww-render
+                  (list url nil (current-buffer)))))
 
 ;; Much cleaner code now
 ;; Although, I think I'll remove the debug code later
@@ -1523,6 +1539,7 @@ corresponding headline and insert."
 
 (defun ref-man--eww-pdf-download-callback-store (status url point)
   "Store pdf too `ref-man--subtree-list' and be silent"
+  (debug)
   (unless (plist-get status :error)
     (let ((file (ref-man--filename-from-url url)))
         (goto-char (point-min))
@@ -1851,48 +1868,65 @@ buffer is not gscholar"
       (message "[ref-man] Not gscholar buffer"))))
 
 (defun ref-man--download-pdf-redirect (callback url &optional point)
-  (if (not point)
-      (progn
-        (message (concat "[ref-man] Fetching " url))
-        (url-retrieve url callback (list url))))
-  (url-retrieve url callback (list url point)))
+  (message (concat "[ref-man] Fetching PDF from " url))
+  (if point
+      (url-retrieve url callback (list url point))
+    (url-retrieve url callback (list url))))
   
+;; FIXME: This storep thing is a huge issue. I don't exactly remember how to
+;;        insert the pdfs into the subtree, the points are being captured
+;;        correctly I think
+(defun ref-man--fetch-from-pdf-url (url storep)
+  (if (ref-man--check-pdf-file-exists url)
+      (let ((file (ref-man--check-pdf-file-exists url)))
+        (if storep
+            (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) file))
+          (ref-man--insert-org-pdf-file-property file)))
+    (if storep
+        (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback-store url (point))
+      (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback url))))
+
+  ;; (cond ((ref-man--check-pdf-file-exists url)
+  ;;        (let ((file (ref-man--check-pdf-file-exists url)))
+  ;;          (if storep
+  ;;              (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) file))
+  ;;            (ref-man--insert-org-pdf-file-property file))))
+  ;;       ((not (ref-man--check-pdf-file-exists 
+  ;;              (if storep
+  ;;                  (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback-store url (point))
+  ;;                (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback url))))))
+  
+
+
 (defun ref-man-try-fetch-pdf-from-url (url &optional storep)
   ;; Here I'll have to write rules to fetch pdfs from different urls,
   ;; e.g. arxiv.org, nips, cvpr, iccv, aaai, tacl, aclweb, pmlr (jmlr, icml)
   ;; Should it just return a downloadable link or download the file itself?
   (setq ref-man--org-gscholar-launch-buffer (current-buffer)) ; needn't be at heading
   (setq ref-man--org-heading-gscholar-launch-point (point))
-  (let ((url (ref-man--get-pdf-url-according-to-source url)))
-    ;; (when url
-    ;;   (if (ref-man--downloadable-pdf-url-p url)
-    ;;       (if (ref-man--check-pdf-file-exists url)
-    ;;           (ref-man--insert-org-pdf-file-property (ref-man--check-pdf-file-exists url))
-    ;;         (message (concat "Fetching " url))
-    ;;         (url-retrieve url #'ref-man--eww-pdf-download-callback (list url)))
-    ;;     (message (concat "Browsing " url))
-    ;;     (eww-browse-url url)))))
-    (cond ((and url (ref-man--downloadable-pdf-url-p url)
-                (ref-man--check-pdf-file-exists url))
-           (let ((file (ref-man--check-pdf-file-exists url)))
+  ;; (if (ref-man--downloadable-pdf-url-p url)
+  ;;     (if (ref-man--check-pdf-file-exists url)
+  ;;         (ref-man--insert-org-pdf-file-property (ref-man--check-pdf-file-exists url))
+  ;;       (message (concat "Fetching " url))
+  ;;       (url-retrieve url #'ref-man--eww-pdf-download-callback (list url)))
+  ;;   (message (concat "Browsing " url))
+  ;;   (eww-browse-url url))
+  (cond ((and url (ref-man--downloadable-pdf-url-p url))
+         (ref-man--fetch-from-pdf-url url storep))
+        ((and url (not (ref-man--downloadable-pdf-url-p url)))
+         ;; If not a downloadable url, try get pdf url
+         (let ((url (ref-man--get-pdf-url-according-to-source url)))
+           (if (ref-man--downloadable-pdf-url-p url)
+               (ref-man--fetch-from-pdf-url url storep)
              (if storep
-                 (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) file))
-               (ref-man--insert-org-pdf-file-property file))))
-          ((and url (ref-man--downloadable-pdf-url-p url)
-                (not (ref-man--check-pdf-file-exists url)))
-           (if storep
-               (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback-store url (point))
-             (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback url)))
-          ((and url (not (ref-man--downloadable-pdf-url-p url)))
-           (if storep
-               (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) "NOT-PDF"))
-             (message (concat "[ref-man] Browsing " url))
-             (eww-browse-url url)))
-          ((not url)
-           (if storep
-               (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) "BAD-URL"))
-             (message (concat "[ref-man] Bad URL " url))))
-          (t (message "[ref-man--try-fetch-pdf-from-url] Some strange error occured. Check")))))
+                 (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) "NOT-PDF"))
+               (message (concat "[ref-man] Browsing " url))
+               (eww-browse-url url)))))
+        ((not url)
+         (if storep
+             (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) "BAD-URL"))
+           (message (concat "[ref-man] Bad URL " url))))
+        (t (message "[ref-man--try-fetch-pdf-from-url] Some strange error occured. Check"))))
 
 ;; FIXME: Although it works in principle, but for a large subtree it sort of
 ;;        hangs and the multithreading is not really that great in emacs.
@@ -1974,8 +2008,10 @@ text and if no URL could be found return nil."
   (let* ((props (org-entry-properties))
          (pdf-file (ref-man--check-fix-pdf-file-property))
          (url-prop (ref-man--check-fix-url-property)))
-         ;; FIXME: Make sure pdf file exists on disk, else remove prop
-         ;; FIXME: Actually I should get the :link property from text but MEH!
+    ;; FIXME: Make sure pdf file exists on disk, else remove prop
+    ;; FIXME: Actually I should get the :link property from text but MEH!
+
+    ;; storep signifies to store the filename in PDF-FILE property?
     (cond ((and pdf-file url-prop)
            (message (concat "[ref-man] PDF already exists."
                             (if (string= (replace-regexp-in-string "\\[\\|\\]" "" pdf-file)
