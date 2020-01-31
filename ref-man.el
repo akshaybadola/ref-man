@@ -314,7 +314,7 @@ pairs for only the top result from ref-man-venue-priorities"
                                                (plist-get str-plist :author))
                                               "," t)))
          (first-author (ref-man--validate-author (split-string first-author-str " " t)))
-         (last-name (car (last first-author)))\
+         (last-name (car (last first-author)))
          (year-pub (ref-man--trim-whitespace (plist-get str-plist :year)))
          (title (remove-if 'ref-man--is-stop-word
                            (split-string (downcase (ref-man--trim-whitespace
@@ -571,22 +571,21 @@ top level heading"
 ;;         (puthash "volume" (gethash "volume" ref-man--science-parse-data) key-hash))
 ;;     key-hash))
 
+;; NOTE: Changed add-to-list to push
 (defun ref-man--generate-key-str-from-science-parse ()
-  (let ((key-str ()))
+  (let ((key-str nil))
          (when (gethash "authors" ref-man--science-parse-data)
-           (add-to-list 'key-str (cons "authors"
-                                       (list (mapconcat (lambda (x) (gethash "name" x))
-                                                        (gethash "authors" ref-man--science-parse-data) ", ")))))
-         ;; (when (gethash "authors" ref-man--science-parse-data)
-         ;;             (add-to-list 'key-str (cons "authors"  (list (mapcar (lambda (x) (gethash "name" x))
-         ;;                                            (gethash "authors" ref-man--science-parse-data))))))
+           (push (cons "authors" (list (mapconcat (lambda (x) (gethash "name" x))
+                                                  (gethash "authors" ref-man--science-parse-data) ", ")))
+                 key-str))
          (when (gethash "year" ref-man--science-parse-data)
-           (add-to-list 'key-str (cons "year" (list (format "%s"
-                                                            (gethash "year" ref-man--science-parse-data))))))
+           (push (cons "year" (list (format "%s"
+                                            (gethash "year" ref-man--science-parse-data))))
+                 key-str))
          (when (gethash "title" ref-man--science-parse-data)
-             (add-to-list 'key-str (cons "title"  (list (gethash "title" ref-man--science-parse-data)))))
+           (push (cons "title"  (list (gethash "title" ref-man--science-parse-data))) key-str))
          (when (gethash "venue" ref-man--science-parse-data)
-           (add-to-list 'key-str (cons "venue" (list (gethash "venue" ref-man--science-parse-data)))))
+           (push (cons "venue" (list (gethash "venue" ref-man--science-parse-data))) key-str))
         key-str))
 
 ;; Fixed: "What if not key-str"
@@ -1447,7 +1446,7 @@ If the input doesn't look like a URL or a domain name."
                ;; Some sites do not redirect final /
                (when (string= (url-filename (url-generic-parse-url url)) "")
                  (setq url (concat url "/"))))
-           (progn (setq query-string url)
+           (progn ; (setq query-string url)
                   (setq url (concat "https://scholar.google.com/scholar?q="
                                     (replace-regexp-in-string " " "+" url)))))))
   ;; FIXME: Fix this code!
