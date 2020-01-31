@@ -1996,6 +1996,15 @@ buffer is not gscholar"
 ;; CHECK: Curious thing is, pdf retrieval is async and bib retrieval isn't I
 ;;        should make it uniform
 (defun ref-man-try-fetch-pdf-from-url (url &optional retrieve-pdf retrieve-bib storep)
+  "Try and fetch pdf and bib entry from url. Can only retrieve
+from specific URLs. Storep specifies whether to store the
+retrieved data to org file or not.
+
+If at least one of `retrieve-pdf' or `retrieve-bib' are true then
+the corresponding pdf or bibtex entry are fetched and stored if
+the option is given. org buffer to insert the data to is set by
+`ref-man--org-gscholar-launch-buffer'"
+
   ;; Here I'll have to write rules to fetch pdfs from different urls,
   ;; e.g. arxiv.org, nips, cvpr, iccv, aaai, tacl, aclweb, pmlr (jmlr, icml)
   ;; Should it just return a downloadable link or download the file itself?
@@ -2049,7 +2058,9 @@ buffer is not gscholar"
           ;;  (if storep
           ;;      (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) "BAD-URL"))
           ;;    (message (concat "[ref-man] Bad URL " url))))
-          (t (message "[ref-man] Some strange error occured for retrieve-bib. Check")))))
+          (t (message "[ref-man] Some strange error occured for retrieve-bib. Check"))))
+  (when (and (not retrieve-bib) (not retrieve-pdf))
+    (message "[ref-man] Nothing to do")))
 
 ;; FIXME: Although it works in principle, but for a large subtree it sort of
 ;;        hangs and the multithreading is not really that great in emacs.
