@@ -1,19 +1,27 @@
-;; Temp file for temporary projects, modules and functions until they're
-;; incorporated into the rest of the system.
-;; Temp file for temporary projects, modules and functions until they're
-;; incorporated into the rest of the system.
-
+(add-to-list 'load-path ".")
 (load "ref-man.el")
 (require 'websocket)
 
 
-(defvar ref-man-chrome--chromium-port nil)
-(defvar ref-man-chrome--rpc-id 0)
-(defvar ref-man-chrome--rpc-callbacks nil)
-(defvar ref-man-chrome--sockets nil)
-(defvar ref-man-chrome--tabs nil)
-(defvar ref-man-chrome-user-data-dir (concat (getenv "HOME") "/.config/chromium"))
-(defvar ref-man-chrome--initialized-p nil)
+(defcustom ref-man-chrome-user-data-dir
+  (concat (getenv "HOME") "/.config/chromium")
+  "Chromium profile directory"
+  :type 'directory
+  :group 'ref-man)
+
+(defcustom ref-man-chrome-port-number-start-from
+  9222
+  "Where to start port numbers for the debugger"
+  :type 'interger
+  :group 'ref-man)
+
+(setq ref-man-chrome--chromium-port nil)
+(setq ref-man-chrome--history-list nil)
+(setq ref-man-chrome--rpc-id 0)
+(setq ref-man-chrome--rpc-callbacks nil)
+(setq ref-man-chrome--sockets nil)
+(setq ref-man-chrome--tabs nil)
+(setq ref-man-chrome--initialized-p nil)
 
 ;; I'm calling it ref-man-chrome- sub package
 ;; A free open port can be chosen randomly and chromium or chromium-browser can start
@@ -39,9 +47,11 @@
     (string-match-p chrome text)))
 
 (defun ref-man-chrome--find-open-port ()
-  "Finds the next open port from 9222 in case 9222 is being used
-by another process"
-  (loop for port from 9222 to 65531
+  "Finds the next open port from
+`ref-man-chrome-port-number-start-from' in case
+`ref-man-chrome-port-number-start-from' is being used by another
+process"
+  (loop for port from ref-man-chrome-port-number-start-from to 65531
         when (string-match-p
               "refused" (shell-command-to-string
                          (format "nc -z -v localhost %s" port)))
@@ -283,22 +293,24 @@ by another process"
 ;;       autokey)))
 ;; (insert (ref-man--bibtex-generate-autokey "li" "15" "diversity")) ; li15:_diversity
 
-(ref-man-chrome-init)
-(ref-man-chrome-shutdown)
-(ref-man-chrome--check-port 9222)
-(ref-man-chrome--get-socket-url-for-tab 0)
-(setq ref-man-chrome--tabs nil)
-(ref-man-chrome--get-socket-url-for-tab 1)
-(mapcar (lambda (x) (plist-get x :id)) (ref-man-chrome-get-tabs))
-
-(plist-get ref-man-chrome--sockets 0)
-
+;; (ref-man-chrome-init)
+;; (ref-man-chrome-shutdown)
+;; (ref-man-chrome--check-port 9222)
+;; (ref-man-chrome--get-socket-url-for-tab 0)
+;; (setq ref-man-chrome--tabs nil)
+;; (ref-man-chrome--get-socket-url-for-tab 1)
+;; (mapcar (lambda (x) (plist-get x :id)) (ref-man-chrome-get-tabs))
+;; (plist-get ref-man-chrome--sockets 0)
 ;; ;; TODO: Sometimes it just doesn't connect especially on the first try
-(ref-man-chrome-connect 0)
-
+;; (ref-man-chrome-connect 0)
 ;; ;; FIXME I'm 'cons-ing it. They'll be prepended not appended
 ;; (nth 0 ref-man-chrome--sockets)
 
+;; NOTE: `ref-man-chrome-init' does everything. though there are too many messagess
+(ref-man-chrome-init)
+
+;; NOTE: Following two commands sets the URL and fetches the html. Rest of the
+;;       stuff has to be done with eww like hooks
 (ref-man-chrome-eval "location.href = \"https://scholar.google.com/scholar?q=image+captioning\"" 0
                      (lambda (result) (insert (plist-get (plist-get result :result) :value))))
 
@@ -318,6 +330,14 @@ by another process"
      (with-current-buffer (get-buffer "*html*")
        (setq-local buffer-read-only t)
        (eww-mode))(pop-to-buffer (get-buffer "*html*")))))
+
+;; NOTE: The thing with eww is, it keeps track of history w.r.t URLs it visits
+;;       and that is integral to how it navigates the buffers. I don't have the
+;;       concept of a URL there, rather it's just forward and backward states,
+;;       though I could store the URLs as search terms. In the sense, some
+;;       location is set there.
+
+;; (defun ref-man-chrome--)
 
 ;; TODO: History hooks? How does eww do it?
 (defun ref-man-chrome--fetch-html (tab-id)
@@ -341,6 +361,7 @@ by another process"
 
 ;; CHECK: Another way could be to click the link on the chromium page
 (defun ref-man-chrome--set-location-fetch-html (url tab-id)
+  (add-to-list 'ref-man-chrome--history-list url)
   (ref-man-chrome-eval (format "location.href = \"%s\"" url) tab-id
                        (lambda (result)
                          (message (plist-get (plist-get result :result) :value))

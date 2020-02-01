@@ -1,4 +1,4 @@
-;; ref-man.el --- Manage bibliographic references and associated documents in emacs. ;;; -*- lexical-binding: t; -*-
+;; ref-man.el --- Manage bibliographic references and associated documents in  emacs. Integrates with org-mode to fetch, retrieve and manage the documents and metadata. ;;; -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2018,2019
 ;; Akshay Badola
@@ -47,22 +47,50 @@
 (require 'xml)
 
 
-(setq ref-man-org-links-file-path (expand-file-name "~/.temp-org-links.org"))
-(setq ref-man-pubs-directory (expand-file-name "~/org/pdfs/"))
-;; (setq ref-man-temp-bib-file-path (expand-file-name "~/lib/docprocess/all.bib"))
-(setq ref-man-temp-bib-file-path (expand-file-name "~/.temp.bib"))
-(setq ref-man-org-store-dir (expand-file-name "~/org/pubs_org/"))
+(defgroup ref-man nil
+  "Bibliography Manager"
+  :prefix "ref-man-"
+  :group 'org)
+
+(defconst ref-man-version "0.0.1"
+  "`ref-man' version number.")
+
+(defcustom ref-man-org-links-file-path (expand-file-name "~/.temp-org-links.org")
+  "Temporary org file to hold URLs and metadata"
+  :type 'file
+  :group 'ref-man)
+
+(defcustom ref-man-documents-dir (expand-file-name "~/org/pdfs/")
+  "Directory where the downloaded pdf files will be stored"
+  :type 'directory
+  :group 'ref-man)
+
+(defcustom ref-man-temp-bib-file-path (expand-file-name "~/.temp.bib")
+  "Temprory bib file to append any extract bibtex info"
+  :type 'file
+  :group 'ref-man)
+
+(defcustom ref-man-org-store-dir (expand-file-name "~/org/pubs_org/")
+  "Directory where the org files corresponding to documents will be stored"
+  :type 'directory
+  :group 'ref-man)
+
+;; (setq ref-man-org-links-file-path (expand-file-name "~/.temp-org-links.org"))
+;; (setq ref-man-documents-dir (expand-file-name "~/org/pdfs/"))
+;; ;; (setq ref-man-temp-bib-file-path (expand-file-name "~/lib/docprocess/all.bib"))
+;; (setq ref-man-temp-bib-file-path (expand-file-name "~/.temp.bib"))
+;; (setq ref-man-org-store-dir (expand-file-name "~/org/pubs_org/"))
 
 ;; Internal global variables
-;; FIXME: ref-man--org-heading-gscholar-launch-buffer etc. are still being
+;; FIXME: ref-man--org-gscholar-launch-buffer etc. are still being
 ;;        used causing confusion
-(defvar ref-man--org-heading-gscholar-launch-buffer nil)
-(defvar ref-man--org-heading-gscholar-launch-point nil)
-(defvar ref-man--org-gscholar-launch-buffer nil)
-(defvar ref-man--org-gscholar-launch-point nil)
-(defvar ref-man--eww-import-link nil)
-(defvar ref-man--subtree-list nil)
-(defvar ref-man--current-org-buffer nil)
+;; (setq ref-man--org-gscholar-launch-buffer nil)
+;; (setq ref-man--org-gscholar-launch-point nil)
+(setq ref-man--org-gscholar-launch-buffer nil)
+(setq ref-man--org-gscholar-launch-point nil)
+(setq ref-man--eww-import-link nil)
+(setq ref-man--subtree-list nil)
+(setq ref-man--current-org-buffer nil)
 
 (defvar shr-map
   (let ((map (make-sparse-keymap)))
@@ -461,8 +489,9 @@ to a buffer right now. can change to have it in multiple steps."
        (refs-list (if json-string
                       (mapcar (lambda (x)
                                 (cons (concat (gethash "title" x) " "
-                                              (string-join (gethash "authors" x) " ")) x))
-                              (gethash "references" json-string)) nil)))
+                                              (string-join (gethash "authors" x) " "))
+                                      x)) (gethash "references" json-string))
+                    nil)))
     (if json-string
         (progn
           (setq ref-man--current-pdf-file-name pdf-file-name)
@@ -835,9 +864,9 @@ exists then goto that file or find that file, else insert to
   (let ((buf (if buf buf (current-buffer)))
         (entry assoc-list)
         (buf-point (cond (buf-point buf-point)
-                         ((not ref-man--org-heading-gscholar-launch-point)
+                         ((not ref-man--org-gscholar-launch-point)
                           (with-current-buffer buf (point)))
-                         (t ref-man--org-heading-gscholar-launch-point))))
+                         (t ref-man--org-gscholar-launch-point))))
     (with-current-buffer buf
       (goto-char buf-point)
       (when (and (not no-edit-headline) (cdr (assoc "title" assoc-list)))
@@ -865,12 +894,12 @@ exists then goto that file or find that file, else insert to
         (setq retval
               (let ((org-buf (cond (org-buf org-buf)
                                    (ref-man--org-gscholar-launch-buffer ref-man--org-gscholar-launch-buffer)
-                                   (ref-man--org-heading-gscholar-launch-buffer ref-man--org-heading-gscholar-launch-buffer)))
+                                   (ref-man--org-gscholar-launch-buffer ref-man--org-gscholar-launch-buffer)))
                     (org-point (cond ((and ref-man--org-gscholar-launch-buffer ref-man--org-gscholar-launch-point)
                                       ref-man--org-gscholar-launch-point)
-                                     ((and ref-man--org-heading-gscholar-launch-buffer
-                                           ref-man--org-heading-gscholar-launch-point)
-                                       ref-man--org-heading-gscholar-launch-point)
+                                     ((and ref-man--org-gscholar-launch-buffer
+                                           ref-man--org-gscholar-launch-point)
+                                       ref-man--org-gscholar-launch-point)
                                       (org-buf (with-current-buffer org-buf (point)))
                                       (t nil))))
                 (cond
@@ -896,8 +925,8 @@ exists then goto that file or find that file, else insert to
 (defun org-search-heading-on-crossref-with-biblio ()
   "Searches for the current heading in google scholar in eww"
   (interactive)
-  (setq ref-man--org-heading-gscholar-launch-point (point))
-  (setq ref-man--org-heading-gscholar-launch-buffer (current-buffer))
+  (setq ref-man--org-gscholar-launch-point (point))
+  (setq ref-man--org-gscholar-launch-buffer (current-buffer))
   (save-excursion
     (let* ((query (org-get-heading t t))
            (target-buffer (window-buffer (ref-man--get-or-create-window-on-side)))
@@ -933,8 +962,8 @@ Results are parsed with (BACKEND 'parse-buffer)."
   (biblio--selection-forward-bibtex #'ref-man--biblio-insert-to-org))
 
 (defun ref-man--biblio-insert-to-org (bibtex entry)
-  (let* ((current-key (with-current-buffer ref-man--org-heading-gscholar-launch-buffer
-                       (org-entry-get ref-man--org-heading-gscholar-launch-point "CUSTOM_ID")))
+  (let* ((current-key (with-current-buffer ref-man--org-gscholar-launch-buffer
+                       (org-entry-get ref-man--org-gscholar-launch-point "CUSTOM_ID")))
          (bibtex (replace-in-string (replace-in-string
                   (progn (set-text-properties 0 (length bibtex) nil bibtex) bibtex)
                   "\n" "") "[[:blank:]]+" " "))
@@ -946,10 +975,10 @@ Results are parsed with (BACKEND 'parse-buffer)."
     (setf (alist-get "=key=" bib-assoc) new-key)
     (cond ((not bib-assoc) (message "[ref-man] Received nil entry"))
           ((string-match-p "na_" current-key)
-           (ref-man--org-bibtex-convert-bib-to-property bib-assoc ref-man--org-heading-gscholar-launch-buffer))
+           (ref-man--org-bibtex-convert-bib-to-property bib-assoc ref-man--org-gscholar-launch-buffer))
           ((y-or-n-p "Authoritative entry. Really replace?")
-           (ref-man--org-bibtex-convert-bib-to-property bib-assoc ref-man--org-heading-gscholar-launch-buffer)))
-    (pop-to-buffer ref-man--org-heading-gscholar-launch-buffer)))
+           (ref-man--org-bibtex-convert-bib-to-property bib-assoc ref-man--org-gscholar-launch-buffer)))
+    (pop-to-buffer ref-man--org-gscholar-launch-buffer)))
 
 (defun ref-man--biblio-insert-results (items &optional header)
   "Populate current buffer with ITEMS and HEADER, then display it."
@@ -1060,7 +1089,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
                      ((string-match-p "dl.acm.org" url)
                       (concat "acm_" (car (split-string (nth 1 (split-string url "?id=")) "&")) ".pdf"))
                      (t (car (url-path-and-query obj)))))
-         (file (path-join (list ref-man-pubs-directory (file-name-nondirectory path)))))
+         (file (path-join (list ref-man-documents-dir (file-name-nondirectory path)))))
     file))
 
 (defun ref-man--check-pdf-file-exists (url)
@@ -1319,7 +1348,7 @@ callback is nil defaults to `ref-man--eww-parse-bibtex'"
         (message (concat "[ref-man] inserted bib entry into " temp-bib-file-name))))))
 
 
-;; FIXED: Fix this! ref-man--org-heading-gscholar-launch-point is used only for
+;; FIXED: Fix this! ref-man--org-gscholar-launch-point is used only for
 ;;        inserting bibtex. The other variable
 ;;        ref-man--org-gscholar-launch-buffer is used to insert children and
 ;;        other stuff and is used in other functions - They can cause confusion.
@@ -1409,8 +1438,8 @@ the *previous* non-google link"
 
 ;; This is the big function
 ;; If eww is called from any other place, set the
-;; ref-man--org-heading-gscholar-launch-buffer and
-;; ref-man--org-heading-gscholar-launch-point to nil
+;; ref-man--org-gscholar-launch-buffer and
+;; ref-man--org-gscholar-launch-point to nil
 (defun ref-man-eww-gscholar (url)
   "Fetch URL and render the page.
 If the input doesn't look like a URL or a domain name."
@@ -1641,7 +1670,7 @@ corresponding headline and insert."
       (when ref-man--org-gscholar-launch-buffer
         (with-current-buffer ref-man--org-gscholar-launch-buffer
           (save-excursion
-            (goto-char ref-man--org-heading-gscholar-launch-point)
+            (goto-char ref-man--org-gscholar-launch-point)
             (ref-man--insert-org-pdf-file-property file))))
       (if (file-exists-p file)
           (when (y-or-n-p "File exists. Replace?")
@@ -2008,7 +2037,7 @@ the option is given. org buffer to insert the data to is set by
   ;; e.g. arxiv.org, nips, cvpr, iccv, aaai, tacl, aclweb, pmlr (jmlr, icml)
   ;; Should it just return a downloadable link or download the file itself?
   (setq ref-man--org-gscholar-launch-buffer (current-buffer)) ; needn't be at heading
-  (setq ref-man--org-heading-gscholar-launch-point (point))
+  (setq ref-man--org-gscholar-launch-point (point))
   ;; (if (ref-man--downloadable-pdf-url-p url)
   ;;     (if (ref-man--check-pdf-file-exists url)
   ;;         (ref-man--insert-org-pdf-file-property (ref-man--check-pdf-file-exists url))
@@ -2263,10 +2292,10 @@ text and if no URL could be found return nil."
            (buf-string (with-current-buffer buf (buffer-string))))
       (if buf-string
           (let ((file (ref-man--filename-from-url url)))
-            ;; (file (concat ref-man-pubs-directory (file-name-nondirectory path))))
+            ;; (file (concat ref-man-documents-dir (file-name-nondirectory path))))
             ;; (eww-make-unique-file-name
             ;;  (eww-decode-url-file-name (file-name-nondirectory path))
-            ;;  ref-man-pubs-directory)
+            ;;  ref-man-documents-dir)
             ;; (setq my/eww-imported-link nil)
             (if (file-exists-p file)      ; This really will never execute
                 (if (y-or-n-p "File exists. Replace?")
@@ -2292,8 +2321,8 @@ eww. Stores the buffer and the position from where it was called."
   (interactive)
   (if (eq major-mode 'org-mode)
       (progn
-        (setq ref-man--org-heading-gscholar-launch-point (point)) ; must be at heading?
-        (setq ref-man--org-heading-gscholar-launch-buffer (current-buffer))
+        (setq ref-man--org-gscholar-launch-point (point)) ; must be at heading?
+        (setq ref-man--org-gscholar-launch-buffer (current-buffer))
         (save-excursion
           (let ((query-string (replace-regexp-in-string ":\\|/" " "
                                (substring-no-properties (org-get-heading t t)))))
@@ -2336,7 +2365,7 @@ a) org-gscholar-launch-buffer is checked for the entry"
              ;; (ref-man--insert-org-pdf-file-property file)
              (with-current-buffer ref-man--org-gscholar-launch-buffer
                (save-excursion
-                 (goto-char ref-man--org-heading-gscholar-launch-point)
+                 (goto-char ref-man--org-gscholar-launch-point)
                  (ref-man--insert-org-pdf-file-property file))))))))
 
 (defun ref-man--at-bib-heading-p ()
