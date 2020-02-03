@@ -513,6 +513,9 @@ to a buffer right now. can change to have it in multiple steps."
     (with-current-buffer buf (org-mode)) buf))
 
 (defun ref-man--generate-org-buffer-content (org-buf refs-list bib-assoc visiting-filename)
+"Even though asyncs should all finish before
+`ref-man--dblp-fetch-parallel' returns, they don't appear to be
+doing so."
   (with-current-buffer org-buf
     (ref-man--org-bibtex-write-top-heading-from-assoc bib-assoc)
     (org-insert-heading-after-current)
@@ -521,7 +524,48 @@ to a buffer right now. can change to have it in multiple steps."
     (org-insert-heading-after-current)    
     (org-demote-subtree)
     (ref-man--dblp-fetch-parallel refs-list org-buf)
-    (set-visited-file-name visiting-filename)))
+    ;; (ref-man--parallel-get-results refs-list org-buf)
+    ;; (goto-char (point-min))
+    ;; (outline-hide-subtree)
+    ;; (outline-show-branches)
+    ;; (outline-next-heading)
+    ;; (outline-next-heading)
+    ;; (kill-line 2)
+    (set-visited-file-name visiting-filename)
+    ;; (save-buffer)
+    ))
+
+;; Best way would be communication with a python process
+;; (defun ref-man--parallel-get-results (refs-list org-buf)
+;;   ;; (async-start
+;;   ;;  `(lambda ()
+;;   ;;     ,(async-inject-variables "refs-list\\|org-buf\\|async-get\\|ref-man--dblp-fetch-parallel-results")
+;;   ;;     (setq results (mapcar 'async-get  ref-man--dblp-fetch-parallel-results))
+;;   ;;     results))
+
+;;   ;; FIXME: This next line pauses. Can this be done in a different loop?
+;;   (setq ref-man--dblp-fetch-parallel-results
+;;         (mapcar 'async-get  ref-man--dblp-fetch-parallel-results))
+;;   (setq my/temp-meh (mapcar* 'cons refs-list ref-man--dblp-fetch-parallel-results))
+;;   (seq-do (lambda (x)
+;;             (let* ((ref (car x))
+;;                    (buf-string (cdr x))
+;;                    (guf (generate-new-buffer "*dblp-test*")))
+;;               (with-current-buffer guf (insert buf-string))
+;;               (with-current-buffer guf (set-buffer-multibyte t))
+;;               (pcase-let ((`(,(and result `(result . ,_)))
+;;                            (xml-parse-region nil nil guf)))
+;;                 (let ((key-str (remove nil
+;;                                        (ref-man--dblp-clean
+;;                                         (mapcar (lambda (hit)
+;;                                                   (gscholar-bibtex--xml-get-child hit 'info))
+;;                                                 (xml-get-children
+;;                                                  (gscholar-bibtex--xml-get-child result 'hits) 'hit))))))
+;;                   (with-current-buffer ref-man--temp-buf
+;;                     (if key-str (ref-man--org-bibtex-write-ref-from-assoc (ref-man--build-bib-assoc key-str))
+;;                       (ref-man--org-bibtex-write-ref-NA-from-keyhash (cdr ref))))
+;;                   (kill-buffer guf)))))
+;;           (mapcar* 'cons refs-list ref-man--dblp-fetch-parallel-results)))
 
 ;;
 ;; TODO: Better names please. WTF is `ref-refs`?
@@ -529,10 +573,9 @@ to a buffer right now. can change to have it in multiple steps."
 ;;
 (defun ref-man--dblp-fetch-parallel (refs-list org-buf)
   "Fetches all dblp queries in parallel via async"
-  (setq ref-man--dblp-fetch-parallel-results nil)
   (setq ref-man--temp-ref nil)
-  (loop for ref-ref in refs-list do
-        (setq ref-man--temp-ref ref-ref)
+  (loop for ref in refs-list do
+        (setq ref-man--temp-ref ref)
         (setq ref-man--temp-buf org-buf)
         (async-start
          `(lambda ()
@@ -546,7 +589,7 @@ to a buffer right now. can change to have it in multiple steps."
                   (with-current-buffer buf (buffer-string))
                 (kill-buffer buf))))
          `(lambda (buf-string)
-            ,(async-inject-variables "ref-man--temp-ref\\|ref-man--temp-buf\\|ref-man--dblp-fetch-parallel-results")
+            ,(async-inject-variables "ref-man--temp-ref\\|ref-man--temp-buf")
             (let ((guf (generate-new-buffer "*dblp-test*")))
               (with-current-buffer guf (insert buf-string))
               (with-current-buffer guf (set-buffer-multibyte t))
@@ -562,6 +605,26 @@ to a buffer right now. can change to have it in multiple steps."
                     (if key-str (ref-man--org-bibtex-write-ref-from-assoc (ref-man--build-bib-assoc key-str))
                       (ref-man--org-bibtex-write-ref-NA-from-keyhash (cdr ref-man--temp-ref))))
                   (kill-buffer guf))))))))
+
+;; (defun ref-man--dblp-fetch-parallel (refs-list org-buf)
+;;   "Fetches all dblp queries in parallel via async"
+;;   (setq ref-man--dblp-fetch-parallel-results nil)
+;;   (setq ref-man--temp-ref nil)
+;;   (loop for ref in refs-list do
+;;         (setq ref-man--temp-ref ref)
+;;         (setq ref-man--temp-buf org-buf)
+;;         (push (async-start
+;;                `(lambda ()
+;;                   ,(async-inject-variables "ref-man--temp-ref")
+;;                   (defun replace-in-string (what with in)
+;;                     (replace-regexp-in-string (regexp-quote what) with in nil 'literal))
+;;                   (let* ((query-url
+;;                           (format "http://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" (car ref-man--temp-ref)))
+;;                          (buf (url-retrieve-synchronously query-url)))
+;;                     (prog2 (with-current-buffer buf (set-buffer-multibyte t))
+;;                         (with-current-buffer buf (buffer-string))
+;;                       (kill-buffer buf)))))
+;;               ref-man--dblp-fetch-parallel-results)))
 
 ;;
 ;; Called by ref-man--generate-buffer-and-fetch-if-required
@@ -922,7 +985,7 @@ exists then goto that file or find that file, else insert to
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Begin Biblio stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;
-(defun org-search-heading-on-crossref-with-biblio ()
+(defun ref-man-org-search-heading-on-crossref-with-biblio ()
   "Searches for the current heading in google scholar in eww"
   (interactive)
   (setq ref-man--org-gscholar-launch-point (point))
