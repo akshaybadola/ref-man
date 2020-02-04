@@ -1,7 +1,7 @@
 (add-to-list 'load-path ".")
+(delete "." load-path)
 (load "ref-man.el")
 (require 'websocket)
-
 
 (defcustom ref-man-chrome-user-data-dir
   (concat (getenv "HOME") "/.config/chromium")
@@ -15,7 +15,24 @@
   :type 'interger
   :group 'ref-man)
 
-(setq ref-man-eww-data nil)
+(defcustom ref-man-chrome-history-limit
+  50 
+  "How many pages to save in memory. Basically the page source is saved."
+  :type 'interger
+  :group 'ref-man)
+
+(defvar ref-man-chrome-history
+  nil
+  "List containing the ref-man-chrome-histories")
+
+(defvar ref-man-chrome-history-position
+  0
+  "Current position in the history")
+
+(unless ref-man-chrome--history-table
+  (setq ref-man-chrome--history-table (make-hash-table :test 'equal
+                                                :size ref-man-chrome-history-limit)))
+(setq ref-man-chrome-data nil)
 (setq ref-man-chrome--chromium-port nil)
 (setq ref-man-chrome--history-list nil)
 (setq ref-man-chrome--rpc-id 0)
@@ -23,19 +40,26 @@
 (setq ref-man-chrome--sockets nil)
 (setq ref-man-chrome--tabs nil)
 (setq ref-man-chrome--initialized-p nil)
+(setq ref-man-chrome--fetch-no-pop nil)
+(setq ref-man-chrome--page-url nil)
+(setq ref-man-chrome--page-title nil)
+(setq ref-man-chrome--page-source nil)
 
-(defconst google-scholar-root-url
+(defconst ref-man-chrome-root-url
   "https://scholar.google.com/"
   "Google Scholar URL from which relative URLs will be computed")
 
-(define-derived-mode ref-man-eww-mode special-mode "eww"
+;; CHECK: Maybe save history also
+(define-derived-mode ref-man-chrome-mode fundamental-mode "ref-man-chrome"
   "Mode for browsing google scholar when google wants to spy on
-you and you don't care but you want emacs integration with org mode."
-  (setq-local ref-man-eww-data (list :title ""))
+you and you don't care but you want emacs integration with org
+mode, so you run a chrome headless instance with some google
+account signed in so that google doesn't call you a \"robot\".
+WTF, right?"
+  (setq-local ref-man-chrome-data (list :url ref-man-chrome--page-url))
+  (ref-man-chrome-setup-buffer)
   ;; (setq-local browse-url-browser-function #'eww-browse-url)
   ;; (add-hook 'after-change-functions #'eww-process-text-input nil t)
-  (setq-local ref-man-eww-history nil)
-  (setq-local ref-man-eww-history-position 0)
   ;; desktop support
   ;; CHECK: Do I need this?
   ;; multi-page isearch support
@@ -44,26 +68,129 @@ you and you don't care but you want emacs integration with org mode."
   (buffer-disable-undo)
   (setq buffer-read-only t))
 
-(defun eww-current-url nil
-  "Return URI of the Web page the current EWW buffer is visiting."
-  (plist-get eww-data :url))
+(defvar shr-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "a" 'shr-show-alt-text)
+    (define-key map "i" 'shr-browse-image)
+    (define-key map "z" 'shr-zoom-image)
+    (define-key map [?\t] 'shr-next-link)
+    (define-key map [?\M-\t] 'shr-previous-link)
+    (define-key map [follow-link] 'nil)
+    (define-key map "I" 'shr-insert-image)
+    (define-key map "w" 'ref-man-copy-url)
+    (define-key map "u" 'nil)
+    (define-key map "RET" 'ref-man-chrome-browse-url)
+    (define-key map "o" 'nil)
+    (define-key map "\r" 'ref-man-chrome-browse-url)
+    map))
 
-(defun eww-links-at-point ()
+(defvar ref-man-chrome-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "g" 'ref-man-chrome-browse-url)
+    ;; (define-key map "G" 'eww)
+    ;; (define-key map [?\M-\r] 'eww-open-in-new-buffer)
+    (define-key map [?\t] 'shr-next-link)
+    (define-key map [?\M-\t] 'shr-previous-link)
+    (define-key map [backtab] 'shr-previous-link)
+    (define-key map "\r" 'ref-man-chrome-browse-url-at-point)
+    (define-key map [delete] 'scroll-down-command)
+    (define-key map "q" 'bury-buffer)
+    (define-key map "l" 'ref-man-chrome-back-url)
+    (define-key map "r" 'ref-man-chrome-forward-url)
+    (define-key map "n" 'next-line)
+    (define-key map "p" 'previous-line)
+    ;; (define-key map "u" 'eww-up-url)
+    ;; (define-key map "t" 'eww-top-url)
+    ;; (define-key map "&" 'eww-browse-with-external-browser)
+    (define-key map "d" 'ref-man-chrome-download)
+    (define-key map "w" 'ref-man-chrome-copy-page-url)
+    ;; (define-key map "C" 'url-cookie-list)
+    (define-key map "u" 'ref-man-chrome-view-source)
+    ;; (define-key map "R" 'eww-readable)
+    (define-key map "H" 'ref-man-chrome-list-histories)
+    ;; (define-key map "E" 'eww-set-character-encoding)
+    ;; (define-key map "s" 'eww-switch-to-buffer)
+    (define-key map "S" 'ref-man-chrome-list-buffers)
+    ;; (define-key map "F" 'eww-toggle-fonts)
+    ;; (define-key map "D" 'eww-toggle-paragraph-direction)
+    ;; (define-key map [(meta C)] 'eww-toggle-colors)
+
+    ;; NOTE: Custom functions defined in ref-man.el
+    (define-key map "]" 'ref-man-chrome-next)
+    (define-key map "[" 'ref-man-chrome-previous)
+    (define-key map "b" 'ref-man-chrome-add-bookmark)    
+    (define-key map "B" 'ref-man-chrome-list-bookmarks)
+    (define-key map "i" 'ref-man-chrome-insert-to-org)
+    (define-key map "e" 'ref-man-chrome-extract-data)
+    (define-key map "v" 'ref-man-chrome-view/download-pdf)
+    ;; TODO Should be only in bookmarks mode
+    ;; (define-key map [(meta n)] 'eww-next-bookmark)
+    ;; (define-key map [(meta p)] 'eww-previous-bookmark)
+    map))
+
+(defun ref-man-chrome-view-source ()
+  (interactive)
+  (let ((buf (get-buffer-create "*rfc-source*")))
+    (with-current-buffer buf
+      (erase-buffer)
+      (insert ref-man-chrome--page-source)
+      (setq-local buffer-read-only t))
+    (pop-to-buffer (get-buffer "*rfc-source*"))))
+
+(defun ref-man-chrome-browse-url (url)
+"Browse a url with ref-man-chrome. Special functions for google scholar."
+  (interactive (list (shr-url-at-point current-prefix-arg)))
+    (if (not url)
+        (message "No URL under point")
+      (setq url (url-encode-url url))
+      (unless (string-prefix-p "http" url)
+        (setq url (concat ref-man-chrome-root-url (string-remove-prefix "/" url))))
+      (ref-man-chrome--set-location-fetch-html url)))
+
+(defun ref-man-chrome-back-url ()
+  (interactive)
+  ;; Goes forward in the history list
+  (when (> (length ref-man-chrome-history) (+ 1 ref-man-chrome-history-position))
+    (incf ref-man-chrome-history-position)
+    ;; don't save history but setup the buffer
+    ))
+
+(defun ref-man-chrome-forward-url ()
+  (interactive)
+  ;; Goes backward in the history list
+  (when ref-man-chrome-history-position
+    (decf ref-man-chrome-history-position))
+    ;; don't save history but setup the buffer
+    )
+
+(defalias 'ref-man-chrome-browse-url-at-point 'ref-man-chrome-browse-url)
+
+(defun ref-man-copy-url (url)
+  (interactive (list (shr-url-at-point current-prefix-arg)))
+  (if (not url)
+      (message "No URL under point")
+    (setq url (url-encode-url url))
+    (unless (string-prefix-p "http" url)
+      (setq url (concat ref-man-chrome-root-url (string-remove-prefix "/" url))))
+    (kill-new url)
+    (message "Copied %s" url)))
+
+(defun ref-man-chrome-links-at-point ()
   "Return list of URIs, if any, linked at point."
   (remq nil
 	(list (get-text-property (point) 'shr-url)
 	      (get-text-property (point) 'image-url))))
 
-(defun eww-setup-buffer ()
-  (when (or (plist-get eww-data :url)
-            (plist-get eww-data :dom))
-    (eww-save-history))
+(defun ref-man-chrome-setup-buffer ()
+  (interactive)
+  (ref-man-chrome-save-history)
   (let ((inhibit-read-only t))
     (remove-overlays)
-    (erase-buffer))
-  (setq bidi-paragraph-direction nil)
-  (unless (eq major-mode 'eww-mode)
-    (eww-mode)))
+    ;; (erase-buffer)
+    )
+  ;; (setq bidi-paragraph-direction nil)
+  (unless (eq major-mode 'ref-man-chrome-mode)
+    (ref-man-chrome-mode)))
 
 ;; I'm calling it ref-man-chrome- sub package
 ;; A free open port can be chosen randomly and chromium or chromium-browser can start
@@ -105,8 +232,7 @@ process"
       (start-process "chromium" "*chromium*" (ref-man-chrome--which-chromium)
                      "--headless" (concat "--user-data-dir=" data-dir) (format "--remote-debugging-port=%s" port))
     (start-process "chromium" "*chromium*" (ref-man-chrome--which-chromium)
-                   (concat "--user-data-dir=" data-dir) (format "--remote-debugging-port=%s" port)))
-  (sleep-for 2))
+                   (concat "--user-data-dir=" data-dir) (format "--remote-debugging-port=%s" port))))
 
 ;; TODO: Fix for named process
 (defun ref-man-chrome--kill-chrome-process ()
@@ -190,14 +316,31 @@ process"
 (defun ref-man-chrome--dispatch-callback (id data)
   (let ((hook (intern (number-to-string id) ref-man-chrome--rpc-callbacks)))
     (when hook
+      (message (format "Dispatching callback for %d" id))
       (run-hook-with-args hook data)
       (unintern hook ref-man-chrome--rpc-callbacks))))
+
+    ;; (if callback
+    ;;     (message (concat "[ref-man-chrome]: Method: " (plist-get params :expression)
+    ;;                      " ID: " (format "%s " id) "Added Callback: " (format "%s" callback)))
+    ;;     (message (concat "[ref-man-chrome]: Method: " (plist-get params :expression)
+    ;;                      " ID: " (format "%s " id) "No Callback")))
+    ;; (when callback
+    ;;   (ref-man-chrome--register-callback id callback))
 
 ;; It's called method but it's actually THE CALL
 (defun ref-man-chrome-call-rpc (method socket &optional params callback)
   (let ((id (ref-man-chrome--next-rpc-id)))
+    (when (eq id 12)
+      (debug))
+    (if (string= method "Runtime.evaluate")
+        (if callback
+            (message (concat "[ref-man-chrome]: Method: " (plist-get params :expression)
+                             " ID: " (format "%s " id) "Added Callback: " (format "%s" callback)))
+          (message (concat "[ref-man-chrome]: Method: " (plist-get params :expression)
+                           " ID: " (format "%s " id) "No Callback")))
+      (message (concat "[ref-man-chrome]: Method: " method " ID: " (format "%s " id) " No Callback")))
     (when callback
-      (message (concat "[ref-man-chrome]: " "ID: " (format "%s " id) "Added Callback: " (format "%s" callback)))
       (ref-man-chrome--register-callback id callback))
     (websocket-send-text
      socket
@@ -213,14 +356,16 @@ process"
   ;; (message "[ref-man: Closed connection to " (format "%s") tab))
 
 (defun ref-man-chrome--on-message-added (data)
-  (let* ((-message (plist-get data :message))
-         (url (plist-get message :url))
-         (column (plist-get message :column))
-         (line (plist-get message :line))
-         (type (plist-get message :type))
-         (level (plist-get message :level))
-         (text (plist-get message :text)))
-    (message (format "[ref-man-chrome]: %s" -message))))
+  (when data
+    (let* ((-message (plist-get data :message))
+           (url (plist-get message :url))
+           (column (plist-get message :column))
+           (line (plist-get message :line))
+           (type (plist-get message :type))
+           (level (plist-get message :level))
+           (text (plist-get message :text)))
+      ;; (message (format "[ref-man-chrome]: %s" -message))
+      )))
 
 ;; (defun kite-mini-on-script-parsed (data)
 ;;   (let ((extension? (plist-get data :isContentScript))
@@ -233,7 +378,9 @@ process"
 ;;   (kite-mini-console-append (format "%s" data)))
 
 (defun ref-man-chrome--on-script-parsed (params &optional id result)
-  (message (format "%s\n%s" "[ref-man] Parsed Script " params))
+  (if params
+      (message (format "%s\n%s" "[ref-man] Parsed Script " params))
+    (message (format "%s\n%s" "[ref-man] Parsed Script. No Params")))
   (if (and id result)
       (progn
         (message "BOTH id result")
@@ -242,10 +389,12 @@ process"
     (message "NEITHER id result")))
 
 (defun ref-man-chrome--failed-to-parse (params)
-  (message (format "%s\n%s" "[ref-man] Failed Script " params)))
+  (if params
+      (message (format "%s\n%s" "[ref-man] Failed Script " params))
+    (message "[ref-man] Failed Script. No Params")))
 
 (defun ref-man-chrome--on-message (socket data)
-  (let* ((data (ref-man-chrome--decode (websocket-frame-payload data)))
+  (let* ((data (ref-man-chrome--decode (when data (websocket-frame-payload data))))
          (method (plist-get data :method))
          (params (plist-get data :params))
          (id (plist-get data :id))
@@ -257,16 +406,18 @@ process"
       ("Debugger.scriptFailedToParse" (ref-man-chrome--failed-to-parse params))
       ("Console.messageAdded" (ref-man-chrome--on-message-added params))
       ;; ;; TODO: do something usefull here, possibly great for REPL
-      ("Console.messageRepeatCountUpdated")
+      ;; ("Console.messageRepeatCountUpdated")
       ;; nil -> These are return messages from RPC calls, not notification
       (_ (if method
-             (message (format "What method is this? %s " method))
+             (message "Some method!")
            (ref-man-chrome--dispatch-callback (plist-get data :id)
                                               (plist-get data :result))
            )))))
 
 (defun ref-man-chrome--open-socket (url)
-  (message "[ref-man-chrome]: Opening socket for" url)
+  (if url
+      (message "[ref-man-chrome]: Opening socket for" (format "%s" url))
+      (message "[ref-man-chrome]: Opening socket for no url"))
   (websocket-open url
                   :on-open #'ref-man-chrome--on-open
                   :on-message #'ref-man-chrome--on-message
@@ -312,10 +463,10 @@ process"
   (ref-man-chrome-reset)
   (message "Killed chromium process"))
 
-(defun ref-man-chrome-init ()
+(defun ref-man-chrome-init (&optional not-headless)
   (if (not ref-man-chrome--initialized-p)
       (progn
-        (ref-man-chrome-start-process t)
+        (ref-man-chrome-start-process (not not-headless))
         (setq ref-man--test-var nil)
         (setq my/test-loop-iter 0)
         (while (not ref-man--test-var)        
@@ -324,16 +475,28 @@ process"
               (progn (ref-man-chrome-connect 0)
                      (setq ref-man--test-var t))
             (error nil)))
+        (setq ref-man---init-0 t)
+        (setq ref-man---init-1 t)
         (ref-man-chrome-eval "location.href = \"https://scholar.google.com\"" 0
-                             (lambda (result) (message (concat "[ref-man] Set URL of tab 0 to "
-                                                               (plist-get (plist-get result :result) :value)))))
-        (ref-man-chrome-eval "window.open();" 0)
-        (sleep-for 1)
+                             (lambda (result)
+                               (setq ref-man---init-0 nil)))
+                             ;; (lambda (result) (message (concat "[ref-man] Set URL of tab 0 to "
+                             ;;                                   (plist-get (plist-get result :result) :value)))))
+        (while ref-man---init-0
+          (message "WAITING init-0")
+          (sleep-for .2))
+        (ref-man-chrome-eval "window.open();" 0
+                             (lambda (result)
+                               (setq ref-man---init-1 nil)))
+                             ;; (lambda (result) (message (concat "[ref-man] Set URL of tab 0 to "
+                             ;;                                   (plist-get (plist-get result :result) :value)))))
+        (while ref-man---init-1
+          (message "WAITING init-1")
+          (sleep-for .2))
         (ref-man-chrome-connect 1)
         (setq ref-man-chrome--initialized-p t)
         (message "[ref-man] Chromium plugin initialized"))
     (message "[ref-man] Chromium plugin was already initialized.")))
-
 
 ;; (defun ref-man--bibtex-generate-autokey (names year title)
 ;;   (let ((autokey (concat bibtex-autokey-prefix-string
@@ -352,7 +515,7 @@ process"
 ;;       autokey)))
 ;; (insert (ref-man--bibtex-generate-autokey "li" "15" "diversity")) ; li15:_diversity
 
-(ref-man-chrome-init)
+;; (ref-man-chrome-init)
 ;; (ref-man-chrome-shutdown)
 ;; (ref-man-chrome--check-port 9222)
 ;; (ref-man-chrome--get-socket-url-for-tab 0)
@@ -388,45 +551,86 @@ process"
 ;;        (setq-local buffer-read-only t)
 ;;        (eww-mode))(pop-to-buffer (get-buffer "*html*")))))
 
-;; TODO: History hooks? How does eww do it?
-(defun ref-man-chrome--fetch-html (tab-id)
-  (ref-man-chrome-eval 
-   "document.documentElement.innerHTML" tab-id
-   (lambda (result)
-     (progn
-       (with-current-buffer (get-buffer-create "*test*")
-         (when buffer-read-only
-           (setq-local buffer-read-only nil))
-         (erase-buffer)
-         (insert (plist-get (plist-get result :result) :value))
-         (when (get-buffer "*html*")
-           (with-current-buffer (get-buffer "*html*")
-             (setq-local buffer-read-only nil)))
-         (shr-render-buffer (get-buffer "*test*")))
-       (with-current-buffer (get-buffer "*html*")
-         (setq-local buffer-read-only t)
-         (eww-mode))
-       (pop-to-buffer (get-buffer "*html*"))))))
+;; FIXME: This should setup all the global ref-man variables
+(defun ref-man-chrome--fetch-html (tab-id &optional no-pop)
+  (if no-pop
+      (setq ref-man-chrome--fetch-no-pop t)
+    (setq ref-man-chrome--fetch-no-pop nil))
+  (setq ref-man-chrome--page-source nil)
+  (setq ref-man-chrome--page-title nil)
+  (setq ref-man-chrome--page-url nil)
+  (ref-man-chrome-eval "document.title" tab-id
+                       (lambda (result)
+                         (setq ref-man-chrome--page-title
+                               (plist-get (plist-get result :result) :value))))
+  (ref-man-chrome-eval "document.location" tab-id
+                       (lambda (result)
+                         (setq ref-man-chrome--page-url
+                               (plist-get (plist-get (plist-get result :result) :value) :href))))
+  (ref-man-chrome-eval "document.documentElement.innerHTML" tab-id
+                       (lambda (result)
+                         (setq ref-man-chrome--page-source
+                               (plist-get (plist-get result :result) :value))))
+  (while (or (not ref-man-chrome--page-title)
+             (not ref-man-chrome--page-url)
+             (not ref-man-chrome--page-source))
+    (message "WAITING fetch-html")
+    (sleep-for .2))                     ; sync call 
+  (with-current-buffer (get-buffer-create "*rfc-source*")
+    (when buffer-read-only
+      (setq-local buffer-read-only nil))
+    (erase-buffer)
+    (insert ref-man-chrome--page-source)
+    (when (get-buffer "*chrome*")
+      (with-current-buffer (get-buffer "*chrome*")
+        (setq-local buffer-read-only nil)))
+    (ref-man-chrome-render-buffer (get-buffer "*rfc-source*")))
+  (with-current-buffer (get-buffer "*chrome*")
+    (setq-local buffer-read-only t)
+    (ref-man-chrome-mode))
+  (if ref-man-chrome--fetch-no-pop
+      (message "Not going to pop to CHROME")
+    (message "WILL pop to CHROME")
+    (pop-to-buffer (get-buffer "*chrome*"))))
+
+(defun ref-man-chrome-render-buffer (buffer)
+  "Display the HTML rendering of the current buffer."
+  (interactive (list (current-buffer)))
+  (or (fboundp 'libxml-parse-html-region)
+      (error "This function requires Emacs to be compiled with libxml2"))
+  (unless ref-man-chrome--fetch-no-pop
+    (pop-to-buffer "*chrome*"))
+  (with-current-buffer (get-buffer "*chrome*")
+    (erase-buffer)
+    (shr-insert-document
+     (with-current-buffer buffer
+       (libxml-parse-html-region (point-min) (point-max))))
+    (goto-char (point-min))))
 
 ;; CHECK: Another way could be to click the link on the chromium page
+;; 
+;; NOTE: There was an issue with the whole process in that fetch page call was
+;;       coming too quickly. (sleep-for 1) alleviates that to some extent but
+;;       perhaps the wait time can be reduced.
+;;       It still gives me an error once in a while. Not sure how to
+;;       deal with that.
 (defun ref-man-chrome--set-location-fetch-html (url &optional tab-id)
+  "Go to URL in the chrome process and fetch the html after a
+delay of 1 second."
   (setq ref-man--tab-id (if tab-id tab-id 0))
   (let ((call-str (format "location.href = \"%s\"" url)))
+    (setq ref-man-chrome--fetched-sentinel t)
     (ref-man-chrome-eval call-str ref-man--tab-id
-                         `(lambda (result)
-                            ;; "test"
-                            ;; (message (plist-get (plist-get result :result) :value))
-                            ,(ref-man-chrome--fetch-html ref-man--tab-id)))))
+                         (lambda (result)
+                           (setq ref-man-chrome--fetched-sentinel nil)))
+    (while ref-man-chrome--fetched-sentinel
+      (message "WAITING set-location")
+      (sleep-for .2))
+    ;; (message (plist-get (plist-get result :result) :value))
+    (ref-man-chrome--fetch-html ref-man--tab-id)))
 
-(defun ref-man-chrome-follow-link-at-point ()
-  "Follow the corresponding link in the chromium process or *eww*
-buffer according to the type of link under point"
-  (let ((url (get-text-property (point) 'shr-url)))
-    (if (string-match-p "^http" (get-text-property (point) (quote shr-url)))
-        (shr-browse-url url)
-      ;; FIXME: tab-id has to be stored somewhere according to page
-      (ref-man-chrome--set-location-fetch-html url tab-id))))
-
+;; FIXME: Why do I have to call it twice for it to load correctly?
+;;        Either a timing issue or a callback issue.
 (defun ref-man-org-search-heading-on-gscholar-with-chrome ()
   "Searches for the current heading in google scholar in
 eww. Stores the buffer and the position from where it was called."
@@ -437,24 +641,28 @@ eww. Stores the buffer and the position from where it was called."
         (setq ref-man--org-gscholar-launch-buffer (current-buffer))
         (save-excursion
           (let ((query-string (replace-regexp-in-string ":\\|/" " "
-                               (substring-no-properties (org-get-heading t t)))))
+                                                        (substring-no-properties (org-get-heading t t)))))
+            (message (concat "[ref-man-chrome] Fetching " query-string))
             (ref-man-chrome--set-location-fetch-html
              (concat "https://scholar.google.com/scholar?q="
                      (replace-regexp-in-string " " "+" query-string))))))
     (message "[ref-man] Not in org-mode")))
 
-
-(defun ref-man-eww-save-history ()
-  (plist-put ref-man-eww-data :point (point))
-  (plist-put ref-man-eww-data :text (buffer-string))
-  (push ref-man-eww-data ref-man-eww-history)
-  (setq ref-man-eww-data (list :title ""))
+(defun ref-man-chrome-save-history ()
+  (plist-put ref-man-chrome-data :point (point))
+  (plist-put ref-man-chrome-data :text ref-man-chrome--page-source)
+  (plist-put ref-man-chrome-data :title ref-man-chrome--page-title)
+  (plist-put ref-man-chrome-data :url ref-man-chrome--page-url)
+  (puthash ref-man-chrome--page-url ref-man-chrome-data ref-man-chrome--history-table)
+  (setq ref-man-chrome-history (delete ref-man-chrome--page-url ref-man-chrome-history))
+  (push ref-man-chrome--page-url ref-man-chrome-history)
+  ;; (push ref-man-chrome-data ref-man-chrome-history)
+  ;; (setq ref-man-chrome-data (list :title ""))
   ;; Don't let the history grow infinitely.  We store quite a lot of
   ;; data per page.
-  (when-let* ((tail (and ref-man-eww-history-limit
-		         (nthcdr ref-man-eww-history-limit ref-man-eww-history))))
+  (when-let* ((tail (and ref-man-chrome-history-limit
+        	         (nthcdr ref-man-chrome-history-limit ref-man-chrome-history))))
     (setcdr tail nil)))
-
 
 ;; ;; NOTE: I would like two tabs, one for chrome and another for any bibtex entry
 ;; ;;       I would like to extract. The import to bibtex will open in another
