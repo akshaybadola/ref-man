@@ -15,6 +15,7 @@
   :type 'interger
   :group 'ref-man)
 
+(setq ref-man-eww-data nil)
 (setq ref-man-chrome--chromium-port nil)
 (setq ref-man-chrome--history-list nil)
 (setq ref-man-chrome--rpc-id 0)
@@ -22,6 +23,47 @@
 (setq ref-man-chrome--sockets nil)
 (setq ref-man-chrome--tabs nil)
 (setq ref-man-chrome--initialized-p nil)
+
+(defconst google-scholar-root-url
+  "https://scholar.google.com/"
+  "Google Scholar URL from which relative URLs will be computed")
+
+(define-derived-mode ref-man-eww-mode special-mode "eww"
+  "Mode for browsing google scholar when google wants to spy on
+you and you don't care but you want emacs integration with org mode."
+  (setq-local ref-man-eww-data (list :title ""))
+  ;; (setq-local browse-url-browser-function #'eww-browse-url)
+  ;; (add-hook 'after-change-functions #'eww-process-text-input nil t)
+  (setq-local ref-man-eww-history nil)
+  (setq-local ref-man-eww-history-position 0)
+  ;; desktop support
+  ;; CHECK: Do I need this?
+  ;; multi-page isearch support
+  ;; (setq-local multi-isearch-next-buffer-function #'eww-isearch-next-buffer)
+  (setq truncate-lines t)
+  (buffer-disable-undo)
+  (setq buffer-read-only t))
+
+(defun eww-current-url nil
+  "Return URI of the Web page the current EWW buffer is visiting."
+  (plist-get eww-data :url))
+
+(defun eww-links-at-point ()
+  "Return list of URIs, if any, linked at point."
+  (remq nil
+	(list (get-text-property (point) 'shr-url)
+	      (get-text-property (point) 'image-url))))
+
+(defun eww-setup-buffer ()
+  (when (or (plist-get eww-data :url)
+            (plist-get eww-data :dom))
+    (eww-save-history))
+  (let ((inhibit-read-only t))
+    (remove-overlays)
+    (erase-buffer))
+  (setq bidi-paragraph-direction nil)
+  (unless (eq major-mode 'eww-mode)
+    (eww-mode)))
 
 ;; I'm calling it ref-man-chrome- sub package
 ;; A free open port can be chosen randomly and chromium or chromium-browser can start
@@ -310,7 +352,7 @@ process"
 ;;       autokey)))
 ;; (insert (ref-man--bibtex-generate-autokey "li" "15" "diversity")) ; li15:_diversity
 
-;; (ref-man-chrome-init)
+(ref-man-chrome-init)
 ;; (ref-man-chrome-shutdown)
 ;; (ref-man-chrome--check-port 9222)
 ;; (ref-man-chrome--get-socket-url-for-tab 0)
@@ -385,7 +427,7 @@ buffer according to the type of link under point"
       ;; FIXME: tab-id has to be stored somewhere according to page
       (ref-man-chrome--set-location-fetch-html url tab-id))))
 
-(defun ref-man-org-search-heading-on-gscholar-with-rfchrome ()
+(defun ref-man-org-search-heading-on-gscholar-with-chrome ()
   "Searches for the current heading in google scholar in
 eww. Stores the buffer and the position from where it was called."
   (interactive)
@@ -400,6 +442,18 @@ eww. Stores the buffer and the position from where it was called."
              (concat "https://scholar.google.com/scholar?q="
                      (replace-regexp-in-string " " "+" query-string))))))
     (message "[ref-man] Not in org-mode")))
+
+
+(defun ref-man-eww-save-history ()
+  (plist-put ref-man-eww-data :point (point))
+  (plist-put ref-man-eww-data :text (buffer-string))
+  (push ref-man-eww-data ref-man-eww-history)
+  (setq ref-man-eww-data (list :title ""))
+  ;; Don't let the history grow infinitely.  We store quite a lot of
+  ;; data per page.
+  (when-let* ((tail (and ref-man-eww-history-limit
+		         (nthcdr ref-man-eww-history-limit ref-man-eww-history))))
+    (setcdr tail nil)))
 
 
 ;; ;; NOTE: I would like two tabs, one for chrome and another for any bibtex entry
