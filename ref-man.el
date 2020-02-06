@@ -979,11 +979,11 @@ exists then goto that file or find that file, else insert to
       ('error (message (format "[ref-man] Caught exception: [%s]" ex))))
     (message (concat "[ref-man] " retval))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; End Org generation and insertion stuff ;;
+;; END Org generation and insertion stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;
-;; Begin Biblio stuff ;;
+;; START Biblio stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;
 (defun ref-man-org-search-heading-on-crossref-with-biblio ()
   "Searches for the current heading in google scholar in eww"
@@ -1053,10 +1053,8 @@ Results are parsed with (BACKEND 'parse-buffer)."
   (hl-line-highlight))
 
 ;;;;;;;;;;;;;;;;;;;;;;
-;; End Biblio stuff ;;
+;; END Biblio stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;
-
-
 
 (defun ref-man--eww-mode-hook ()
   (bind-key "b" 'ref-man-eww-keypress-b eww-mode-map)
@@ -1081,32 +1079,31 @@ Results are parsed with (BACKEND 'parse-buffer)."
 
 ;; (setq url-user-agent "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:46.0) Gecko/20100101 Firefox/46.0")
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; BEGIN string utility functions ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; START url utility functions ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun ref-man--on-gscholar-page-p ()
+(defun ref-man--relative-url-p (url)
+  (or (string-prefix-p "/" url) (string-prefix-p "./" url)))
+
+(defun ref-man-eww--on-gscholar-page-p ()
   (and (eq major-mode 'eww-mode)
        (string-match-p "scholar\\.google\\.com" (plist-get eww-data :url))))
 
-(defun ref-man--non-gscholar-url-p (url)
+(defun ref-man-eww--non-gscholar-url-p (url)
   (or (string-match-p "semanticscholar.org" url)
       (and (not (string-match-p "javascript" url))
            (not (string-match-p "scholar" url))
-           (not (string-match-p "google" url)))))
+           (not (string-match-p "google" url))
+           (not (string-prefix-p "/" url)))))
 
-(defun ref-man--filter-eww-non-gscholar (url-list)
-  (remove-if
-   (lambda (x) (string-match-p "javascript" x))
-   (remove-if
-    (lambda (x) (string-match-p "scholar" x))
-    (remove-if
-     (lambda (x) (string-match-p "google.com" x))
-     url-list))))
+(defun ref-man-eww--filter-non-gscholar (url-list)
+  (remove-if (lambda (x) (not (ref-man-eww--non-gscholar-url-p x)))
+             url-list))
 
 (defun ref-man--has-bib-url-p (url)
   "Does the given url contain a downloadable or parseable bibtex entry."
-  (and (ref-man--non-gscholar-url-p url)
+  (and (ref-man-eww--non-gscholar-url-p url)
        (or (string-match-p "arxiv.org" url)
            (string-match-p "aclweb.org" url)
            (string-match-p "papers.nips.cc" url)
@@ -1119,7 +1116,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
 
 (defun ref-man--downloadable-pdf-url-p (url)
   "Does the given url contain a pdf to download."
-  (and (ref-man--non-gscholar-url-p url)
+  (and (ref-man-eww--non-gscholar-url-p url)
        ;; add exception for arxiv.org
        (cond ((string-match-p "arxiv.org" url)
               (string-match-p "/pdf/" url))
@@ -1162,13 +1159,13 @@ Results are parsed with (BACKEND 'parse-buffer)."
           ((file-exists-p file-name-b) file-name-b)
           (t nil))))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; END utility functions ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; END url utility functions ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; BEGIN eww navigation and keymap ;;
+;; START eww navigation and keymap ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; use gscholar specific bindings only on google scholar pages
@@ -1234,7 +1231,7 @@ be applied."
   (interactive)
   ;; assuming already in eww or shr mode
   (let ((url (get-text-property (point) 'shr-url)))
-    (if (or (ref-man--on-gscholar-page-p) (and url (ref-man--downloadable-pdf-url-p url)))
+    (if (or (ref-man-eww--on-gscholar-page-p) (and url (ref-man--downloadable-pdf-url-p url)))
         (ref-man-eww-view-and-download-if-required-pdf url)
       (eww-view-source))))
 
@@ -1272,8 +1269,8 @@ Goes to the next pdf link and cycles round if the last link is reached."
   ;; was here for scholar.google.com checking
   ;; * ((url (with-current-buffer (get-buffer "*eww*") (plist-get eww-data :url)))
   (let ((url (get-text-property (point) 'shr-url)))
-    (cond ((ref-man--on-gscholar-page-p)
-           (ref-man-eww-download-pdf (ref-man--eww-gscholar-get-previous-pdf-link (current-buffer))))
+    (cond ((ref-man-eww--on-gscholar-page-p)
+           (ref-man-eww-download-pdf (ref-man-eww--gscholar-get-previous-pdf-link (current-buffer))))
           ((ref-man--downloadable-pdf-url-p url)
            (ref-man-eww-download-pdf url))
           (t (message "[ref-man] Nothing to download here")))))
@@ -1293,13 +1290,13 @@ Goes to the next pdf link and cycles round if the last link is reached."
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Begin eww utility functions ;;
+;; START eww utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun ref-man--get-non-google-url (buf pdf-url)
   "For the corresponding url which is the url for the pdf
 download, get the link which corresponds to it"
-  (let ((all-urls (ref-man--filter-eww-non-gscholar
+  (let ((all-urls (ref-man-eww--filter-non-gscholar
                    (ref-man-eww-get-all-links buf t nil nil)))) ; (from eww buffer) from-begin
     (nth (+ (-elem-index pdf-url all-urls) 1) all-urls)))
 
@@ -1329,7 +1326,7 @@ download, get the link which corresponds to it"
                (link-text (buffer-substring-no-properties link-text-begin link-text-end)))
             (list link link-text metadata))))))
 
-(defun ref-man--eww-check-bibtex-buffer-from-scholar ()
+(defun ref-man-eww--check-bibtex-buffer-from-scholar ()
   "Checks if the *Import from bibtex* buffer contains valid data or not"
   (let* ((buf (get-buffer " *scholar-entry*"))
          (buf-string (if buf (with-current-buffer buf (buffer-string))
@@ -1344,7 +1341,7 @@ download, get the link which corresponds to it"
 ;; ONLY called from ref-man-eww-get-bibtex-from-scholar
 (defun ref-man--eww-browse-url (url &optional callback org)
   "Browses url in background and performs optional callback. If
-callback is nil defaults to `ref-man--eww-parse-bibtex'"
+callback is nil defaults to `ref-man-eww--parse-bibtex'"
   (let ((buf (get-buffer-create " *scholar-entry*")))
     (with-current-buffer buf (eww-setup-buffer)
                          (plist-put eww-data :url url)
@@ -1355,7 +1352,7 @@ callback is nil defaults to `ref-man--eww-parse-bibtex'"
                          (if callback
                              (url-retrieve url callback
                                            (list url (current-buffer) org))                             
-                           (url-retrieve url #'ref-man--eww-parse-bibtex
+                           (url-retrieve url #'ref-man-eww--parse-bibtex
                                          (list url (current-buffer) org))))))
 
 (defun ref-man-parse-bibtex-to-org-format ()
@@ -1423,44 +1420,45 @@ callback is nil defaults to `ref-man--eww-parse-bibtex'"
 ;; 
 ;; FIXED: It doesn't store URL while inserting bibtex.  URL Will have to be
 ;;        fetched by going back and finding the first non-google URL I guess.
-(defun ref-man--eww-parse-bibtex (status url buf org)
+(defun ref-man-eww--parse-bibtex (status url buf org)
   (eww-render status url nil buf)
-  (let ((check-string (ref-man--eww-check-bibtex-buffer-from-scholar))
-        (url (ref-man--eww-gscholar-get-previous-non-google-link (get-buffer "*eww*"))))
+  (let ((check-string (ref-man-eww--check-bibtex-buffer-from-scholar))
+        (url (ref-man-eww--gscholar-get-previous-non-google-link (get-buffer "*eww*"))))
     (if check-string
         (ref-man--parse-bibtex buf org)
       (message "[ref-man] Could not get entry from scholar"))
     (when buf (kill-buffer buf))))
 
-(defun ref-man--eww-gscholar-get-next-non-google-link (buf)
-  (ref-man--eww-gscholar-get-non-google-link buf nil))
+(defun ref-man-eww--gscholar-get-next-non-google-link (buf)
+  (ref-man-eww--gscholar-get-non-google-link buf nil))
 
-(defun ref-man--eww-gscholar-get-previous-non-google-link (buf)
-  (ref-man--eww-gscholar-get-non-google-link buf t))
+(defun ref-man-eww--gscholar-get-previous-non-google-link (buf)
+  (ref-man-eww--gscholar-get-non-google-link buf t))
 
-(defun ref-man--eww-gscholar-get-non-google-link (buf previous)
+(defun ref-man-eww--gscholar-get-non-google-link (buf previous)
   "The buffer is assumed to be gscholar. The function tries to
-import the *next* non-google link"
+import the *next* or *previous* non-google link depending on the
+variable `previous'"
   (save-excursion
     (with-current-buffer buf
       (let ((step (if previous -1 1)))
         (if (and (get-text-property (point) 'shr-url)
-                 (ref-man--non-gscholar-url-p (get-text-property (point) 'shr-url))) ; (point) has link
+                 (ref-man-eww--non-gscholar-url-p (get-text-property (point) 'shr-url))) ; (point) has link
             (get-text-property (point) 'shr-url)
           (while (and (not (bobp))
                       (not (eobp))
                       (not (if (get-text-property (point) 'shr-url)
-                               (ref-man--non-gscholar-url-p (get-text-property (point) 'shr-url)))))
+                               (ref-man-eww--non-gscholar-url-p (get-text-property (point) 'shr-url)))))
             (forward-char step))
           (get-text-property (point) 'shr-url))))))
 
-(defun ref-man--eww-gscholar-get-previous-pdf-link (buf)
-  (ref-man--eww-gscholar-get-pdf-link buf t))
+(defun ref-man-eww--gscholar-get-previous-pdf-link (buf)
+  (ref-man-eww--gscholar-get-pdf-link buf t))
 
-(defun ref-man--eww-gscholar-get-next-pdf-link (buf)
-  (ref-man--eww-gscholar-get-pdf-link buf nil))
+(defun ref-man-eww--gscholar-get-next-pdf-link (buf)
+  (ref-man-eww--gscholar-get-pdf-link buf nil))
 
-(defun ref-man--eww-gscholar-get-pdf-link (buf previous)
+(defun ref-man-eww--gscholar-get-pdf-link (buf previous)
   "The buffer is assumed to be gscholar. The function tries to
 import the *next* non-google link"
   (save-excursion
@@ -1476,27 +1474,28 @@ import the *next* non-google link"
           (get-text-property (point) 'shr-url))))))
 
 ;; FIXME: DEPRECATED
-(defun ref-man--eww-get-gscholar-link-for-import (buf)
+;;        Because there are a bunch of modular functions which do this
+(defun ref-man-eww--get-gscholar-link-for-import (buf)
   "As the buffer is assumed to be gscholar, it tries to import
 the *previous* non-google link"
   (save-excursion
     (with-current-buffer buf
       (if (and (get-text-property (point) 'shr-url)
-               (ref-man--non-gscholar-url-p (get-text-property (point) 'shr-url))) ; (point) has link
+               (ref-man-eww--non-gscholar-url-p (get-text-property (point) 'shr-url))) ; (point) has link
           (get-text-property (point) 'shr-url)
         (while (and (not (bobp))
                     (not (if (get-text-property (point) 'shr-url)
-                             (ref-man--non-gscholar-url-p (get-text-property (point) 'shr-url)))))
+                             (ref-man-eww--non-gscholar-url-p (get-text-property (point) 'shr-url)))))
           (backward-char 1))
         (get-text-property (point) 'shr-url)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; End eww utility functions ;;
+;; END eww utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Begin eww callable functions ;;
+;; START eww callable functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; This is the big function
@@ -1661,12 +1660,12 @@ downloadable, else fetch a pdf url above it"
     (message "[ref-man] Not in eww-mode")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; End eww callable functions ;;
+;; END eww callable functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Begin org utility functions ;;
+;; START org utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun ref-man--org-property-is-url-p (prop)
@@ -2016,12 +2015,12 @@ corresponding headline and insert."
     ref-man--ieee-parse))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; End org utility functions ;;
+;; END org utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Begin org functions ;;
+;; START org functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; TODO: Replace all property setters with
@@ -2039,20 +2038,17 @@ corresponding headline and insert."
 buffer is not gscholar"
   (interactive)
   (save-excursion
-    (if (and (or (eq major-mode 'shr-mode) (eq major-mode 'eww-mode))
-             (string-match-p "scholar\\.google\\.com" (plist-get eww-data :url)))
-      (let* ((eww-buf (current-buffer))
-             (org-buf (if ref-man--org-gscholar-launch-buffer
-                          ref-man--org-gscholar-launch-buffer
-                        (let ((org-links-file-name (file-name-nondirectory ref-man-org-links-file-path)))
-                          (if (get-buffer org-links-file-name) (get-buffer org-links-file-name)
-                            (find-file-noselect ref-man-org-links-file-path)))))
-             (link (if url url (ref-man--eww-get-gscholar-link-for-import eww-buf)))
-             (args (ref-man--eww-get-import-link-data eww-buf link)))
-        (if args                        ; link link-text-begin link-text-end metadata
-            (apply #'ref-man--insert-link-into-org-buffer (cons org-buf args))
-          (message "[ref-man] Could not get link to import")))
-      (message "[ref-man] Not gscholar buffer"))))
+    (let* ((eww-buf (current-buffer))
+           (org-buf (if ref-man--org-gscholar-launch-buffer
+                        ref-man--org-gscholar-launch-buffer
+                      (let ((org-links-file-name (file-name-nondirectory ref-man-org-links-file-path)))
+                        (if (get-buffer org-links-file-name) (get-buffer org-links-file-name)
+                          (find-file-noselect ref-man-org-links-file-path)))))
+           (link (if url url (ref-man-eww--get-gscholar-link-for-import eww-buf)))
+           (args (ref-man--eww-get-import-link-data eww-buf link)))
+      (if args                        ; link link-text-begin link-text-end metadata
+          (apply #'ref-man--insert-link-into-org-buffer (cons org-buf args))
+        (message "[ref-man] Could not get link to import")))))
 
 (defun ref-man--download-pdf-redirect (callback url &optional point)
   (message (concat "[ref-man] Fetching PDF from " url))
@@ -2458,7 +2454,7 @@ a) org-gscholar-launch-buffer is checked for the entry"
       )))
 
 ;;;;;;;;;;;;;;;;;;;;;;;
-;; End org functions ;;
+;; END org functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;
 
 (provide 'ref-man)

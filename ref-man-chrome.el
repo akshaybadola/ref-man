@@ -29,9 +29,6 @@
   0
   "Current position in the history")
 
-(unless ref-man-chrome--history-table
-  (setq ref-man-chrome--history-table (make-hash-table :test 'equal
-                                                :size ref-man-chrome-history-limit)))
 (setq ref-man-chrome-data nil)
 (setq ref-man-chrome--chromium-port nil)
 (setq ref-man-chrome--history-list nil)
@@ -44,6 +41,9 @@
 (setq ref-man-chrome--page-url nil)
 (setq ref-man-chrome--page-title nil)
 (setq ref-man-chrome--page-source nil)
+(unless (boundp 'ref-man-chrome--history-table)
+  (setq ref-man-chrome--history-table (make-hash-table :test 'equal
+                                                :size ref-man-chrome-history-limit)))
 
 (defconst ref-man-chrome-root-url
   "https://scholar.google.com/"
@@ -52,8 +52,8 @@
 ;; CHECK: Maybe save history also
 (define-derived-mode ref-man-chrome-mode fundamental-mode "ref-man-chrome"
   "Mode for browsing google scholar when google wants to spy on
-you and you don't care but you want emacs integration with org
-mode, so you run a chrome headless instance with some google
+you and you don't care but you want emacs integration with
+org-mode, so you run a chrome headless instance with some google
 account signed in so that google doesn't call you a \"robot\".
 WTF, right?"
   (setq-local ref-man-chrome-data (list :url ref-man-chrome--page-url))
@@ -68,17 +68,16 @@ WTF, right?"
   (buffer-disable-undo)
   (setq buffer-read-only t))
 
-(defvar shr-map
+(defvar ref-man-link-map
   (let ((map (make-sparse-keymap)))
     (define-key map "a" 'shr-show-alt-text)
-    (define-key map "i" 'shr-browse-image)
+    (define-key map "i" 'ref-man-chrome-insert-to-org)
     (define-key map "z" 'shr-zoom-image)
     (define-key map [?\t] 'shr-next-link)
     (define-key map [?\M-\t] 'shr-previous-link)
-    (define-key map [follow-link] 'nil)
     (define-key map "I" 'shr-insert-image)
-    (define-key map "w" 'ref-man-copy-url)
-    (define-key map "u" 'nil)
+    (define-key map "w" 'ref-man-chrome-copy-url)
+    (define-key map "u" 'ref-man-chrome-view-source)
     (define-key map "RET" 'ref-man-chrome-browse-url)
     (define-key map "o" 'nil)
     (define-key map "\r" 'ref-man-chrome-browse-url)
@@ -103,7 +102,7 @@ WTF, right?"
     ;; (define-key map "t" 'eww-top-url)
     ;; (define-key map "&" 'eww-browse-with-external-browser)
     (define-key map "d" 'ref-man-chrome-download)
-    (define-key map "w" 'ref-man-chrome-copy-page-url)
+    (define-key map "w" 'ref-man-chrome-copy-url)
     ;; (define-key map "C" 'url-cookie-list)
     (define-key map "u" 'ref-man-chrome-view-source)
     ;; (define-key map "R" 'eww-readable)
@@ -121,12 +120,22 @@ WTF, right?"
     (define-key map "b" 'ref-man-chrome-add-bookmark)    
     (define-key map "B" 'ref-man-chrome-list-bookmarks)
     (define-key map "i" 'ref-man-chrome-insert-to-org)
-    (define-key map "e" 'ref-man-chrome-extract-data)
+    (define-key map "e" 'ref-man-chrome-extract-data) ; like extract bibtex
     (define-key map "v" 'ref-man-chrome-view/download-pdf)
     ;; TODO Should be only in bookmarks mode
     ;; (define-key map [(meta n)] 'eww-next-bookmark)
     ;; (define-key map [(meta p)] 'eww-previous-bookmark)
     map))
+
+;; (defun ref-man-chrome--get-all-links)
+
+(defun ref-man-chrome-insert-to-org ()
+  (interactive)
+  (let ((url ref-man-chrome--page-url))
+    (if (string-match-p "scholar\\.google\\.com" url) ; Only imports from scholar for now
+        (ref-man-import-gscholar-link-to-org-buffer (ref-man-eww--gscholar-get-previous-non-google-link
+                                                     (current-buffer)))
+      (message "Not Google Scholar"))))
 
 (defun ref-man-chrome-view-source ()
   (interactive)
@@ -165,15 +174,15 @@ WTF, right?"
 
 (defalias 'ref-man-chrome-browse-url-at-point 'ref-man-chrome-browse-url)
 
-(defun ref-man-copy-url (url)
+(defun ref-man-chrome-copy-url (url)
   (interactive (list (shr-url-at-point current-prefix-arg)))
-  (if (not url)
-      (message "No URL under point")
-    (setq url (url-encode-url url))
-    (unless (string-prefix-p "http" url)
-      (setq url (concat ref-man-chrome-root-url (string-remove-prefix "/" url))))
-    (kill-new url)
-    (message "Copied %s" url)))
+  (unless url
+    (setq url ref-man-chrome--page-url))
+  (when (and (not (string-prefix-p "javascript" url)) (not (string-prefix-p "http" url)))
+    (setq url (concat ref-man-chrome-root-url (string-remove-prefix "/" url))))
+  (setq url (url-encode-url url))
+  (kill-new url)
+  (message "Copied %s" url))
 
 (defun ref-man-chrome-links-at-point ()
   "Return list of URIs, if any, linked at point."
@@ -181,13 +190,37 @@ WTF, right?"
 	(list (get-text-property (point) 'shr-url)
 	      (get-text-property (point) 'image-url))))
 
+;; TODO: Check why code to put text property is not working.
 (defun ref-man-chrome-setup-buffer ()
   (interactive)
   (ref-man-chrome-save-history)
   (let ((inhibit-read-only t))
     (remove-overlays)
     ;; (erase-buffer)
-    )
+    (save-excursion
+      (let ((current nil)
+            (start nil)
+            (end nil))
+        (goto-char (point-min))
+        (while (not (eobp))
+          (let ((prop (get-text-property (point) 'shr-url)))
+            (cond ((and prop current (not (equal prop current))) ; transition without pause
+                   (put-text-property start (point) 'keymap ref-man-link-map)
+                   ;; (when string-prefix-p "/" current
+                   ;;       (put-text-property start (point) 'shr-url
+                   ;;                          (concat ref-man-chrome-root-url (string-remove-prefix "/" current))))
+                   (setq start (point))
+                   (setq current (get-text-property (point) 'shr-url)))
+                  ((and current (not prop)) ; end
+                   ;; (when string-prefix-p "/" current
+                   ;;       (put-text-property start (point) 'shr-url
+                   ;;                          (concat ref-man-chrome-root-url (string-remove-prefix "/" current))))
+                   (setq current nil)
+                   (put-text-property start (point) 'keymap ref-man-link-map))
+                  ((and prop (not current)) ; begin
+                   (setq start (point))
+                   (setq current (get-text-property (point) 'shr-url)))))
+          (forward-char 1)))))
   ;; (setq bidi-paragraph-direction nil)
   (unless (eq major-mode 'ref-man-chrome-mode)
     (ref-man-chrome-mode)))
@@ -310,15 +343,27 @@ process"
   ref-man-chrome--rpc-id)
 
 (defun ref-man-chrome--register-callback (id fn)
-  (let ((hook (intern (number-to-string id) ref-man-chrome--rpc-callbacks)))
-    (add-hook hook fn t)))
+  ;; (let ((hook (intern (number-to-string id) ref-man-chrome--rpc-callbacks)))
+  ;;   (add-hook hook fn t))
+  (setq ref-man-chrome--rpc-callbacks (plist-put ref-man-chrome--rpc-callbacks id fn)))
 
 (defun ref-man-chrome--dispatch-callback (id data)
-  (let ((hook (intern (number-to-string id) ref-man-chrome--rpc-callbacks)))
-    (when hook
-      (message (format "Dispatching callback for %d" id))
-      (run-hook-with-args hook data)
-      (unintern hook ref-man-chrome--rpc-callbacks))))
+  ;; (let ((hook (intern (number-to-string id) ref-man-chrome--rpc-callbacks)))
+  ;;   (when hook
+  ;;     (message (format "Dispatching callback for %d" id))
+  ;;     (run-hook-with-args hook data)
+  ;;     (unintern hook ref-man-chrome--rpc-callbacks)))
+  (let ((hook (plist-get ref-man-chrome--rpc-callbacks id)))
+    (if hook
+        (progn
+          (message (format "Dispatching callback for %d" id))
+          (cond ((symbolp hook)
+                 (run-hook-with-args hook data))
+                ((listp hook)
+                 (funcall hook data))
+                (t (message "Not sure what to do")))
+          (setq ref-man-chrome--rpc-callbacks (plist-put ref-man-chrome--rpc-callbacks id nil)))
+      (message "No hook for id %d" id))))
 
     ;; (if callback
     ;;     (message (concat "[ref-man-chrome]: Method: " (plist-get params :expression)
@@ -331,8 +376,8 @@ process"
 ;; It's called method but it's actually THE CALL
 (defun ref-man-chrome-call-rpc (method socket &optional params callback)
   (let ((id (ref-man-chrome--next-rpc-id)))
-    (when (eq id 12)
-      (debug))
+    ;; (when (eq id 12)
+    ;;   (debug))
     (if (string= method "Runtime.evaluate")
         (if callback
             (message (concat "[ref-man-chrome]: Method: " (plist-get params :expression)
@@ -559,10 +604,14 @@ process"
   (setq ref-man-chrome--page-source nil)
   (setq ref-man-chrome--page-title nil)
   (setq ref-man-chrome--page-url nil)
-  (ref-man-chrome-eval "document.title" tab-id
-                       (lambda (result)
-                         (setq ref-man-chrome--page-title
-                               (plist-get (plist-get result :result) :value))))
+  (while (or (not ref-man-chrome--page-title)
+             (string= "" ref-man-chrome--page-title))
+    (ref-man-chrome-eval "document.title" tab-id
+                         (lambda (result)
+                           (setq ref-man-chrome--page-title
+                                 (plist-get (plist-get result :result) :value))))
+    (sleep-for .2)
+    (message "WAITING page-title"))
   (ref-man-chrome-eval "document.location" tab-id
                        (lambda (result)
                          (setq ref-man-chrome--page-url
