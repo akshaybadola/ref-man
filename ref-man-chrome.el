@@ -45,6 +45,7 @@
   (setq ref-man-chrome--history-table (make-hash-table :test 'equal
                                                 :size ref-man-chrome-history-limit)))
 
+;; NOTE: Used only on scholar.google.com
 (defconst ref-man-chrome-root-url
   "https://scholar.google.com/"
   "Google Scholar URL from which relative URLs will be computed")
@@ -129,13 +130,36 @@ WTF, right?"
 
 ;; (defun ref-man-chrome--get-all-links)
 
+(defun ref-man-chrome-next ()
+  (interactive)
+  (catch 'retval
+    (save-excursion
+      (goto-char (point-min))
+      (while (search-forward "Next")
+        (let ((url (get-text-property (- (point) 1) 'shr-url)))
+          (when (and url (string-match-p "scholar.*start="
+                                         (concat ref-man-chrome--page-url url)))
+            (ref-man-chrome-browse-url url) (message "Going to Next Page")
+            (throw 'retval t)))))))
+
+(defun ref-man-chrome-previous ()
+  (interactive)
+  (catch 'retval
+    (save-excursion
+      (goto-char (point-min))
+      (while (search-forward "Previous")
+        (let ((url (get-text-property (- (point) 1) 'shr-url)))
+          (when (string-match-p "scholar.*start="
+                                (concat ref-man-chrome--page-url url))
+            (ref-man-chrome-browse-url url) (message "Going to Previous Page")
+            (throw 'retval t))))))  )
+
 (defun ref-man-chrome-insert-to-org ()
   (interactive)
   (let ((url ref-man-chrome--page-url))
-    (if (string-match-p "scholar\\.google\\.com" url) ; Only imports from scholar for now
-        (ref-man-import-gscholar-link-to-org-buffer (ref-man-eww--gscholar-get-previous-non-google-link
-                                                     (current-buffer)))
-      (message "Not Google Scholar"))))
+    (ref-man-import-gscholar-link-to-org-buffer
+     (ref-man-eww--gscholar-get-previous-non-google-link
+      (current-buffer)))))
 
 (defun ref-man-chrome-view-source ()
   (interactive)
