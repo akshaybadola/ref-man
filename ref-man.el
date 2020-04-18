@@ -583,7 +583,8 @@ doing so."
             (defun replace-in-string (what with in)
               (replace-regexp-in-string (regexp-quote what) with in nil 'literal))
             (let* ((query-url
-                    (format "http://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" (car ref-man--temp-ref)))
+                    (format "https://dblp.uni-trier.de/search/publ/api?q=%s&format=xml"
+                            (replace-in-string " " "+" (car ref-man--temp-ref))))
                    (buf (url-retrieve-synchronously query-url)))
               (prog2 (with-current-buffer buf (set-buffer-multibyte t))
                   (with-current-buffer buf (buffer-string))
@@ -619,7 +620,7 @@ doing so."
 ;;                   (defun replace-in-string (what with in)
 ;;                     (replace-regexp-in-string (regexp-quote what) with in nil 'literal))
 ;;                   (let* ((query-url
-;;                           (format "http://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" (car ref-man--temp-ref)))
+;;                           (format "https://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" (car ref-man--temp-ref)))
 ;;                          (buf (url-retrieve-synchronously query-url)))
 ;;                     (prog2 (with-current-buffer buf (set-buffer-multibyte t))
 ;;                         (with-current-buffer buf (buffer-string))
@@ -632,7 +633,8 @@ doing so."
 (defun ref-man--dblp-fetch-serial (query)
   "Fetch the dblp data synchronously. Would be used to insert the
 top level heading"
-  (let* ((query-url (format "http://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" query))
+  (let* ((query (replace-in-string query " " "+"))
+         (query-url (format "https://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" query))
          (buf (url-retrieve-synchronously query-url)))
     (with-current-buffer buf (set-buffer-multibyte t))
     (pcase-let ((`(,(and result `(result . ,_)))
@@ -1326,20 +1328,23 @@ download, get the link which corresponds to it"
                (link-text (buffer-substring-no-properties link-text-begin link-text-end)))
             (list link link-text metadata))))))
 
+(defun ref-man--check-bibtex-string (buf-string)
+  (if buf-string (cond ((string-match-p "systems have detected unusual" buf-string)
+                        (message "[ref-man] Scholar is detecting a robot"))
+                       ((string-match-p "client does not have permission" buf-string)
+                        (message "[ref-man] Scholar doesn't like EWW"))
+                       (t buf-string))
+    (message "[ref-man] Empty reply from scholar") nil))
+
 (defun ref-man-eww--check-bibtex-buffer-from-scholar ()
   "Checks if the *Import from bibtex* buffer contains valid data or not"
   (let* ((buf (get-buffer " *scholar-entry*"))
          (buf-string (if buf (with-current-buffer buf (buffer-string))
                        (message "[ref-man] Could not create buffer for scholar entry") nil)))
-    (if buf-string (cond ((string-match-p "systems have detected unusual" buf-string)
-                          (message "[ref-man] Scholar is detecting a robot"))
-                         ((string-match-p "client does not have permission" buf-string)
-                          (message "[ref-man] Scholar doesn't like EWW"))
-                         (t buf-string))
-      (message "[ref-man] Empty reply from scholar") nil)))
+    (ref-man--check-bibtex-string buf-string)))
 
 ;; ONLY called from ref-man-eww-get-bibtex-from-scholar
-(defun ref-man--eww-browse-url (url &optional callback org)
+(defun ref-man-eww--browse-url (url &optional callback org)
   "Browses url in background and performs optional callback. If
 callback is nil defaults to `ref-man-eww--parse-bibtex'"
   (let ((buf (get-buffer-create " *scholar-entry*")))
@@ -1368,11 +1373,11 @@ callback is nil defaults to `ref-man-eww--parse-bibtex'"
         (kill-new (buffer-string))
         (message "Killed entry as org heading")))))
 
-;; FIXME: 
-(defun ref-man--parse-bibtex (bib-buf &optional org)
-  ;; (setq my/bibtex-entry buf-string) ; TODO: Not used
-  ;; (message "[ref-man] Saved bibtex to my/bibtex-entry")
-  ;; Sanitize org entry and insert into org buffer
+;; FIXME: Not sure how? Old FIXME this was
+(defun ref-man--parse-bibtex (bib-buf &optional org url)
+"Extracts a bibtex entry from a buffer to the org buffer if
+variable `org' is set otherwise to the temp bib file"
+  ;; NOTE: Sanitize org entry and insert into org buffer
   (let ((org-buf (cond ((stringp org) (get-buffer org))
                        (ref-man--org-gscholar-launch-buffer ref-man--org-gscholar-launch-buffer)
                        (t nil))))
@@ -1398,7 +1403,7 @@ callback is nil defaults to `ref-man-eww--parse-bibtex'"
                    (ref-man--org-bibtex-convert-bib-to-property
                     bib-assoc org-buf nil t))))
           (with-current-buffer org-buf
-            (unless (org-entry-get (point) "URL")
+            (when (and url (not (org-entry-get (point) "URL")))
               (org-set-property "URL" url))))
       (let* ((temp-bib-file-name (file-name-nondirectory ref-man-temp-bib-file-path))
              (buf (if (get-buffer temp-bib-file-name) (get-buffer temp-bib-file-name)
@@ -1406,7 +1411,6 @@ callback is nil defaults to `ref-man-eww--parse-bibtex'"
         (with-current-buffer buf (goto-char (point-min))
                              (insert buf-string))
         (message (concat "[ref-man] inserted bib entry into " temp-bib-file-name))))))
-
 
 ;; FIXED: Fix this! ref-man--org-gscholar-launch-point is used only for
 ;;        inserting bibtex. The other variable
@@ -1637,7 +1641,7 @@ my/bibtex-entry. Optionally inserts to org buffer"
                           (backward-char)
                           (car (eww-links-at-point)))))
           ;; (to-org (if (eq current-prefix-arg 4) nil t)))
-      (ref-man--eww-browse-url bib-url nil to-org))))
+      (ref-man-eww--browse-url bib-url nil to-org))))
 
 ;; TODO: Make this async with org-property insertion
 ;;       (ref-man-eww-download-pdf url) already has it, perhaps due to async callback
@@ -1993,6 +1997,7 @@ corresponding headline and insert."
   "Buffer redirects correctly to IEEE (or some other site), but I
   can't really download from there"
   ;; If link is cvpr or iccv, then find the cvf link and go to that site
+  ;; I'll have to do a `handle-doi-redirect'
   (message "[ref-man] Not Implemented yet") nil)
 
 (defun ref-man--get-bibtex-link-from-doi (url)
@@ -2082,7 +2087,9 @@ buffer is not gscholar"
 
 ;; CHECK: Curious thing is, pdf retrieval is async and bib retrieval isn't I
 ;;        should make it uniform
-(defun ref-man-try-fetch-pdf-from-url (url &optional retrieve-pdf retrieve-bib storep)
+;; NOTE: Adding update heading also if heading is null
+(defun ref-man-try-fetch-pdf-from-url (url &optional retrieve-pdf retrieve-bib
+                                           retrieve-title storep)
   "Try and fetch pdf and bib entry from url. Can only retrieve
 from specific URLs. Storep specifies whether to store the
 retrieved data to org file or not.
@@ -2092,23 +2099,22 @@ the corresponding pdf or bibtex entry are fetched and stored if
 the option is given. org buffer to insert the data to is set by
 `ref-man--org-gscholar-launch-buffer'"
 
-  ;; Here I'll have to write rules to fetch pdfs from different urls,
-  ;; e.g. arxiv.org, nips, cvpr, iccv, aaai, tacl, aclweb, pmlr (jmlr, icml)
-  ;; Should it just return a downloadable link or download the file itself?
+  ;; NOTE: Here I'll have to write rules to fetch pdfs from different urls,
+  ;;       e.g. arxiv.org, nips, cvpr, iccv, aaai, tacl, aclweb, pmlr (jmlr,
+  ;;       icml) Should it just return a downloadable link or download the file
+  ;;       itself?
   (setq ref-man--org-gscholar-launch-buffer (current-buffer)) ; needn't be at heading
   (setq ref-man--org-gscholar-launch-point (point))
-  ;; (if (ref-man--downloadable-pdf-url-p url)
-  ;;     (if (ref-man--check-pdf-file-exists url)
-  ;;         (ref-man--insert-org-pdf-file-property (ref-man--check-pdf-file-exists url))
-  ;;       (message (concat "Fetching " url))
-  ;;       (url-retrieve url #'ref-man--eww-pdf-download-callback (list url)))
-  ;;   (message (concat "Browsing " url))
-  ;;   (eww-browse-url url))
+
+  ;; NOTE: We don't want to fetch the url more than once so we'll keep track of
+  ;;       it in this variable
+  (setq ref-man--fetched-url-title nil)
   (when retrieve-pdf
     (cond ((and url (ref-man--downloadable-pdf-url-p url))
            (ref-man--fetch-from-pdf-url url storep))
           ((and url (not (ref-man--downloadable-pdf-url-p url)))
-           ;; If not a downloadable url, try get pdf url
+           ;; NOTE: If not a downloadable url, try get pdf url
+           ;;       Also, try to fetch title from here itself
            (let ((url (ref-man--get-pdf-url-according-to-source url)))
              (if (ref-man--downloadable-pdf-url-p url)
                  (ref-man--fetch-from-pdf-url url storep)
@@ -2126,7 +2132,7 @@ the option is given. org buffer to insert the data to is set by
     (cond ((and url (ref-man--has-bib-url-p url))
            (let ((bib-url (ref-man--try-get-bib-url-according-to-source url)))
              (if bib-url
-                 (ref-man--parse-bibtex (url-retrieve-synchronously bib-url t))
+                 (ref-man-eww--browse-url bib-url nil ref-man--org-gscholar-launch-buffer)
                (message (format "[ref-man] No bibtex URL in %s" url)))))
           ((not url)
            (message "[ref-man] No URL given"))
@@ -2146,6 +2152,9 @@ the option is given. org buffer to insert the data to is set by
           ;;      (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) "BAD-URL"))
           ;;    (message (concat "[ref-man] Bad URL " url))))
           (t (message "[ref-man] Some strange error occured for retrieve-bib. Check"))))
+  (when retrieve-title
+    ;; NOTE: Not worth it right now.
+    (message "[ref-man] Let's see if we can insert heading"))
   (when (and (not retrieve-bib) (not retrieve-pdf))
     (message "[ref-man] Nothing to do")))
 
@@ -2207,6 +2216,9 @@ traverses one level depth as of now"
     (setq ref-man--point-max (point))
     (narrow-to-region ref-man--point-min ref-man--point-max)))
 
+(defun ref-man--check-heading-p ()
+  (> (length (string-trim (substring-no-properties (org-get-heading t t)))) 0))
+
 (defun ref-man--check-fix-url-property ()
   "Make sure URL property exists in either property drawer or
 text and if no URL could be found return nil."
@@ -2257,14 +2269,14 @@ text and if no URL could be found return nil."
          (pdf-file (ref-man--check-fix-pdf-file-property))
          (url-prop (ref-man--check-fix-url-property))
          (bib-prop (ref-man--parse-bib-property-key))
+         (headingp (ref-man--check-heading-p))
          (retrieve-bib nil)
          (retrieve-pdf nil)
          (msg-str ""))
     ;; FIXME: Make sure pdf file exists on disk, else remove prop
     ;; FIXME: Actually I should get the :link property from text but MEH!
 
-    ;; storep signifies to store the filename in PDF-FILE property?
-    ;; Check for bibtex also
+    ;; NOTE: storep signifies to store the filename in PDF-FILE property?
     (setq msg-str
           (concat msg-str (cond ((and pdf-file url-prop)
                                  (concat "[ref-man] PDF already exists."
@@ -2278,8 +2290,9 @@ text and if no URL could be found return nil."
                                  (setq retrieve-pdf t)
                                  "[ref-man] No pdf file in properties. Will fetch PDF from URL")
                                 ((and (not pdf-file) (not url-prop))
-                                 "[ref-man] Nothing to be done here"))
+                                 "[ref-man] Nothing to be done here for pdf file"))
                   "\n[ref-man] "
+                  ;; NOTE: Check for bibtex also
                   (cond ((not bib-prop)
                          (setq retrieve-bib t)
                          "No bib in properties. Will fetch from URL")
@@ -2289,10 +2302,20 @@ text and if no URL could be found return nil."
                         ((and bib-prop (string= bib-prop (cdr (assoc "CUSTOM_ID" props))))
                          "Bib in properties, and same as key!")
                         ((and bib-prop (not (string= bib-prop (cdr (assoc "CUSTOM_ID" props)))))
-                         "Bib in properties, but different from key. Check!!"))))
+                         "Bib in properties, but different from key. Check!!"))
+                  "\n[ref-man]"
+                  (cond ((and headingp url-prop)
+                         (setq retrieve-title nil)
+                         "Heading exists!")
+                        ((and (not headingp) url-prop)
+                         (setq retrieve-title t)
+                         "No heading. Will fetch from URL!")
+                        ((and (not headingp) (not url-prop))
+                         (setq retrieve-title nil)
+                         "No heading and no URL. What to do?!!"))))
     (message msg-str)
     (when (or retrieve-pdf retrieve-bib)
-      (ref-man-try-fetch-pdf-from-url url-prop retrieve-pdf retrieve-bib storep))))
+      (ref-man-try-fetch-pdf-from-url url-prop retrieve-pdf retrieve-bib retrieve-title storep))))
 
 ;; FIXED: Since the retrieval is now async, if I move to another
 ;;        headline while the file is being downloaded, the file link
