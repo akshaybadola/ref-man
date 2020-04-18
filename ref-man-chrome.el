@@ -1,3 +1,4 @@
+;; HACK
 (add-to-list 'load-path ".")
 (delete "." load-path)
 (load "ref-man.el")
@@ -23,7 +24,11 @@
 
 (defvar ref-man-chrome-history
   nil
-  "List containing the ref-man-chrome-histories")
+  "List containing the `ref-man-chrome-mode' histories")
+
+(defvar ref-man-chrome-mode-hook
+  nil
+  "Hook which is run after entering `ref-man-chrome-mode'")
 
 (defvar ref-man-chrome-history-position
   0
@@ -41,6 +46,10 @@
 (setq ref-man-chrome--page-url nil)
 (setq ref-man-chrome--page-title nil)
 (setq ref-man-chrome--page-source nil)
+(setq ref-man-chrome--nr-page-source nil)
+(setq ref-man-chrome--nr-page-title nil)
+(setq ref-man-chrome--nr-page-url nil)
+(setq ref-man-chrome--check-str "")
 (unless (boundp 'ref-man-chrome--history-table)
   (setq ref-man-chrome--history-table (make-hash-table :test 'equal
                                                 :size ref-man-chrome-history-limit)))
@@ -86,8 +95,8 @@ WTF, right?"
 
 (defvar ref-man-chrome-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map "g" 'ref-man-chrome-browse-url)
-    ;; (define-key map "G" 'eww)
+    (define-key map "g" 'ref-man-chrome-reload)
+    (define-key map "G" 'ref-man-chrome-browse-url)
     ;; (define-key map [?\M-\r] 'eww-open-in-new-buffer)
     (define-key map [?\t] 'shr-next-link)
     (define-key map [?\M-\t] 'shr-previous-link)
@@ -121,7 +130,8 @@ WTF, right?"
     (define-key map "b" 'ref-man-chrome-add-bookmark)    
     (define-key map "B" 'ref-man-chrome-list-bookmarks)
     (define-key map "i" 'ref-man-chrome-insert-to-org)
-    (define-key map "e" 'ref-man-chrome-extract-data) ; like extract bibtex
+    (define-key map "e" nil) ; like extract bibtex
+    (define-key map "e b" 'ref-man-chrome-extract-bibtex)
     (define-key map "v" 'ref-man-chrome-view/download-pdf)
     ;; TODO Should be only in bookmarks mode
     ;; (define-key map [(meta n)] 'eww-next-bookmark)
@@ -129,6 +139,37 @@ WTF, right?"
     map))
 
 ;; (defun ref-man-chrome--get-all-links)
+(defun ref-man-chrome-extract-bibtex-from-scholar (&optional org-buf)
+  "Like `ref-man-eww-get-bibtex-from-scholar' but maybe I thought
+earlier that it would extract more data or from more websites, as
+of now will only extract bibtex and insert to org."
+  (interactive)
+  (save-excursion
+    (let ((bib-url (progn (search-forward "import into bibtex")
+                          (backward-char)
+                          (car (eww-links-at-point)))))
+      (setq ref-man-chrome--check-str "title=")
+      (let* ((src (plist-get (ref-man-chrome--set-location-fetch-html bib-url 1 t t) :source))
+             (buf (get-buffer-create "*rfc-nr-source*"))
+             (dom (with-current-buffer buf
+                    (erase-buffer)
+                    (insert src)
+                    (libxml-parse-html-region (point-min) (point-max))))
+             (bib-buf (get-buffer-create "*rfc-bib-buf*")))
+        (debug)
+        (when (ref-man--check-bibtex-string
+               (with-current-buffer bib-buf
+                 (shr-insert-document dom)
+                 (buffer-string)))
+          ;; (message (with-current-buffer bib-buf (buffer-string)))
+          (ref-man--parse-bibtex bib-buf org-buf))))))
+
+(defun ref-man-chrome-extract-bibtex (&optional org-buf)
+  (interactive (list (when (and current-prefix-arg (not (boundp 'org-buf)))
+                       (completing-read "Org buffer: "
+                                        (mapcar (lambda (x) (format "%s" x)) (buffer-list))))))
+  (when (string-match-p "scholar\\.google\\.com" ref-man-chrome--page-url)
+    (ref-man-chrome-extract-bibtex-from-scholar org-buf)))
 
 (defun ref-man-chrome-next ()
   (interactive)
@@ -179,6 +220,11 @@ WTF, right?"
       (unless (string-prefix-p "http" url)
         (setq url (concat ref-man-chrome-root-url (string-remove-prefix "/" url))))
       (ref-man-chrome--set-location-fetch-html url)))
+
+(defun ref-man-chrome-reload ()
+"Browse a url with ref-man-chrome. Special functions for google scholar."
+  (interactive)
+  (ref-man-chrome--set-location-fetch-html ref-man-chrome--page-url))
 
 (defun ref-man-chrome-back-url ()
   (interactive)
@@ -620,8 +666,61 @@ process"
 ;;        (setq-local buffer-read-only t)
 ;;        (eww-mode))(pop-to-buffer (get-buffer "*html*")))))
 
+
+(defun ref-man-chrome--page-load-check (src str)
+  (and str (string-match-p str src)))
+
+(defun ref-man-chrome--fetch-html-no-render (tab-id)
+  "Fetch the html from the specified `tab-id' but don't set any
+of the history or data variables. Basically get the data from the
+tab."
+  (setq ref-man-chrome--nr-page-source nil)
+  (setq ref-man-chrome--nr-page-title nil)
+  (setq ref-man-chrome--nr-page-url nil)
+  ;; (while (or (not ref-man-chrome--nr-page-title)
+  ;;            (string= "" ref-man-chrome--nr-page-title))
+  ;;   (ref-man-chrome-eval "document.title" tab-id
+  ;;                        (lambda (result)
+  ;;                          (setq ref-man-chrome--nr-page-title
+  ;;                                (plist-get (plist-get result :result) :value))))
+  ;;   (sleep-for .2)
+  ;;   (message "WAITING page-title"))
+  (ref-man-chrome-eval "document.location" tab-id
+                       (lambda (result)
+                         (setq ref-man-chrome--nr-page-url
+                               (plist-get (plist-get (plist-get result :result) :value) :href))))
+  ;; (ref-man-chrome-eval "document.documentElement.innerHTML" tab-id
+  ;;                      (lambda (result)
+  ;;                        (setq ref-man-chrome--nr-page-source
+  ;;                              (plist-get (plist-get result :result) :value))))
+  (while (or (not ref-man-chrome--nr-page-url)
+             (not ref-man-chrome--nr-page-source)
+             (and (stringp ref-man-chrome--nr-page-source)
+                  (string= "" ref-man-chrome--nr-page-source))
+             (not (string-match-p ref-man-chrome--check-str
+                                  ref-man-chrome--nr-page-source)))
+    (ref-man-chrome-eval "document.documentElement.innerHTML" tab-id
+                       (lambda (result)
+                         (setq ref-man-chrome--nr-page-source
+                               (plist-get (plist-get result :result) :value))))
+    (message (concat "WAITING fetch-html" "\n" ref-man-chrome--nr-page-source))
+    (sleep-for .2))                     ; sync call
+  ;; (with-current-buffer (get-buffer-create "*rfc-source*")
+  ;;   (when buffer-read-only
+  ;;     (setq-local buffer-read-only nil))
+  ;;   (erase-buffer)
+  ;;   (insert ref-man-chrome--page-source)
+  ;;   (when (get-buffer "*chrome*")
+  ;;     (with-current-buffer (get-buffer "*chrome*")
+  ;;       (setq-local buffer-read-only nil)))
+  ;;   (ref-man-chrome-render-buffer (get-buffer "*rfc-source*")))
+  )
+
 ;; FIXME: This should setup all the global ref-man variables
 (defun ref-man-chrome--fetch-html (tab-id &optional no-pop)
+  "Fetch the html from the specified `tab-id'. `no-pop' directs
+to don't pop to the buffer and `no-render' means do not render
+html but only return the source; it also implies `no-pop'"
   (if no-pop
       (setq ref-man-chrome--fetch-no-pop t)
     (setq ref-man-chrome--fetch-no-pop nil))
@@ -640,24 +739,41 @@ process"
                        (lambda (result)
                          (setq ref-man-chrome--page-url
                                (plist-get (plist-get (plist-get result :result) :value) :href))))
-  (ref-man-chrome-eval "document.documentElement.innerHTML" tab-id
+  (while (or (not ref-man-chrome--page-title)
+             (not ref-man-chrome--page-url)
+             (not (and ref-man-chrome--page-source
+                       (string-match-p "</body>" ref-man-chrome--page-source))))
+    (ref-man-chrome-eval "document.documentElement.innerHTML" tab-id
                        (lambda (result)
                          (setq ref-man-chrome--page-source
                                (plist-get (plist-get result :result) :value))))
-  (while (or (not ref-man-chrome--page-title)
-             (not ref-man-chrome--page-url)
-             (not ref-man-chrome--page-source))
     (message "WAITING fetch-html")
-    (sleep-for .2))                     ; sync call 
-  (with-current-buffer (get-buffer-create "*rfc-source*")
-    (when buffer-read-only
-      (setq-local buffer-read-only nil))
-    (erase-buffer)
-    (insert ref-man-chrome--page-source)
-    (when (get-buffer "*chrome*")
-      (with-current-buffer (get-buffer "*chrome*")
-        (setq-local buffer-read-only nil)))
-    (ref-man-chrome-render-buffer (get-buffer "*rfc-source*")))
+    (sleep-for .2))                     ; sync call
+  ;; NOTE: Just for good measure fetch again and render buffer in callback
+  (ref-man-chrome-eval "document.documentElement.innerHTML" tab-id
+                       (lambda (result)
+                         (setq ref-man-chrome--page-source
+                               (plist-get (plist-get result :result) :value))
+                         (with-current-buffer (get-buffer-create "*rfc-source*")
+                           (when buffer-read-only
+                             (setq-local buffer-read-only nil))
+                           (erase-buffer)
+                           (insert ref-man-chrome--page-source)
+                           (when (get-buffer "*chrome*")
+                             (with-current-buffer (get-buffer "*chrome*")
+                               (setq-local buffer-read-only nil)))
+                           (ref-man-chrome-render-buffer (get-buffer "*rfc-source*")))))
+
+  ;; (with-current-buffer (get-buffer-create "*rfc-source*")
+  ;;   (when buffer-read-only
+  ;;     (setq-local buffer-read-only nil))
+  ;;   (erase-buffer)
+  ;;   (insert ref-man-chrome--page-source)
+  ;;   (when (get-buffer "*chrome*")
+  ;;     (with-current-buffer (get-buffer "*chrome*")
+  ;;       (setq-local buffer-read-only nil)))
+  ;;   (ref-man-chrome-render-buffer (get-buffer "*rfc-source*")))
+
   (with-current-buffer (get-buffer "*chrome*")
     (setq-local buffer-read-only t)
     (ref-man-chrome-mode))
@@ -687,7 +803,7 @@ process"
 ;;       perhaps the wait time can be reduced.
 ;;       It still gives me an error once in a while. Not sure how to
 ;;       deal with that.
-(defun ref-man-chrome--set-location-fetch-html (url &optional tab-id)
+(defun ref-man-chrome--set-location-fetch-html (url &optional tab-id no-pop no-render)
   "Go to URL in the chrome process and fetch the html after a
 delay of 1 second."
   (setq ref-man--tab-id (if tab-id tab-id 0))
@@ -700,14 +816,22 @@ delay of 1 second."
       (message "WAITING set-location")
       (sleep-for .2))
     ;; (message (plist-get (plist-get result :result) :value))
-    (ref-man-chrome--fetch-html ref-man--tab-id)))
+    (if no-render
+        (progn
+          (ref-man-chrome--fetch-html-no-render ref-man--tab-id)
+          (list :title ref-man-chrome--nr-page-title
+                :url ref-man-chrome--nr-page-url
+                :source ref-man-chrome--nr-page-source))
+        (ref-man-chrome--fetch-html ref-man--tab-id no-pop))))
 
 ;; FIXME: Why do I have to call it twice for it to load correctly?
 ;;        Either a timing issue or a callback issue.
-(defun ref-man-org-search-heading-on-gscholar-with-chrome ()
+(defun ref-man-chrome-org-search-heading-on-gscholar ()
   "Searches for the current heading in google scholar in
 eww. Stores the buffer and the position from where it was called."
   (interactive)
+  (unless ref-man-chrome--initialized-p
+    (ref-man-chrome-init))
   (if (eq major-mode 'org-mode)
       (progn
         (setq ref-man--org-gscholar-launch-point (point)) ; CHECK: must be at heading?
