@@ -208,11 +208,11 @@ WTF, right?"
   (kill-new url)
   (message "Copied %s" url))
 
-(defun ref-man-chrome-links-at-point ()
-  "Return list of URIs, if any, linked at point."
-  (remq nil
-	(list (get-text-property (point) 'shr-url)
-	      (get-text-property (point) 'image-url))))
+;; (defun ref-man-chrome-links-at-point ()
+;;   "Return list of URIs, if any, linked at point."
+;;   (remq nil
+;; 	(list (get-text-property (point) 'shr-url)
+;; 	      (get-text-property (point) 'image-url))))
 
 ;; TODO: Check why code to put text property is not working.
 (defun ref-man-chrome-setup-buffer ()
@@ -329,7 +329,6 @@ process"
          (url-http-attempt-keepalives nil)
          (json-array-type 'list)        ; changes to list instead of vector
          (json-object-type 'plist))     ; Not sure how this effects
-    ;; (buf (url-retrieve-synchronously url nil nil 1)))
     (with-current-buffer (url-retrieve-synchronously url)
       (if (not (eq 200 (url-http-parse-response)))
           (error "Unable to connect to host.")
@@ -389,19 +388,9 @@ process"
           (setq ref-man-chrome--rpc-callbacks (plist-put ref-man-chrome--rpc-callbacks id nil)))
       (message "No hook for id %d" id))))
 
-    ;; (if callback
-    ;;     (message (concat "[ref-man-chrome]: Method: " (plist-get params :expression)
-    ;;                      " ID: " (format "%s " id) "Added Callback: " (format "%s" callback)))
-    ;;     (message (concat "[ref-man-chrome]: Method: " (plist-get params :expression)
-    ;;                      " ID: " (format "%s " id) "No Callback")))
-    ;; (when callback
-    ;;   (ref-man-chrome--register-callback id callback))
-
 ;; It's called method but it's actually THE CALL
 (defun ref-man-chrome-call-rpc (method socket &optional params callback)
   (let ((id (ref-man-chrome--next-rpc-id)))
-    ;; (when (eq id 12)
-    ;;   (debug))
     (if (string= method "Runtime.evaluate")
         (if callback
             (message (concat "[ref-man-chrome]: Method: " (plist-get params :expression)
@@ -422,7 +411,6 @@ process"
 
 (defun ref-man-chrome--on-close (socket)
   (message "[ref-man-chrome]: closed websocket"))
-  ;; (message "[ref-man: Closed connection to " (format "%s") tab))
 
 (defun ref-man-chrome--on-message-added (data)
   (when data
@@ -432,19 +420,7 @@ process"
            (line (plist-get message :line))
            (type (plist-get message :type))
            (level (plist-get message :level))
-           (text (plist-get message :text)))
-      ;; (message (format "[ref-man-chrome]: %s" -message))
-      )))
-
-;; (defun kite-mini-on-script-parsed (data)
-;;   (let ((extension? (plist-get data :isContentScript))
-;;         (url (plist-get data :url))
-;;         (id (plist-get data :scriptId)))
-;;     (when (and (eq extension? :json-false) (not (string-equal "" url)))
-;;       (add-to-list 'kite-mini-rpc-scripts (list :id id :url url)))))
-
-;; (defun kite-mini-on-script-failed-to-parse (data)
-;;   (kite-mini-console-append (format "%s" data)))
+           (text (plist-get message :text))))))
 
 (defun ref-man-chrome--on-script-parsed (params &optional id result)
   (if params
@@ -757,83 +733,5 @@ eww. Stores the buffer and the position from where it was called."
 ;;   ;; 4. Change the URL to gscholar-url + search-string
 ;;   ;; 5. Fetch the html back on page-load
 ;;   )
-
-;; (defun ref-man-chrome-close-tab (which-tab) )
-;; (defun ref-man-chrome-forward ())
-;; (defun ref-man-chrome-backward ())
-;; (defun ref-man-chrome-gscholar-next ())
-;; (defun ref-man-chrome-gscholar-previous ())
-;; (defun ref-man-chrome-keypress-b ())
-;; (defun ref-man-chrome-keypress-c ())    ; cycle between pdf links? I don't remember that
-;; (defun ref-man-chrome-keypress-d ())
-;; (defun ref-man-chrome-keypress-i ())
-;; (defun ref-man-chrome-keypress-v ())
-
-;; ;; This might be a bit complicated as the buffer will be rendered as eww-buffer
-;; ;; anyway. Only the html parts of the page will be rendered and the rest will be
-;; ;; left out. As such it becomes mostly a static page. Only the interactions
-;; ;; which change the links on the page need to be mapped back to eww
-;; ;;
-;; ;; For now I'll just map the ones which pertain to my custom google scholar commands
-;; (defvar ref-man-chrome-mode-map         ; eww mode map compatibility
-;;   (let ((map (make-sparse-keymap)))
-;;     (define-key map "g" 'eww-reload) ;FIXME: revert-buffer-function instead!
-;;     (define-key map "G" 'eww)
-;;     (define-key map [?\M-\r] 'eww-open-in-new-buffer)
-;;     (define-key map [?\t] 'shr-next-link)
-;;     (define-key map [?\M-\t] 'shr-previous-link)
-;;     (define-key map [backtab] 'shr-previous-link)
-;;     (define-key map [delete] 'scroll-down-command)
-;;     (define-key map "l" 'eww-back-url)
-;;     (define-key map "r" 'eww-forward-url)
-;;     (define-key map "n" 'eww-next-url)
-;;     (define-key map "p" 'eww-previous-url)
-;;     (define-key map "u" 'eww-up-url)
-;;     (define-key map "t" 'eww-top-url)
-;;     (define-key map "&" 'eww-browse-with-external-browser)
-;;     (define-key map "d" 'eww-download)
-;;     (define-key map "w" 'eww-copy-page-url)
-;;     (define-key map "C" 'url-cookie-list)
-;;     (define-key map "v" 'eww-view-source)
-;;     (define-key map "R" 'eww-readable)
-;;     (define-key map "H" 'eww-list-histories)
-;;     (define-key map "E" 'eww-set-character-encoding)
-;;     (define-key map "s" 'eww-switch-to-buffer)
-;;     (define-key map "S" 'eww-list-buffers)
-;;     (define-key map "F" 'eww-toggle-fonts)
-;;     (define-key map "D" 'eww-toggle-paragraph-direction)
-;;     (define-key map [(meta C)] 'eww-toggle-colors)
-
-;;     (define-key map "b" 'eww-add-bookmark)
-;;     (define-key map "B" 'eww-list-bookmarks)
-;;     (define-key map [(meta n)] 'eww-next-bookmark)
-;;     (define-key map [(meta p)] 'eww-previous-bookmark)
-
-;;     (easy-menu-define nil map ""
-;;       '("Eww"
-;; 	["Exit" quit-window t]
-;; 	["Close browser" quit-window t]
-;; 	["Reload" eww-reload t]
-;; 	["Follow URL in new buffer" eww-open-in-new-buffer]
-;; 	["Back to previous page" eww-back-url
-;; 	 :active (not (zerop (length eww-history)))]
-;; 	["Forward to next page" eww-forward-url
-;; 	 :active (not (zerop eww-history-position))]
-;; 	["Browse with external browser" eww-browse-with-external-browser t]
-;; 	["Download" eww-download t]
-;; 	["View page source" eww-view-source]
-;; 	["Copy page URL" eww-copy-page-url t]
-;; 	["List histories" eww-list-histories t]
-;; 	["Switch to buffer" eww-switch-to-buffer t]
-;; 	["List buffers" eww-list-buffers t]
-;; 	["Add bookmark" eww-add-bookmark t]
-;; 	["List bookmarks" eww-list-bookmarks t]
-;; 	["List cookies" url-cookie-list t]
-;; 	["Toggle fonts" eww-toggle-fonts t]
-;; 	["Toggle colors" eww-toggle-colors t]
-;;         ["Character Encoding" eww-set-character-encoding]
-;;         ["Toggle Paragraph Direction" eww-toggle-paragraph-direction]))
-;;     map))
-
 
 (provide 'ref-man-chrome)
