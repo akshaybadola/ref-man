@@ -75,6 +75,11 @@
   :type 'directory
   :group 'ref-man)
 
+(defcustom ref-man-python-server-port 9999
+  "Server port on which to communicate with python server"
+  :type 'integer
+  :group 'ref-man)
+
 ;; (setq ref-man-org-links-file-path (expand-file-name "~/.temp-org-links.org"))
 ;; (setq ref-man-documents-dir (expand-file-name "~/org/pdfs/"))
 ;; ;; (setq ref-man-temp-bib-file-path (expand-file-name "~/lib/docprocess/all.bib"))
@@ -300,6 +305,17 @@
            (prefs (mapcar (lambda (x) (cdr (assoc (car (last x)) ref-man-venue-priorities))) venues)))
       prefs)))
 
+(defun ref-man--preferred-venue-vector (results)
+  (if (= 1 (length results))
+      0
+    (let* ((venues (mapcar (lambda (x) (cdr (assoc 'venue x))) results))
+           (venues (mapcar (lambda (x)
+                             (if (eq (type-of x) 'vector)
+                                 (downcase (aref x 0)) (downcase x)))
+                           venues))
+           (prefs (mapcar (lambda (x) (cdr (assoc x ref-man-venue-priorities))) venues)))
+      prefs)))
+
 (defun ref-man--validate-author (author)
   (if (or (string-match-p "[0-9]+" (car (last author)))
                   (string-match-p "^i$\\|^ii$\\|^iii$\\|^iv$" (downcase (car (last author)))))
@@ -326,6 +342,27 @@ pairs for only the top result from ref-man-venue-priorities"
                                              (butfirst (gscholar-bibtex--xml-get-child result x) 2)) ", "))
                      (cons (symbol-name (first (gscholar-bibtex--xml-get-child result x)))
                            (last (gscholar-bibtex--xml-get-child result x)))))
+                 ref-man-key-list)))))
+
+(defun ref-man--dblp-clean-vector (result)
+  "cleans the xml entry and keeps relevant itmes according to
+ref-man-key-list, uses gscholar-bibtex. returns an assoc list of (key. value)
+pairs for only the top result from ref-man-venue-priorities"
+  (let* ((inds (ref-man--preferred-venue-vector result))
+         (result (aref result (max-ind (ref-man--preferred-venue-vector result)))))
+    ;; TODO: handle this later
+    (if result
+        (remove '("nil")
+                (mapcar
+                 (lambda (x)
+                   (if (eq x 'authors)
+                       (list
+                        (symbol-name 'authors)
+                        (mapconcat (lambda (x) (let ((splits (split-string x)))
+                                                 (concat (car (last splits))
+                                                         ", " (string-join (butlast splits) " "))))
+                                   (cdr (assoc x result)) " and "))
+                     (list (symbol-name x) (cdr (assoc x result)))))
                  ref-man-key-list)))))
 
 (defun ref-man--transcribe (str &optional change-list)
@@ -477,10 +514,11 @@ to a buffer right now. can change to have it in multiple steps."
       ((pdf-file-name (expand-file-name (buffer-file-name (current-buffer))))
        (json-string
         (if (string-equal major-mode "pdf-view-mode")
-            (shell-command-to-string (format "curl -s -H\
+            (shell-command-to-string (format "proxychains -f ~/.proxychains.conf curl -s -H\
             \"content-type: application/pdf\" --data-binary @%s\
             \"http://localhost:%s/v1\"" pdf-file-name server-port))
           (progn (message "[ref-man] not pdf-view-mode") nil)))
+       (json-string (replace-in-string json-string "[proxychains] DLL init: proxychains-ng 4.13\n[proxychains] DLL init: proxychains-ng 4.13\n[proxychains] config file found: /home/joe/.proxychains.conf\n[proxychains] preloading /usr/lib64/proxychains-ng/libproxychains4.so\n[proxychains] DLL init: proxychains-ng 4.13\n" ""))
        (json-object-type 'hash-table)
        (json-key-type 'string)
        (json-array-type 'list)
@@ -523,7 +561,10 @@ doing so."
     (insert "Refs")
     (org-insert-heading-after-current)    
     (org-demote-subtree)
-    (ref-man--dblp-fetch-parallel refs-list org-buf)
+    ;; (ref-man--dblp-fetch-parallel refs-list org-buf)
+    (let ((references (ref-man--dblp-fetch-python refs-list org-buf)))
+      (debug)
+      )
     ;; (ref-man--parallel-get-results refs-list org-buf)
     ;; (goto-char (point-min))
     ;; (outline-hide-subtree)
@@ -606,6 +647,93 @@ doing so."
                     (if key-str (ref-man--org-bibtex-write-ref-from-assoc (ref-man--build-bib-assoc key-str))
                       (ref-man--org-bibtex-write-ref-NA-from-keyhash (cdr ref-man--temp-ref))))
                   (kill-buffer guf))))))))
+
+(defun ref-man--post-json-callback (status url callback)
+  (goto-char (point-min))
+  (forward-paragraph)
+  (setq ref-man--json-data (json-read))
+  (apply callback (list ref-man--json-data)))
+
+(defun ref-man--post-json (queries callback)
+  (let ((url-request-extra-headers
+         `(("Content-Type" . "application/json")))
+        (url-request-method "POST")
+        (url-request-data
+         (encode-coding-string (json-encode-list queries) 'utf-8))
+        (url (format "http://localhost:%s" ref-man-python-server-port)))
+    (url-retrieve url #'ref-man--post-json-callback
+                  (list url callback))))
+
+(defun ref-man--dblp-fetch-python-process-results (refs-list org-buf results)
+  ;; NOTE: Sometimes result is hash-table and sometime alist
+  (let ((na-results (cond ((listp results)
+                          (-filter (lambda (x) x)
+                                   (mapcar (lambda (x)
+                                             (when (and (vectorp (cdr x))
+                                                        (stringp (aref (cdr x) 0))
+                                                        (string= (aref (cdr x) 0) "NO_RESULT"))
+                                               (prog1 (format "%s" (car x))
+                                                 (delq x results))))
+                                           results)))
+                         ((hash-table-p results)
+                          (-filter (lambda (x) x)
+                                   (mapcar (lambda (x)
+                                             (when (and (stringp (car (gethash x ref-man--json-data)))
+                                                        (string= (car (gethash x ref-man--json-data)) "NO_RESULT"))
+                                               (prog1 x
+                                                 (remhash x results))))
+                                           (hash-table-keys results)))))))
+    (seq-do (lambda (x)
+          (if (and (vectorp (cdr x))
+                   (stringp (aref (cdr x) 0)))
+              (add-to-list 'na-results (format "%s" (car x)))
+            (with-current-buffer org-buf
+              (ref-man--org-bibtex-write-ref-from-assoc
+               (ref-man--build-bib-assoc (ref-man--dblp-clean-vector (cdr x)))))))
+            results)
+    (seq-do (lambda (x)
+              (with-current-buffer org-bur
+                (ref-man--org-bibtex-write-ref-NA-from-keyhash
+                 (cdr (assoc x refs-list)))))
+            na-results)))
+
+(defun ref-man--dblp-fetch-python (refs-list org-buf)
+  "Fetches all dblp queries in parallel via a python server"
+  (setq ref-man--temp-ref nil)
+  (let ((queries (mapcar 'car refs-list)))
+    (ref-man--post-json queries (-cut ref-man--dblp-fetch-python-process-results refs-list org-buf <>))))
+  ;; (loop for ref in refs-list do
+  ;;       (setq ref-man--temp-ref ref)
+  ;;       (setq ref-man--temp-buf org-buf)
+  ;;       (async-start
+  ;;        `(lambda ()
+  ;;           ,(async-inject-variables "ref-man--temp-ref")
+  ;;           (defun replace-in-string (what with in)
+  ;;             (replace-regexp-in-string (regexp-quote what) with in nil 'literal))
+  ;;           (let* ((query-url
+  ;;                   (format "https://dblp.uni-trier.de/search/publ/api?q=%s&format=xml"
+  ;;                           (replace-in-string " " "+" (car ref-man--temp-ref))))
+  ;;                  (buf (url-retrieve-synchronously query-url)))
+  ;;             (prog2 (with-current-buffer buf (set-buffer-multibyte t))
+  ;;                 (with-current-buffer buf (buffer-string))
+  ;;               (kill-buffer buf))))
+  ;;        `(lambda (buf-string)
+  ;;           ,(async-inject-variables "ref-man--temp-ref\\|ref-man--temp-buf")
+  ;;           (let ((guf (generate-new-buffer "*dblp-test*")))
+  ;;             (with-current-buffer guf (insert buf-string))
+  ;;             (with-current-buffer guf (set-buffer-multibyte t))
+  ;;             (pcase-let ((`(,(and result `(result . ,_)))
+  ;;                          (xml-parse-region nil nil guf)))
+  ;;               (let ((key-str (remove nil
+  ;;                                      (ref-man--dblp-clean
+  ;;                                       (mapcar (lambda (hit)
+  ;;                                                 (gscholar-bibtex--xml-get-child hit 'info))
+  ;;                                               (xml-get-children
+  ;;                                                (gscholar-bibtex--xml-get-child result 'hits) 'hit))))))
+  ;;                 (with-current-buffer ref-man--temp-buf
+  ;;                   (if key-str (ref-man--org-bibtex-write-ref-from-assoc (ref-man--build-bib-assoc key-str))
+  ;;                     (ref-man--org-bibtex-write-ref-NA-from-keyhash (cdr ref-man--temp-ref))))
+  ;;                 (kill-buffer guf))))))))
 
 ;; (defun ref-man--dblp-fetch-parallel (refs-list org-buf)
 ;;   "Fetches all dblp queries in parallel via async"
@@ -805,6 +933,33 @@ json."
       (org-set-property "BTYPE" "article"))))
 
 (defun ref-man--org-bibtex-write-ref-from-assoc (entry)
+  "Generate an org entry from an association list retrieved via
+json."
+  (let* ((key (car entry))
+         (entry (nth 1 entry)))
+    (org-insert-heading-after-current)
+    (insert (cdr (assoc "title" entry)))
+    (insert "\n")
+    (org-indent-line)
+    (when (assoc "abstract" entry)
+        (insert (cdr (assoc "abstract" entry)))
+        (fill-paragraph)
+        (insert "\n")
+        (org-indent-line))
+    (insert (format "- Authors: %s"
+                    (ref-man--build-vernacular-author (ref-man--remove-non-ascii (cdr (assoc "author" entry))))))
+    (org-insert-item)
+    (insert (concat (cdr (assoc "venue" entry)) ", " (cdr (assoc "year" entry))))
+    (org-insert-property-drawer)
+    (loop for ent in entry
+          do
+          (when (not (string-equal (car ent) "abstract"))
+            (org-set-property (upcase (car ent))
+                              (ref-man--remove-non-ascii (ref-man--fix-curly (cdr ent))))))
+    (org-set-property "CUSTOM_ID" key)
+    (org-set-property "BTYPE" "article")))
+
+(defun ref-man--org-bibtex-write-ref-from-vector (entry)
   "Generate an org entry from an association list retrieved via
 json."
   (let* ((key (car entry))
