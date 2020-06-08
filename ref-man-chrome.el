@@ -322,12 +322,8 @@ of now will only extract bibtex and insert to org."
   "Finds the next open port from
 `ref-man-chrome-port-number-start-from' in case
 `ref-man-chrome-port-number-start-from' is being used by another
-process"
-  (loop for port from ref-man-chrome-port-number-start-from to 65531
-        when (string-match-p
-              "refused" (shell-command-to-string
-                         (format "nc -z -v localhost %s" port)))
-        return port))
+process. Uses `find-open-port'"
+  (find-open-port ref-man-chrome-port-number-start-from))
 
 (defun ref-man-chrome--process-helper (headless data-dir port)
   (message "[ref-man] Starting Chromium process")
@@ -337,11 +333,9 @@ process"
     (start-process "chromium" "*chromium*" (ref-man-chrome--which-chromium)
                    (concat "--user-data-dir=" data-dir) (format "--remote-debugging-port=%s" port))))
 
-;; TODO: Fix for named process
 (defun ref-man-chrome--kill-chrome-process ()
   "Kill the chrome process"
-  (shell-command
-   (concat "killall " (file-name-nondirectory (ref-man-chrome--which-chromium)))))
+  (signal-process (get-buffer "*chromium*") 15))
 
 (defun ref-man-chrome-start-process (headless)
   "Start a new chromium process."
