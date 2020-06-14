@@ -25,7 +25,9 @@ def dict_to_bibtex(bib_dict, json_out=False):
     for k, v in temp.items():
         if k in {"author", "authors"}:
             if isinstance(v, list):
-                bib += "  author" + "={" + " and ".join(v) + "},\n"
+                authors = [", ".join([_.split(" ")[-1], " ".join(_.split(" ")[:-1])])
+                           for _ in v]
+                bib += "  author" + "={" + " and ".join(authors) + "},\n"
             elif isinstance(v, str):
                 bib += "  author" + "={" + v + "},\n"
         else:
@@ -63,7 +65,8 @@ def _arxiv_success(query, response, content):
     authors = [a.text for a in entry.find_all("author")]
     date = entry.find("published").text
     bib_dict = {"abstract": abstract.replace("\n", " ").strip(), "title": title,
-                "authors": [a.replace("\n", " ").strip() for a in authors], "year": date[:4],
+                "authors": [a.replace("\n", " ").strip() for a in authors],
+                "year": date[:4],
                 "url": f"https://arxiv.org/abs/{query}", "type": "misc"}
     content[query] = dict_to_bibtex(bib_dict)
 

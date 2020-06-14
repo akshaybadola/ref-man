@@ -12,15 +12,23 @@ from q_helper import q_helper
 from arxiv import arxiv_get, arxiv_fetch, arxiv_helper
 
 
-def save_data(data, data_dir):
+def save_data(data, data_dir, ss_cache, acl_id):
     with open(os.path.join(data_dir, data["paperId"]), "w") as f:
         json.dump(data, f)
+    c = [acl_id if acl_id else "",
+         data["doi"] if data["doi"] else "",
+         data["arxivId"] if data["arxivId"] else "",
+         str(data["corpusId"]), data["paperId"]]
+    ss_cache["acl"][c[0]] = c[-1]
+    ss_cache["arxiv"][c[1]] = c[-1]
+    ss_cache["corpus"][c[2]] = c[-1]
+    ss_cache["doi"][c[3]] = c[-1]
     with open(os.path.join(data_dir, "metadata"), "a") as f:
-        f.write(",".join([data["arxivId"], str(data["corpusId"]), data["paperId"]]) + "\n")
-    # TODO: update arxivId, corpusId indices
+        f.write(",".join(c) + "\n")
+    print("Updated metadata")
 
 
-def semantic_scholar_paper_details(id_type, id, data_dir):
+def semantic_scholar_paper_details(id_type, id, data_dir, ss_cache):
     urls = {"s2": f"https://api.semanticscholar.org/v1/paper/{id}",
             "doi": f"https://api.semanticscholar.org/v1/paper/{id}",
             "arxiv": f"https://api.semanticscholar.org/v1/paper/arXiv:{id}",
@@ -29,9 +37,19 @@ def semantic_scholar_paper_details(id_type, id, data_dir):
     if id_type not in urls:
         return json.dumps("INVALID ID TYPE")
     else:
-        response = requests.get(urls[id_type])
-        save_data(response.content, data_dir)
-        return response.content  # already JSON
+        if id_type in {"doi", "acl", "arxiv", "corpus"} and\
+           id in ss_cache[id_type] and ss_cache[id_type][id]:
+            print(f"Fetching from cache for {id_type}, {id}")
+            with open(os.path.join(data_dir, ss_cache[id_type][id])) as f:
+                return json.load(f)
+        else:
+            acl_id = ""
+            if id_type == "acl":
+                acl_id = id
+            print(f"Data not in cache for {id_type}, {id}. Fetching")
+            response = requests.get(urls[id_type])
+            save_data(json.loads(response.content), data_dir, ss_cache, acl_id)
+            return response.content  # already JSON
 
 
 def dblp_fetch(query, q, ret_type="json", verbose=False):
@@ -128,6 +146,17 @@ def post_json_wrapper(request, fetch_func, helper, batch_size, verbose):
 
 
 def main(args):
+    with open(os.path.join(args.data_dir, "metadata")) as f:
+        _cache = [*filter(None, f.read().split("\n"))]
+    ss_cache = {"acl": {}, "doi": {}, "arxiv": {}, "corpus": {}}
+    for _ in _cache:
+        c = _.split(",")
+        ss_cache["acl"][c[0]] = c[-1]
+        ss_cache["arxiv"][c[1]] = c[-1]
+        ss_cache["corpus"][c[2]] = c[-1]
+        ss_cache["doi"][c[3]] = c[-1]
+    print(f"Loaded cache {ss_cache}")
+
     @app.route("/arxiv", methods=["GET", "POST"])
     def arxiv():
         if request.method == "GET":
@@ -152,7 +181,7 @@ def main(args):
                 id_type = request.args["id_type"]
             else:
                 return json.dumps("NO ID_TYPE GIVEN")
-            return semantic_scholar_paper_details(id_type, id, args.data_dir)
+            return semantic_scholar_paper_details(id_type, id, args.data_dir, ss_cache)
         else:
             return json.dumps("METHOD NOT IMPLEMENTED")
 
