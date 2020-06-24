@@ -1,7 +1,30 @@
-;; HACK
-(add-to-list 'load-path ".")
-(delete "." load-path)
-(load "ref-man.el")
+;; ref-man-chrome.el --- Module to route the eww requests through chromium so that google doesn't complain about lack of javascript. Mosty is used to browse google scholar but can be used for any other website. ;;; -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2018,2019,2020
+;; Akshay Badola
+
+;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
+;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
+;; Time-stamp:	<Wednesday 24 June 2020 09:16:15 AM IST>
+;; Keywords:	pdfs, references, bibtex, org, eww
+
+;; This file is *NOT* part of GNU Emacs.
+
+;; This program is free software; you can redistribute it and/or modify it
+;; under the terms of the GNU General Public License as published by the Free
+;; Software Foundation; either version 3, or (at your option) any later
+;; version.
+
+;; This program is distributed in the hope that it will be useful, but WITHOUT
+;; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+;; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+;; more details.
+
+;; You should have received a copy of the GNU General Public License along with
+;; GNU Emacs; see the file COPYING.  If not, write to the Free Software
+;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+
 (require 'websocket)
 
 (defcustom ref-man-chrome-user-data-dir
@@ -138,6 +161,8 @@ WTF, right?"
     ;; (define-key map [(meta p)] 'eww-previous-bookmark)
     map))
 
+;; START ref-man-chrome commands
+
 ;; (defun ref-man-chrome--get-all-links)
 (defun ref-man-chrome-extract-bibtex-from-scholar (&optional org-buf)
   "Like `ref-man-eww-get-bibtex-from-scholar' but maybe I thought
@@ -254,12 +279,6 @@ of now will only extract bibtex and insert to org."
   (kill-new url)
   (message "Copied %s" url))
 
-(defun ref-man-chrome-links-at-point ()
-  "Return list of URIs, if any, linked at point."
-  (remq nil
-	(list (get-text-property (point) 'shr-url)
-	      (get-text-property (point) 'image-url))))
-
 ;; TODO: Check why code to put text property is not working.
 (defun ref-man-chrome-setup-buffer ()
   (interactive)
@@ -294,6 +313,14 @@ of now will only extract bibtex and insert to org."
   ;; (setq bidi-paragraph-direction nil)
   (unless (eq major-mode 'ref-man-chrome-mode)
     (ref-man-chrome-mode)))
+
+;; END ref-man-chrome commands
+
+(defun ref-man-chrome-links-at-point ()
+  "Return list of URIs, if any, linked at point."
+  (remq nil
+	(list (get-text-property (point) 'shr-url)
+	      (get-text-property (point) 'image-url))))
 
 ;; I'm calling it ref-man-chrome- sub package
 ;; A free open port can be chosen randomly and chromium or chromium-browser can start
@@ -820,7 +847,7 @@ delay of 1 second."
 
 ;; FIXME: Why do I have to call it twice for it to load correctly?
 ;;        Either a timing issue or a callback issue.
-(defun ref-man-chrome-org-search-heading-on-gscholar ()
+(defun ref-man-chrome-search-heading-on-gscholar ()
   "Searches for the current heading in google scholar in
 eww. Stores the buffer and the position from where it was called."
   (interactive)

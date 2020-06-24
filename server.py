@@ -29,7 +29,7 @@ def save_data(data, data_dir, ss_cache, acl_id):
 
 
 def semantic_scholar_paper_details(id_type, id, data_dir, ss_cache):
-    urls = {"s2": f"https://api.semanticscholar.org/v1/paper/{id}",
+    urls = {"ss": f"https://api.semanticscholar.org/v1/paper/{id}",
             "doi": f"https://api.semanticscholar.org/v1/paper/{id}",
             "arxiv": f"https://api.semanticscholar.org/v1/paper/arXiv:{id}",
             "acl": f"https://api.semanticscholar.org/v1/paper/ACL:{id}",
@@ -47,9 +47,49 @@ def semantic_scholar_paper_details(id_type, id, data_dir, ss_cache):
             if id_type == "acl":
                 acl_id = id
             print(f"Data not in cache for {id_type}, {id}. Fetching")
-            response = requests.get(urls[id_type])
+            url = urls[id_type] + "?include_unknown_references=true"
+            response = requests.get(url)
             save_data(json.loads(response.content), data_dir, ss_cache, acl_id)
             return response.content  # already JSON
+
+
+def semantic_scholar_search(query, title_only=False, authors=[], cs_only=True,
+                            pub_types=[], has_github=False, year_filter=None):
+    """
+    pub_types can be ["Conference", "JournalArticle"]
+    year_filter has to be a :class:`dict` of type {"max": 1995, "min": 1990}
+    """
+    if year_filter and not ("min" in year_filter and "max" in year_filter and
+                            year_filter["max"] > year_filter["min"]):
+        print("Invalid Year Filter. Disabling.")
+        year_filter = None
+    params = {'authors': authors,
+              'coAuthors': [],
+              'externalContentTypes': [],
+              'page': 1,
+              'pageSize': 10,
+              'performTitleMatch': title_only,
+              'publicationTypes': pub_types,
+              'queryString': query,
+              'requireViewablePdf': False,
+              'sort': 'relevance',
+              'useRankerService': True,
+              'venues': [],
+              'yearFilter': year_filter}
+    if cs_only:
+        params['fieldOfStudy'] = 'computer-science'
+    if has_github:
+        params['externalContentTypes'] = ["githubReference"]
+    headers = {'User-agent': 'Mozilla/5.0', 'Origin': 'https://www.semanticscholar.org'}
+    print(f"Sending request to semanticscholar search with query: {query} and params {params}")
+    response = requests.post("https://www.semanticscholar.org/api/1/search",
+                             headers=headers, json=params)
+    if response.status_code == 200:
+        results = json.loads(response.content)["results"]
+        print(f"Got num results {len(results)} for query: {query}")
+        return response.content  # already json
+    else:
+        return json.dumps(f"ERROR for {query}, {response.content}")
 
 
 def dblp_fetch(query, q, ret_type="json", verbose=False):
@@ -171,7 +211,7 @@ def main(args):
             return json.dumps(result)
 
     @app.route("/semantic_scholar", methods=["GET", "POST"])
-    def semantic_scholar():
+    def ss():
         if request.method == "GET":
             if "id" in request.args:
                 id = request.args["id"]
@@ -182,6 +222,17 @@ def main(args):
             else:
                 return json.dumps("NO ID_TYPE GIVEN")
             return semantic_scholar_paper_details(id_type, id, args.data_dir, ss_cache)
+        else:
+            return json.dumps("METHOD NOT IMPLEMENTED")
+
+    @app.route("/semantic_scholar_search", methods=["GET", "POST"])
+    def ss_search():
+        if request.method == "GET":
+            if "q" in request.args and request.args["q"]:
+                query = request.args["q"]
+            else:
+                return json.dumps("NO QUERY GIVEN or EMPTY QUERY")
+            return semantic_scholar_search(query)
         else:
             return json.dumps("METHOD NOT IMPLEMENTED")
 
