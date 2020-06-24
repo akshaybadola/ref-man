@@ -1348,6 +1348,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START eww-mode hook and keys ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; FIXME: All this eww mode hook should be separate
 (defun ref-man--eww-mode-hook ()
   (bind-key "b" 'ref-man-eww-keypress-b eww-mode-map)
   (bind-key "b" 'ref-man-eww-keypress-b eww-link-keymap)  
@@ -1364,6 +1365,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
 
 (add-hook 'eww-mode-hook 'ref-man--eww-mode-hook)
 
+;; FIXME: these should be moved from here into some config
 (global-set-key (kbd "C-c e e") 'eww)
 (global-set-key (kbd "C-c e g") 'ref-man-eww-gscholar)
 (setq browse-url-browser-function 'eww-browse-url)

@@ -845,6 +845,49 @@ delay of 1 second."
                 :source ref-man-chrome--nr-page-source))
         (ref-man-chrome--fetch-html ref-man--tab-id no-pop))))
 
+;; FIXME: these should be moved from here into some config
+(global-set-key (kbd "C-c e c") 'ref-man-chrome-gscholar)
+(defun ref-man-chrome-gscholar (url)
+  (interactive
+   (let* ((uris (eww-suggested-uris))
+	  (prompt (concat "Enter URL or keywords"
+			  (if uris (format " (default %s)" (car uris)) "")
+			  ": ")))
+     (list (read-string prompt nil nil uris))))
+  (unless ref-man-chrome--initialized-p
+    (ref-man-chrome-init))  
+  (if (eq major-mode 'org-mode)
+      (progn (setq ref-man--org-gscholar-launch-buffer (current-buffer))
+             (setq ref-man--org-gscholar-launch-point (point)))
+    (setq ref-man--org-gscholar-launch-buffer nil))
+  (setq url (string-trim url))
+  (cond ((string-match-p "\\`file:/" url))
+	;; Don't mangle file: URLs at all.
+        ((string-match-p "\\`ftp://" url)
+         (user-error "FTP is not supported"))
+        (t
+	 ;; Anything that starts with something that vaguely looks
+	 ;; like a protocol designator is interpreted as a full URL.
+         (if (or (string-match "\\`[A-Za-z]+:" url)
+		 ;; Also try to match "naked" URLs like
+		 ;; en.wikipedia.org/wiki/Free software
+		 (string-match "\\`[A-Za-z_]+\\.[A-Za-z._]+/" url)
+		 (and (= (length (split-string url)) 1)
+		      (or (and (not (string-match-p "\\`[\"'].*[\"']\\'" url))
+			       (> (length (split-string url "[.:]")) 1))
+			  (string-match eww-local-regex url))))
+             (progn
+               (unless (string-match-p "\\`[a-zA-Z][-a-zA-Z0-9+.]*://" url)
+                 (setq url (concat "http://" url)))
+               ;; Some sites do not redirect final /
+               (when (string= (url-filename (url-generic-parse-url url)) "")
+                 (setq url (concat url "/"))))
+           (progn ; (setq query-string url)
+             (setq url (concat "https://scholar.google.com/scholar?q="
+                               (replace-regexp-in-string " " "+" url)))))))
+  (unless (string-empty-p url)
+    (ref-man-chrome--set-location-fetch-html url)))
+
 ;; FIXME: Why do I have to call it twice for it to load correctly?
 ;;        Either a timing issue or a callback issue.
 (defun ref-man-chrome-search-heading-on-gscholar ()
