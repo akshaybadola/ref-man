@@ -153,8 +153,9 @@ WTF, right?"
     (define-key map "b" 'ref-man-chrome-add-bookmark)    
     (define-key map "B" 'ref-man-chrome-list-bookmarks)
     (define-key map "i" 'ref-man-chrome-insert-to-org)
-    (define-key map "e" nil) ; like extract bibtex
-    (define-key map "e b" 'ref-man-chrome-extract-bibtex)
+    (define-key map "e" nil) ; extract things
+    (define-key map "eb" 'ref-man-chrome-extract-bibtex) ; extract bibtex
+    ;; (define-key map "ep" 'ref-man-chrome-extract-bibtex) ; extract pdf?
     (define-key map "v" 'ref-man-chrome-view/download-pdf)
     ;; TODO Should be only in bookmarks mode
     ;; (define-key map [(meta n)] 'eww-next-bookmark)
@@ -181,13 +182,14 @@ of now will only extract bibtex and insert to org."
                     (insert src)
                     (libxml-parse-html-region (point-min) (point-max))))
              (bib-buf (get-buffer-create "*rfc-bib-buf*")))
-        (debug)
         (when (ref-man--check-bibtex-string
                (with-current-buffer bib-buf
+                 (erase-buffer)
                  (shr-insert-document dom)
                  (buffer-string)))
-          ;; (message (with-current-buffer bib-buf (buffer-string)))
-          (ref-man--parse-bibtex bib-buf org-buf))))))
+          (if org-buf
+              (ref-man--parse-bibtex bib-buf org-buf)
+            (ref-man--parse-bibtex bib-buf nil nil t)))))))
 
 (defun ref-man-chrome-extract-bibtex (&optional org-buf)
   (interactive (list (when (and current-prefix-arg (not (boundp 'org-buf)))
@@ -222,7 +224,12 @@ of now will only extract bibtex and insert to org."
 
 (defun ref-man-chrome-insert-to-org ()
   (interactive)
-  (let ((url ref-man-chrome--page-url))
+  ;; NOTE: parse-bib does nothing for now. Was supposed to be used to fetch and
+  ;;       insert bib also from gscholar buffer but I think it would be better
+  ;;       if that were async
+  (let (;; CHECK: What was I trying to do below?
+        ;; (parse-bib (string-prefix-p))
+        (url ref-man-chrome--page-url))
     (ref-man-import-gscholar-link-to-org-buffer
      (ref-man-eww--gscholar-get-previous-non-google-link
       (current-buffer)))))
@@ -278,6 +285,19 @@ of now will only extract bibtex and insert to org."
   (setq url (url-encode-url url))
   (kill-new url)
   (message "Copied %s" url))
+
+;; TODO: These are placeholders
+(defun ref-man-chrome-add-bookmark ()
+  (interactive)
+  (message "Does nothing for now"))
+
+(defun ref-man-chrome-list-bookmarks ()
+  (interactive)
+  (message "Does nothing for now"))
+
+(defun ref-man-chrome-view/download-pdf ()
+  (interactive)
+  (message "Does nothing for now"))
 
 ;; TODO: Check why code to put text property is not working.
 (defun ref-man-chrome-setup-buffer ()
@@ -434,48 +454,49 @@ process. Uses `find-open-port'"
   ref-man-chrome--rpc-id)
 
 (defun ref-man-chrome--register-callback (id fn)
+  ;; NOTE: old code
   ;; (let ((hook (intern (number-to-string id) ref-man-chrome--rpc-callbacks)))
   ;;   (add-hook hook fn t))
   (setq ref-man-chrome--rpc-callbacks (plist-put ref-man-chrome--rpc-callbacks id fn)))
 
 (defun ref-man-chrome--dispatch-callback (id data)
+  ;; NOTE: old code
   ;; (let ((hook (intern (number-to-string id) ref-man-chrome--rpc-callbacks)))
   ;;   (when hook
   ;;     (message (format "Dispatching callback for %d" id))
   ;;     (run-hook-with-args hook data)
   ;;     (unintern hook ref-man-chrome--rpc-callbacks)))
   (let ((hook (plist-get ref-man-chrome--rpc-callbacks id)))
-    (if hook
-        (progn
-          (message (format "Dispatching callback for %d" id))
-          (cond ((symbolp hook)
+    ;; NOTE: DEBUG
+    ;; (if hook
+    ;;     (progn
+    ;;       (message (format "Dispatching callback for %d" id))
+    ;;       (cond ((symbolp hook)
+    ;;              (run-hook-with-args hook data))
+    ;;             ((listp hook)
+    ;;              (funcall hook data))
+    ;;             (t (message "Not sure what to do")))
+    ;;       (setq ref-man-chrome--rpc-callbacks (plist-put ref-man-chrome--rpc-callbacks id nil)))
+    ;;   (message "No hook for id %d" id))
+    (when hook
+      (cond ((symbolp hook)
                  (run-hook-with-args hook data))
                 ((listp hook)
                  (funcall hook data))
                 (t (message "Not sure what to do")))
-          (setq ref-man-chrome--rpc-callbacks (plist-put ref-man-chrome--rpc-callbacks id nil)))
-      (message "No hook for id %d" id))))
-
-    ;; (if callback
-    ;;     (message (concat "[ref-man-chrome]: Method: " (plist-get params :expression)
-    ;;                      " ID: " (format "%s " id) "Added Callback: " (format "%s" callback)))
-    ;;     (message (concat "[ref-man-chrome]: Method: " (plist-get params :expression)
-    ;;                      " ID: " (format "%s " id) "No Callback")))
-    ;; (when callback
-    ;;   (ref-man-chrome--register-callback id callback))
+          (setq ref-man-chrome--rpc-callbacks (plist-put ref-man-chrome--rpc-callbacks id nil)))))
 
 ;; It's called method but it's actually THE CALL
 (defun ref-man-chrome-call-rpc (method socket &optional params callback)
   (let ((id (ref-man-chrome--next-rpc-id)))
-    ;; (when (eq id 12)
-    ;;   (debug))
-    (if (string= method "Runtime.evaluate")
-        (if callback
-            (message (concat "[ref-man-chrome]: Method: " (plist-get params :expression)
-                             " ID: " (format "%s " id) "Added Callback: " (format "%s" callback)))
-          (message (concat "[ref-man-chrome]: Method: " (plist-get params :expression)
-                           " ID: " (format "%s " id) "No Callback")))
-      (message (concat "[ref-man-chrome]: Method: " method " ID: " (format "%s " id) " No Callback")))
+    ;; NOTE: DEBUG
+    ;; (if (string= method "Runtime.evaluate")
+    ;;     (if callback
+    ;;         (message (concat "[ref-man-chrome]: Method: " (plist-get params :expression)
+    ;;                          " ID: " (format "%s " id) "Added Callback: " (format "%s" callback)))
+    ;;       (message (concat "[ref-man-chrome]: Method: " (plist-get params :expression)
+    ;;                        " ID: " (format "%s " id) "No Callback")))
+    ;;   (message (concat "[ref-man-chrome]: Method: " method " ID: " (format "%s " id) " No Callback")))
     (when callback
       (ref-man-chrome--register-callback id callback))
     (websocket-send-text
@@ -514,21 +535,27 @@ process. Uses `find-open-port'"
 ;;   (kite-mini-console-append (format "%s" data)))
 
 (defun ref-man-chrome--on-script-parsed (params &optional id result)
-  (if params
-      (message (format "%s\n%s" "[ref-man] Parsed Script " params))
-    (message (format "%s\n%s" "[ref-man] Parsed Script. No Params")))
-  (if (and id result)
-      (progn
-        (message "BOTH id result")
-        (ref-man-chrome--dispatch-callback (plist-get id)
-                                           (plist-get result)))
-    (message "NEITHER id result")))
+  ;; NOTE: DEBUG
+  ;; (if params
+  ;;     (message (format "%s\n%s" "[ref-man] Parsed Script " params))
+  ;;   (message (format "%s\n%s" "[ref-man] Parsed Script. No Params")))
+  ;; (if (and id result)
+  ;;     (progn
+  ;;       (message "BOTH id result")
+  ;;       (ref-man-chrome--dispatch-callback (plist-get id)
+  ;;                                          (plist-get result)))
+  ;;   (message "NEITHER id result"))
+  (when (and id result)
+    (ref-man-chrome--dispatch-callback (plist-get id)
+                                           (plist-get result))))
 
 (defun ref-man-chrome--failed-to-parse (params)
   (if params
       (message (format "%s\n%s" "[ref-man] Failed Script " params))
     (message "[ref-man] Failed Script. No Params")))
 
+;; FIXME: Some weird error being given saying
+;;        Error (websocket): in callback `on-message': Wrong type argument: stringp, nil
 (defun ref-man-chrome--on-message (socket data)
   (let* ((data (ref-man-chrome--decode (when data (websocket-frame-payload data))))
          (method (plist-get data :method))
@@ -541,7 +568,7 @@ process. Uses `find-open-port'"
       ;; we are getting an error in Console.messageAdded
       ("Debugger.scriptFailedToParse" (ref-man-chrome--failed-to-parse params))
       ("Console.messageAdded" (ref-man-chrome--on-message-added params))
-      ;; ;; TODO: do something usefull here, possibly great for REPL
+      ;; ;; TODO: do something useful here, possibly great for REPL
       ;; ("Console.messageRepeatCountUpdated")
       ;; nil -> These are return messages from RPC calls, not notification
       (_ (if method
@@ -724,8 +751,9 @@ tab."
                        (lambda (result)
                          (setq ref-man-chrome--nr-page-source
                                (plist-get (plist-get result :result) :value))))
-    (message (concat "WAITING fetch-html" "\n" ref-man-chrome--nr-page-source))
+    (message (concat "WAITING fetch-html"))
     (sleep-for .2))                     ; sync call
+  ;; NOTE: old code
   ;; (with-current-buffer (get-buffer-create "*rfc-source*")
   ;;   (when buffer-read-only
   ;;     (setq-local buffer-read-only nil))
@@ -783,8 +811,15 @@ html but only return the source; it also implies `no-pop'"
                            (when (get-buffer "*chrome*")
                              (with-current-buffer (get-buffer "*chrome*")
                                (setq-local buffer-read-only nil)))
-                           (ref-man-chrome-render-buffer (get-buffer "*rfc-source*")))))
-
+                           (ref-man-chrome-render-buffer (get-buffer "*rfc-source*"))
+                           (with-current-buffer (get-buffer "*chrome*")
+                             (setq-local buffer-read-only t)
+                             (ref-man-chrome-mode))
+                           (if ref-man-chrome--fetch-no-pop
+                               (message "Not going to pop to CHROME")
+                             (message "WILL pop to CHROME")
+                             (pop-to-buffer (get-buffer "*chrome*"))))))
+  ;; NOTE: old code
   ;; (with-current-buffer (get-buffer-create "*rfc-source*")
   ;;   (when buffer-read-only
   ;;     (setq-local buffer-read-only nil))
@@ -794,23 +829,14 @@ html but only return the source; it also implies `no-pop'"
   ;;     (with-current-buffer (get-buffer "*chrome*")
   ;;       (setq-local buffer-read-only nil)))
   ;;   (ref-man-chrome-render-buffer (get-buffer "*rfc-source*")))
-
-  (with-current-buffer (get-buffer "*chrome*")
-    (setq-local buffer-read-only t)
-    (ref-man-chrome-mode))
-  (if ref-man-chrome--fetch-no-pop
-      (message "Not going to pop to CHROME")
-    (message "WILL pop to CHROME")
-    (pop-to-buffer (get-buffer "*chrome*"))))
+  )
 
 (defun ref-man-chrome-render-buffer (buffer)
   "Display the HTML rendering of the current buffer."
   (interactive (list (current-buffer)))
   (or (fboundp 'libxml-parse-html-region)
       (error "This function requires Emacs to be compiled with libxml2"))
-  (unless ref-man-chrome--fetch-no-pop
-    (pop-to-buffer "*chrome*"))
-  (with-current-buffer (get-buffer "*chrome*")
+  (with-current-buffer (get-buffer-create "*chrome*")
     (erase-buffer)
     (shr-insert-document
      (with-current-buffer buffer
@@ -836,14 +862,16 @@ delay of 1 second."
     (while ref-man-chrome--fetched-sentinel
       (message "WAITING set-location")
       (sleep-for .2))
+    ;; NOTE: DEBUG
     ;; (message (plist-get (plist-get result :result) :value))
     (if no-render
         (progn
+          (message "Will not render only fetch")
           (ref-man-chrome--fetch-html-no-render ref-man--tab-id)
           (list :title ref-man-chrome--nr-page-title
                 :url ref-man-chrome--nr-page-url
                 :source ref-man-chrome--nr-page-source))
-        (ref-man-chrome--fetch-html ref-man--tab-id no-pop))))
+      (ref-man-chrome--fetch-html ref-man--tab-id no-pop))))
 
 ;; FIXME: these should be moved from here into some config
 (global-set-key (kbd "C-c e c") 'ref-man-chrome-gscholar)

@@ -37,20 +37,38 @@ See URL `https://github.com/allenai/science-parse' for details"
   :type 'file
   :group 'ref-man)
 
-;; TODO: This should warn that java is required
-;; FIXME: This thing should wait while it starts
-(when (and ref-man-science-parse-jar-file ref-man-science-parse-server-port)
-  (if (y-or-n-p "Start Science Parse Server?")
-      (progn
-        (unless (string-match-p "science-parse" (shell-command-to-string  "ps -ef | grep java"))
-          (async-start-process "science-parse" "java" nil "-Xmx6g" "-jar" ref-man-science-parse-jar-file)
-          (message "[ref-man] Trying to start server. This may take some time"))
-        (if (string-match-p "Usage"
-                            (shell-command-to-string (concat "curl -s localhost:" server-port)))
-            (message "[ref-man] Established connection to server successfully")
-          (message "[ref-man] ERROR! Check connections")))
-    (message "[ref-man] Not starting Science Parse Server")))
+(defconst ref-man-home-dir (file-name-directory load-file-name)
+  "Home or install directory for ref-man")
 
 (require 'ref-man-core)
 (require 'ref-man-chrome)
+
+(unless (ref-man--python-process-running-p)
+  (ref-man-start-python-process))
+
+(defun ref-man-try-start-science-parse-server ()
+    (let* ((java (shell-command-to-string "which java"))
+       (has-java (not (string-match-p "no java" java))))
+  ;; TODO: Check if already running
+  (if has-java
+    (if (and ref-man-science-parse-jar-file ref-man-science-parse-server-port)
+        (if (y-or-n-p "[ref-man] Start Science Parse Server?")
+            (progn
+              (unless (string-match-p "science-parse" (shell-command-to-string  "ps -ef | grep java"))
+                (start-process "science-parse" "*science-parse*"
+                               "java" "-Xmx6g" "-jar" ref-man-science-parse-jar-file)
+                ;; (async-start-process "science-parse"
+                ;;                      "java" nil "-Xmx6g" "-jar" ref-man-science-parse-jar-file)
+                (message "[ref-man] Trying to start server. This may take some time"))
+              ;; TODO: This doesn't work, check should be done later
+              (if (string-match-p "Usage"
+                                  (shell-command-to-string
+                                   (format "curl -s localhost:%d" ref-man-science-parse-server-port)))
+                  (message "[ref-man] Established connection to server successfully")
+                (message "[ref-man] ERROR! Check connections")))
+          (message "[ref-man] Not starting Science Parse Server"))
+      (message "[ref-man] Science Parse Jar File not given"))
+    (message "[ref-man] java not found"))))
+
+(ref-man-try-start-science-parse-server)
 (provide 'ref-man)

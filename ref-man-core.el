@@ -90,8 +90,17 @@
   :group 'ref-man)
 
 ;; FIXME: This has to be install dir eventually
-(defconst ref-man-home-dir (expand-file-name "~/lib/ref-man/")
-  "Home or install directory for ref-man")
+(defcustom ref-man-proxy-port 5678
+  "Socks proxy port if enabled"
+  :type 'integer
+  :group 'ref-man)
+
+;; TODO: If `ref-man-use-proxy' is t then all external requests for ref-man
+;;       should be routed through the proxy and not just the python requests
+(defcustom ref-man-use-proxy nil
+  "Should we use the socks proxy?"
+  :type 'symbol
+  :group 'ref-man)
 
 ;; (setq ref-man-org-links-file-path (expand-file-name "~/.temp-org-links.org"))
 ;; (setq ref-man-documents-dir (expand-file-name "~/org/pdfs/"))
@@ -900,20 +909,20 @@ json."
         (org-set-property "BTYPE" "misc")
       (org-set-property "BTYPE" "article"))))
 
-(defun ref-man--org-bibtex-write-ref-from-ss-ref (entry &optional ignore-errors)
+(defun ref-man--org-bibtex-write-ref-from-ss-ref (entry &optional ignore-errors update-current)
   "Generate an org entry from an association list retrieved via
 json."
-  ;; insert only when title exists
+  ;; NOTE: insert only when title exists
   (when (cdass 'title entry)
-    (org-insert-heading-after-current)
-    (insert (cdr (assoc 'title entry)))
-    (insert "\n")
-    (org-indent-line)
-    (when (assoc 'abstract entry)
-      (insert (cdr (assoc 'abstract entry)))
-      (fill-paragraph)
+    ;; NOTE: insert heading only when not updating current heading
+    (unless update-current
+      (org-insert-heading-after-current)
+      (insert (cdr (assoc 'title entry)))
       (insert "\n")
       (org-indent-line))
+    (when (assoc 'abstract entry)
+      (ref-man-org-insert-abstract (cdass 'abstract entry))
+      (insert "\n"))
     (let ((author-str (mapconcat (lambda (x)
                                    (cdass 'name x))
                                  (cdass 'authors entry) ", ")))
@@ -935,7 +944,10 @@ json."
                    ;; (when (string-match-p "true" (downcase (format "%s" (cdr ent))))
                    ;;   (org-set-tags ":influential:"))
                    )
-                  ((and (not (eq (car ent) 'abstract)) (cdr ent))
+                  ((and (not (member (car ent) '(abstract references citations corpusId
+                                                          fieldsOfStudy is_open_access
+                                                          topics is_publisher_licensed)))
+                        (cdr ent))
                    (org-set-property (upcase (symbol-name (car ent)))
                                      (ref-man--replace-non-ascii
                                       (ref-man--fix-curly (format "%s" (cdr ent))))))))
@@ -1136,6 +1148,15 @@ exists then goto that file or find that file, else insert to
       (kill-new result)
       (message "Inserted entry to kill ring"))))
 
+(defun ref-man-org-bibtex-yank-bib-to-property ()
+  (interactive)
+  (let ((bib-assoc (with-temp-buffer
+                     (yank)
+                     (goto-char (point-min))
+                     (bibtex-parse-entry))))
+    (ref-man-org-bibtex-convert-bib-to-property
+                    bib-assoc (current-buffer) (point) t)))
+
 ;; DONE: Remove Quotes around entries (if present)
 ;;       `ref-man--trim-whitespace' optionally does that
 (defun ref-man-org-bibtex-convert-bib-to-property (assoc-list &optional buf buf-point no-edit-headline)
@@ -1204,19 +1225,26 @@ exists then goto that file or find that file, else insert to
 ;; START python process stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; TODO: Use venv
-;; FIXME: `start-process' may fail if server.py is not found in case the
-;;        process is launched from a different default-directory
-;; NOTE: I think it can only be done while installation that the
-;;       install dir can be specified
-;; CHECK: Can use proxychains?
 (defun ref-man--python-process-helper (data-dir port)
   "Starts the python server"
-  (message (format "[ref-man] Starting python process on port: %s"
-                   ref-man-python-server-port))
-  (start-process "ref-man-python-server" "*ref-man-python-server*" "python3"
-                 (path-join `(,ref-man-home-dir "server.py"))
-                 (concat "--data-dir=" data-dir)
-                 (format "--port=%s" port) "-v"))
+  ;; NOTE: Hack so that process isn't returned
+  (prog1
+      (message (format "[ref-man] Starting python process on port: %s"
+                       ref-man-python-server-port))
+    (if ref-man-use-proxy
+        ;; TODO: and ref-man-proxy-reachable
+        ;; NOTE: Ideally it should be from within python
+        (start-process "ref-man-python-server" "*ref-man-python-server*" "proxychains"
+                       ;; FIXME: This should be created dynamically?
+                       "-f" (expand-file-name "~/.proxychains.conf")
+                       "python3"
+                       (path-join `(,ref-man-home-dir "server.py"))
+                       (concat "--data-dir=" data-dir)
+                       (format "--port=%s" port) "-v")
+      (start-process "ref-man-python-server" "*ref-man-python-server*" "python3"
+                     (path-join `(,ref-man-home-dir "server.py"))
+                     (concat "--data-dir=" data-dir)
+                     (format "--port=%s" port) "-v"))))
 
 (defun ref-man-kill-python-process ()
   (interactive)
@@ -1257,6 +1285,7 @@ consolidating. It also maintains a local datastore."
   (if (ref-man--python-process-running-p)
       (message (format "Found existing process running on port: %s"
                        ref-man-python-server-port))
+    (message "No existing python process found")
     (let ((port (find-open-port ref-man-python-server-port-start))
           (data-dir ref-man-python-data-dir))
       (setq ref-man-python-server-port port)
@@ -1316,15 +1345,15 @@ Results are parsed with (BACKEND 'parse-buffer)."
 
 (defun ref-man--biblio-insert-to-org (bibtex entry)
   (let* ((current-key (with-current-buffer ref-man--org-gscholar-launch-buffer
-                       (org-entry-get ref-man--org-gscholar-launch-point "CUSTOM_ID")))
+                        (org-entry-get ref-man--org-gscholar-launch-point "CUSTOM_ID")))
          (bibtex (replace-in-string (replace-in-string
-                  (progn (set-text-properties 0 (length bibtex) nil bibtex) bibtex)
-                  "\n" "") "[[:blank:]]+" " "))
-        (bib-assoc (with-temp-buffer (insert bibtex)
-                                     (goto-char (point-min))
-                                     (bibtex-parse-entry)))
-        (new-key (ref-man--build-bib-key-from-parsed-bibtex bib-assoc))
-        (bib-assoc (remove-if 'ref-man--bibtex-key-p bib-assoc)))
+                                     (progn (set-text-properties 0 (length bibtex) nil bibtex) bibtex)
+                                     "\n" "") "[[:blank:]]+" " "))
+         (bib-assoc (with-temp-buffer (insert bibtex)
+                                      (goto-char (point-min))
+                                      (bibtex-parse-entry)))
+         (new-key (ref-man--build-bib-key-from-parsed-bibtex bib-assoc))
+         (bib-assoc (remove-if 'ref-man--bibtex-key-p bib-assoc)))
     (setf (alist-get "=key=" bib-assoc) new-key)
     (cond ((not bib-assoc) (message "[ref-man] Received nil entry"))
           ((string-match-p "na_" current-key)
@@ -1684,13 +1713,14 @@ callback is nil defaults to `ref-man-eww--gscholar-parse-bibtex'"
 
 ;; FIXME: This function looks a bit redundant. It searches on gscholar but I've
 ;;        incorporated additional sources. It's sort of a last resort right now
-(defun ref-man--parse-bibtex (bib-buf &optional org url)
-"Extracts a bibtex entry from a buffer to the org buffer if
+(defun ref-man--parse-bibtex (bib-buf &optional org url kill)
+  "Extracts a bibtex entry from a buffer to the org buffer if
 variable `org' is set otherwise to the temp bib file"
   ;; NOTE: Sanitize org entry and insert into org buffer
   (let ((org-buf (cond ((stringp org) (get-buffer org))
                        (ref-man--org-gscholar-launch-buffer ref-man--org-gscholar-launch-buffer)
-                       (t nil))))
+                       (t nil)))
+        (buf-string (with-current-buffer bib-buf (buffer-string))))
     (if org-buf
         (progn
           (message (concat "[ref-man] Trying to insert into org buffer: "
@@ -1720,7 +1750,9 @@ variable `org' is set otherwise to the temp bib file"
                     (find-file-noselect ref-man-temp-bib-file-path))))
         (with-current-buffer buf (goto-char (point-min))
                              (insert buf-string))
-        (message (concat "[ref-man] inserted bib entry into " temp-bib-file-name))))))
+        (message (concat "[ref-man] inserted bib entry into " temp-bib-file-name))))
+    (when kill
+      (kill-new buf-string))))
 
 ;; FIXED: Fix this! ref-man--org-gscholar-launch-point is used only for
 ;;        inserting bibtex. The other variable
@@ -2148,8 +2180,9 @@ python server as the middleman."
          nil)))
 
 (defun ref-man--ss-id ()
-"Get one of possible IDs to fetch from Semantic Scholar, returns
+  "Get one of possible IDs to fetch from Semantic Scholar, returns
 a list of `id-type' and `id'"
+  (ref-man--check-fix-url-property)
   (cond ((org-entry-get (point) "PAPERID")
          (list "ss" (org-entry-get (point) "PAPERID")))
         ((org-entry-get (point) "DOI")
@@ -2166,7 +2199,10 @@ a list of `id-type' and `id'"
                    ((string-match-p "https://arxiv.org" url)
                     (list "arxiv" (ref-man--arxiv-id-from-url url)))
                    ((string-match-p "aclweb.org\\|aclanthology.info" url)
-                    (cons "acl" (last (split-string (string-remove-suffix "/" url) "/"))))
+                    (list "acl"
+                          (replace-regexp-in-string
+                           "\\.pdf$" ""
+                           (car (last (split-string (string-remove-suffix "/" url) "/"))))))
                    ((string-match-p "semanticscholar.org" url)
                     (cons "ss" (last (split-string (string-remove-suffix "/" url) "/"))))
                    (t nil)))))
@@ -2566,9 +2602,11 @@ display the data."
                             (goto-char (point-min))
                             (forward-paragraph)
                             (json-read)))))
-          (when (and ss-data update (assoc 'arxivId ss-data))
-            (org-entry-put (point) "ARXIVID" (cdass 'arxivId ss-data))
-            (org-entry-put (point) "URL" (ref-man-url-from-arxiv-id)))
+          (when (and ss-data update)
+            ;; (when (cdass 'arxivId ss-data)
+            ;;   (org-entry-put (point) "ARXIVID" (cdass 'arxivId ss-data))
+            ;;   (org-entry-put (point) "URL" (ref-man-url-from-arxiv-id)))
+            (ref-man--org-bibtex-write-ref-from-ss-ref ss-data nil t))
           (when ss-data
             (message "[ref-man] Inserting Semantic Scholar Data")
             (org-entry-put (point) "PAPERID" (cdass 'paperId ss-data))

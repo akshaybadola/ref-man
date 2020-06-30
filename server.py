@@ -37,8 +37,11 @@ def semantic_scholar_paper_details(id_type, id, data_dir, ss_cache):
     if id_type not in urls:
         return json.dumps("INVALID ID TYPE")
     else:
-        if id_type in {"doi", "acl", "arxiv", "corpus"} and\
-           id in ss_cache[id_type] and ss_cache[id_type][id]:
+        if id_type == "ss":
+            with open(os.path.join(data_dir, id)) as f:
+                return json.load(f)
+        elif id_type in {"doi", "acl", "arxiv", "corpus"} and\
+                id in ss_cache[id_type] and ss_cache[id_type][id]:
             print(f"Fetching from cache for {id_type}, {id}")
             with open(os.path.join(data_dir, ss_cache[id_type][id])) as f:
                 return json.load(f)
