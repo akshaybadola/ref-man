@@ -816,6 +816,12 @@ top level heading"
       (when pblock
         (goto-char (cdr pblock))
         (end-of-line)))
+    (let ((beg (point))
+          (end (progn
+                 (outline-next-heading)
+                 (point))))
+      (delete-region beg (- end 1))
+      (goto-char beg))
     (insert "\n")
     (org-indent-line)
     (insert abs)
@@ -914,18 +920,14 @@ json."
 json."
   ;; NOTE: insert only when title exists
   (when (cdass 'title entry)
-    ;; NOTE: insert heading only when not updating current heading
-    (unless update-current
-      (org-insert-heading-after-current)
-      (insert (cdr (assoc 'title entry)))
-      (insert "\n")
-      (org-indent-line))
+    ;; NOTE: insert heading only when not updating current heading   
     (when (assoc 'abstract entry)
       (ref-man-org-insert-abstract (cdass 'abstract entry))
       (insert "\n"))
     (let ((author-str (mapconcat (lambda (x)
                                    (cdass 'name x))
                                  (cdass 'authors entry) ", ")))
+      (org-indent-line)
       (insert (format "- Authors: %s" author-str))
       (org-insert-item)
       (insert (concat (cdass 'venue entry) ", " (format "%s" (cdass 'year entry))))
@@ -960,7 +962,16 @@ json."
                                                   (org-entry-get (point) "YEAR")))))
         (when key
           (org-set-property "CUSTOM_ID" key)))
-      (org-set-property "BTYPE" "article"))))
+      (org-set-property "BTYPE" "article"))
+    (when update-current
+      (unless (org-at-heading-p)
+        (outline-previous-heading))
+      (beginning-of-line)
+      (forward-whitespace 1)
+      (just-one-space)
+      (unless (eolp)
+        (kill-line))
+      (insert (cdr (assoc 'title entry))))))
 
 (defun ref-man--org-bibtex-write-ref-from-assoc (entry)
   "Generate an org entry from an association list retrieved via
@@ -3020,6 +3031,9 @@ text and if no URL could be found return nil."
 ;;                (org-set-property "URL" link-str))))
 ;;       (ref-man-try-fetch-pdf-from-url url storep))))
 
+;; FIXME: DEPRECATED (possibly)
+;;        Because `ref-man-try-fetch-pdf-from-url' does a better job I think
+;;        Should check
 ;; TODO: This should always be async with callback
 ;;       One issue then will be, how to correspond between threads
 ;;       
@@ -3079,9 +3093,12 @@ eww. Stores the buffer and the position from where it was called."
             (ref-man-eww-gscholar query-string))))
     (message "[ref-man] Not in org-mode")))
 
-;; FIXME:
-;; This function may take up a lot of processing. Should implement some cache for it
-;; Can be called after downloading pdf from any website
+;; FIXME: This function may take up a lot of processing. Should implement some
+;;        cache for it Can be called after downloading pdf from any website
+;;        
+;; FIXME: This function is referenced at some places but is commented
+;;        out. Should check if I haven't implemented alternate versions
+;;        DEPRECATED (possibly)
 (defun ref-man-maybe-create-or-insert-org-heading-and-property (file)
   "For a given filename, a heading and/or :PDF-FILE: property is
 inserted in ref-man--org-gscholar-launch-buffer if it exists, or

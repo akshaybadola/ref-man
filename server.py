@@ -12,17 +12,24 @@ from q_helper import q_helper
 from arxiv import arxiv_get, arxiv_fetch, arxiv_helper
 
 
+assoc = [(x, i) for i, x in enumerate(["acl", "arxiv", "corpus", "doi"])]
+
+
 def save_data(data, data_dir, ss_cache, acl_id):
     with open(os.path.join(data_dir, data["paperId"]), "w") as f:
         json.dump(data, f)
     c = [acl_id if acl_id else "",
-         data["doi"] if data["doi"] else "",
          data["arxivId"] if data["arxivId"] else "",
-         str(data["corpusId"]), data["paperId"]]
-    ss_cache["acl"][c[0]] = c[-1]
-    ss_cache["arxiv"][c[1]] = c[-1]
-    ss_cache["corpus"][c[2]] = c[-1]
-    ss_cache["doi"][c[3]] = c[-1]
+         str(data["corpusId"]),
+         data["doi"] if data["doi"] else "",
+         data["paperId"]]
+    for key, ind in assoc:
+        if c[ind]:
+            ss_cache[key][c[ind]] = c[-1]
+    # ss_cache["acl"][c[0]] = c[-1]
+    # ss_cache["arxiv"][c[1]] = c[-1]
+    # ss_cache["corpus"][c[2]] = c[-1]
+    # ss_cache["doi"][c[3]] = c[-1]
     with open(os.path.join(data_dir, "metadata"), "a") as f:
         f.write(",".join(c) + "\n")
     print("Updated metadata")
@@ -194,10 +201,13 @@ def main(args):
     ss_cache = {"acl": {}, "doi": {}, "arxiv": {}, "corpus": {}}
     for _ in _cache:
         c = _.split(",")
-        ss_cache["acl"][c[0]] = c[-1]
-        ss_cache["arxiv"][c[1]] = c[-1]
-        ss_cache["corpus"][c[2]] = c[-1]
-        ss_cache["doi"][c[3]] = c[-1]
+        for key, ind in assoc:
+            if c[ind]:
+                ss_cache[key][c[ind]] = c[-1]
+        # ss_cache["acl"][c[0]] = c[-1]
+        # ss_cache["arxiv"][c[1]] = c[-1]
+        # ss_cache["corpus"][c[2]] = c[-1]
+        # ss_cache["doi"][c[3]] = c[-1]
     print(f"Loaded cache {ss_cache}")
 
     @app.route("/arxiv", methods=["GET", "POST"])
