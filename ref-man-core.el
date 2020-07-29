@@ -946,6 +946,10 @@ json."
                    ;; (when (string-match-p "true" (downcase (format "%s" (cdr ent))))
                    ;;   (org-set-tags ":influential:"))
                    )
+                  ((and (eq (car ent) 'url) update-current)
+                   (org-set-property "SS_URL"
+                                     (ref-man--replace-non-ascii
+                                      (ref-man--fix-curly (format "%s" (cdr ent))))))
                   ((and (not (member (car ent) '(abstract references citations corpusId
                                                           fieldsOfStudy is_open_access
                                                           topics is_publisher_licensed)))

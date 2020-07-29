@@ -10,96 +10,7 @@ from werkzeug import serving
 
 from q_helper import q_helper
 from arxiv import arxiv_get, arxiv_fetch, arxiv_helper
-
-
-assoc = [(x, i) for i, x in enumerate(["acl", "arxiv", "corpus", "doi"])]
-
-
-def save_data(data, data_dir, ss_cache, acl_id):
-    with open(os.path.join(data_dir, data["paperId"]), "w") as f:
-        json.dump(data, f)
-    c = [acl_id if acl_id else "",
-         data["arxivId"] if data["arxivId"] else "",
-         str(data["corpusId"]),
-         data["doi"] if data["doi"] else "",
-         data["paperId"]]
-    for key, ind in assoc:
-        if c[ind]:
-            ss_cache[key][c[ind]] = c[-1]
-    # ss_cache["acl"][c[0]] = c[-1]
-    # ss_cache["arxiv"][c[1]] = c[-1]
-    # ss_cache["corpus"][c[2]] = c[-1]
-    # ss_cache["doi"][c[3]] = c[-1]
-    with open(os.path.join(data_dir, "metadata"), "a") as f:
-        f.write(",".join(c) + "\n")
-    print("Updated metadata")
-
-
-def semantic_scholar_paper_details(id_type, id, data_dir, ss_cache):
-    urls = {"ss": f"https://api.semanticscholar.org/v1/paper/{id}",
-            "doi": f"https://api.semanticscholar.org/v1/paper/{id}",
-            "arxiv": f"https://api.semanticscholar.org/v1/paper/arXiv:{id}",
-            "acl": f"https://api.semanticscholar.org/v1/paper/ACL:{id}",
-            "corpus": f"https://api.semanticscholar.org/v1/paper/CorpusID:{id}"}
-    if id_type not in urls:
-        return json.dumps("INVALID ID TYPE")
-    else:
-        if id_type == "ss":
-            with open(os.path.join(data_dir, id)) as f:
-                return json.load(f)
-        elif id_type in {"doi", "acl", "arxiv", "corpus"} and\
-                id in ss_cache[id_type] and ss_cache[id_type][id]:
-            print(f"Fetching from cache for {id_type}, {id}")
-            with open(os.path.join(data_dir, ss_cache[id_type][id])) as f:
-                return json.load(f)
-        else:
-            acl_id = ""
-            if id_type == "acl":
-                acl_id = id
-            print(f"Data not in cache for {id_type}, {id}. Fetching")
-            url = urls[id_type] + "?include_unknown_references=true"
-            response = requests.get(url)
-            save_data(json.loads(response.content), data_dir, ss_cache, acl_id)
-            return response.content  # already JSON
-
-
-def semantic_scholar_search(query, title_only=False, authors=[], cs_only=True,
-                            pub_types=[], has_github=False, year_filter=None):
-    """
-    pub_types can be ["Conference", "JournalArticle"]
-    year_filter has to be a :class:`dict` of type {"max": 1995, "min": 1990}
-    """
-    if year_filter and not ("min" in year_filter and "max" in year_filter and
-                            year_filter["max"] > year_filter["min"]):
-        print("Invalid Year Filter. Disabling.")
-        year_filter = None
-    params = {'authors': authors,
-              'coAuthors': [],
-              'externalContentTypes': [],
-              'page': 1,
-              'pageSize': 10,
-              'performTitleMatch': title_only,
-              'publicationTypes': pub_types,
-              'queryString': query,
-              'requireViewablePdf': False,
-              'sort': 'relevance',
-              'useRankerService': True,
-              'venues': [],
-              'yearFilter': year_filter}
-    if cs_only:
-        params['fieldOfStudy'] = 'computer-science'
-    if has_github:
-        params['externalContentTypes'] = ["githubReference"]
-    headers = {'User-agent': 'Mozilla/5.0', 'Origin': 'https://www.semanticscholar.org'}
-    print(f"Sending request to semanticscholar search with query: {query} and params {params}")
-    response = requests.post("https://www.semanticscholar.org/api/1/search",
-                             headers=headers, json=params)
-    if response.status_code == 200:
-        results = json.loads(response.content)["results"]
-        print(f"Got num results {len(results)} for query: {query}")
-        return response.content  # already json
-    else:
-        return json.dumps(f"ERROR for {query}, {response.content}")
+from semantic_scholar import load_ss_cache, semantic_scholar_search, semantic_scholar_paper_details
 
 
 def dblp_fetch(query, q, ret_type="json", verbose=False):
@@ -196,19 +107,7 @@ def post_json_wrapper(request, fetch_func, helper, batch_size, verbose):
 
 
 def main(args):
-    with open(os.path.join(args.data_dir, "metadata")) as f:
-        _cache = [*filter(None, f.read().split("\n"))]
-    ss_cache = {"acl": {}, "doi": {}, "arxiv": {}, "corpus": {}}
-    for _ in _cache:
-        c = _.split(",")
-        for key, ind in assoc:
-            if c[ind]:
-                ss_cache[key][c[ind]] = c[-1]
-        # ss_cache["acl"][c[0]] = c[-1]
-        # ss_cache["arxiv"][c[1]] = c[-1]
-        # ss_cache["corpus"][c[2]] = c[-1]
-        # ss_cache["doi"][c[3]] = c[-1]
-    print(f"Loaded cache {ss_cache}")
+    ss_cache = load_ss_cache(args.data_dir)
 
     @app.route("/arxiv", methods=["GET", "POST"])
     def arxiv():
@@ -283,6 +182,8 @@ def main(args):
             j += 1
         return json.dumps(content)
 
+    # CHECK: Why are the interfaces to _dblp_helper and arxiv_helper different?
+    #        Ideally there should be a specification
     _dblp_helper = partial(q_helper, _dblp_success, _dblp_no_result, _dblp_error)
     @app.route("/dblp", methods=["POST"])
     def dblp():
