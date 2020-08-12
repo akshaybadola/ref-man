@@ -1,4 +1,4 @@
-;; ref-man-core.el --- Core Components for `ref-man'. ;;; -*- lexical-binding: t; -*-
+;;; ref-man-core.el --- Core Components for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2018,2019,2020
 ;; Akshay Badola
@@ -25,11 +25,21 @@
 ;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
-;; TODO:
-;; Have to restructure it A LOT
-;; Separating org-config from org-functions in the package
+;; TODO: I should separate these according to:
+;;       - ref-man-bibtex
+;;       - ref-man-org
+;;       - ref-man-eww
+;;         - ref-man-chrome can be a separate subpackage of eww
+;;       - ref-man-util
+;;       - ref-man-pdf
+;;       python utils are in any case separate
+
+
+;;; Commentary:
+;;
 
 (require 'async)
+(require 'thingatpt)
 (require 'biblio-core)
 ;; Primary function I use from 'bibtex is 'bibtex-parse-entry
 (require 'bibtex)
@@ -38,60 +48,68 @@
 (require 'gscholar-bibtex)
 (require 'json)
 (require 'org)
-;; It's only required for one function 'org-bibtex-read-file
-;; But it's a pretty complicated function
-(require 'org-bibtex)                   
 (require 'seq)
 (require 'shr)
 (require 'url)
 (require 'xml)
+(require 'subr-x)
+(require 'dash)
+(require 'dash-functional)
+
+;;; Code:
 
 (defgroup ref-man nil
   "Bibliography Manager"
   :prefix "ref-man-"
   :group 'org)
 
-(defconst ref-man-version "0.0.1"
-  "`ref-man' version number.")
-
-(defcustom ref-man-org-links-file-path (expand-file-name "~/.temp-org-links.org")
-  "Temporary org file to hold URLs and metadata"
-  :type 'file
-  :group 'ref-man)
-
-(defcustom ref-man-documents-dir (expand-file-name "~/org/pdfs/")
-  "Directory where the downloaded pdf files will be stored"
+(defcustom ref-man-data-root-dir (expand-file-name "~/.ref-man")
+  "Root directory where ref-man data is stored."
   :type 'directory
   :group 'ref-man)
 
-(defcustom ref-man-temp-bib-file-path (expand-file-name "~/.temp.bib")
-  "Temprory bib file to append any extract bibtex info"
+(defcustom ref-man-documents-dir (expand-file-name "~/.ref-man/pdfs")
+  "Directory where the downloaded pdf files will be stored."
+  :type 'directory
+  :group 'ref-man)
+
+(defcustom ref-man-org-links-file-path (expand-file-name "~/.ref-man/.temp-org-links.org")
+  "Temporary org file to hold URLs and metadata."
   :type 'file
   :group 'ref-man)
 
-(defcustom ref-man-org-store-dir (expand-file-name "~/org/pubs_org/")
-  "Directory where the org files corresponding to documents will be stored"
+(defcustom ref-man-temp-bib-file-path (expand-file-name "~/.ref-man/.temp.bib")
+  "Temprory bib file to append any extract bibtex info."
+  :type 'file
+  :group 'ref-man)
+
+(defcustom ref-man-org-store-dir (expand-file-name "~/.ref-man/org/")
+  "Directory where the org files corresponding to documents will be stored."
+  :type 'directory
+  :group 'ref-man)
+
+(defcustom ref-man-extra-documents-dirs nil
+  "Directories to scan extra pdf files."
   :type 'directory
   :group 'ref-man)
 
 (defcustom ref-man-python-server-port-start 9999
-  "Server port on which to communicate with python server"
+  "Server port on which to communicate with python server."
   :type 'integer
   :group 'ref-man)
 
 (defcustom ref-man-python-server-port 9999
-  "Port on which to communicate with python server"
+  "Port on which to communicate with python server."
   :type 'integer
   :group 'ref-man)
 
-(defcustom ref-man-python-data-dir (expand-file-name "~/org/pubs_data/")
-  "Server port on which to communicate with python server"
+(defcustom ref-man-python-data-dir (expand-file-name "~/.ref-man/data/")
+  "Server port on which to communicate with python server."
   :type 'directory
   :group 'ref-man)
 
-;; FIXME: This has to be install dir eventually
 (defcustom ref-man-proxy-port 5678
-  "Socks proxy port if enabled"
+  "Socks proxy port if enabled."
   :type 'integer
   :group 'ref-man)
 
@@ -101,6 +119,13 @@
   "Should we use the socks proxy?"
   :type 'symbol
   :group 'ref-man)
+
+(seq-do (lambda (x)
+          (when (and x (not (f-exists-p x)))
+            (make-directory x)))
+        (list ref-man-data-root-dir ref-man-org-store-dir
+              ref-man-documents-dir ref-man-extra-documents-dirs
+              ref-man-python-data-dir))
 
 ;; (setq ref-man-org-links-file-path (expand-file-name "~/.temp-org-links.org"))
 ;; (setq ref-man-documents-dir (expand-file-name "~/org/pdfs/"))
@@ -163,19 +188,33 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START elementary utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defun cdass (k list)
-    (cdr (assoc k list)))
+(defsubst cdass (elem alist)
+  "Short for (cdr (assoc ELEM) list).
+Argument ALIST association list."
+    (cdr (assoc elem alist)))
 
-(defun path-join (path-elements-list)
-  (mapconcat (lambda (x) (string-remove-suffix "/" x)) path-elements-list "/"))
+(defun path-join (&rest elements)
+  "Join ELEMENTS as a path."
+  (concat "/" (mapconcat (lambda (x)
+                           (string-remove-prefix "/" (string-remove-suffix "/" x)))
+                         elements "/")))
 
-(defun firstn (x n)
-  (butlast x (- (length x) n)))
+(defun dir-equal-p (dir-a dir-b)
+  "Returns true if full paths for DIR-A and DIR-B are equal.
+They need not exist."
+  (string= (string-remove-suffix "/" (expand-file-name dir-a))
+           (string-remove-suffix "/" (expand-file-name dir-b))))
 
-(defun butfirst (x &optional n)
-  (let ((n (if n n 1)))
-    (last x (- (length x) n))))
+;; (defun firstn (list n)
+;;   "Return copy of the first N elements of the LIST"
+;;   (butlast list (- (length list) n)))
 
+;; (defun butfirst (x &optional n)
+;;   "Return copy of elements of LIST except the first N elements"
+;;   (let ((n (if n n 1)))
+;;     (last x (- (length x) n))))
+
+;; TODO: Document this
 (defun max-ind (seq)
   (let* ((max-ind--max-val 0) (max-ind--temp-ind -1) (max-ind--max 0))
     (loop for x in seq
@@ -188,8 +227,7 @@
     max-ind--max))
 
 (defun find-open-port (init)
-  "Finds the next open port from `init' in case `init' is being
-used by another process"
+  "Finds the next open port from INIT in case it's being used by another process."
   (loop for port from init to 65531
         when (string-match-p
               "refused" (shell-command-to-string
@@ -198,10 +236,11 @@ used by another process"
 
 (defun sort-words (reverse beg end)
   "Sort words in region alphabetically, in REVERSE if negative.
-    Prefixed with negative \\[universal-argument], sorts in reverse.
-    The variable `sort-fold-case' determines whether alphabetic case
-    affects the sort order.
-    See `sort-regexp-fields'."
+
+BEG and END are the region markers.  Prefixed with negative
+\\[universal-argument], sorts in reverse.  The variable
+`sort-fold-case' determines whether alphabetic case affects the
+sort order.  See `sort-regexp-fields'."
   (interactive "*P\nr")
   (sort-regexp-fields reverse "\\w+" "\\&" beg end))
 
@@ -211,13 +250,13 @@ used by another process"
 
 (defun sort-symbols (reverse beg end)
   "Sort symbols in region alphabetically, in REVERSE if negative.
-    See `sort-words'."
+BEG and END are region markers.  See `sort-words'."
   (interactive "*P\nr")
   (sort-regexp-fields reverse "\\(\\sw\\|\\s_\\)+" "\\&" beg end))
 
-;; TODO: Maybe rename this
+;; TODO: Maybe rename this to a more generic name
 (defun ref-man--get-or-create-window-on-side ()
-  "This is a copy of the function in util.el"
+  "This is a copy of the function in util.el."
   (let* ((orig-win (selected-window))
          (win (cond ((window-in-direction 'right orig-win)
                      (window-in-direction 'right orig-win))
@@ -233,32 +272,39 @@ used by another process"
 ;; START ref-man string utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun ref-man--trim-whitespace (str &optional remove-quotes)
-  "Trims the string, removes newlines and multiple spaces with a single one"
-  (let ((str (replace-regexp-in-string "[ ]+" " "
+  "Trims the string, removes newlines and multiple spaces with a single one."
+  (let ((str (replace-regexp-in-string "[ \t]+" " "
                                        (replace-regexp-in-string "\n" "" (string-trim str)))))
     (if remove-quotes
         (replace-regexp-in-string "\"" "" str)
       str)))
 
 (defun ref-man--fix-curly (str)
-  "gets text between parentheses {}"
+  "Gets text between parentheses for {STR}."
   (string-remove-suffix "}" (string-remove-prefix "{" str)))
 
 (defun ref-man--bibtex-key-p (item)
+  "ITEM is a bibtex key."
   (string= (car item) "=key="))
 
 (defun ref-man--stop-word-p (x)
+  "X is a stop word."
   (member x ref-man-stop-words))
 
+;; CHECK: Should we keep non-ascii?
 (defun ref-man--remove-punc (x)
+  "Return only alphanumeric characters for string X."
   (replace-regexp-in-string "[^0-9a-z]" "" x))
 
-;; The characters directly borrowed from org-ref.
-;; The function is too long and is an ugly hack because I couldn't
-;; find an effective way to update a local variable in a cl-loop.
-;; And setting a global variable was causing trouble with parallel
-;; implementation.
+;; FIXME: Ugly hack? Maybe change with an alist and transcribe
 (defun ref-man--replace-non-ascii (str)
+  "Replace non-ascii characters in STR with escape codes.
+
+ The characters here directly borrowed from `org-ref'.  The
+function is too long and is an ugly hack because I couldn't find
+an effective way to update a local variable in a `cl-loop'.  And
+setting a global variable was causing trouble with parallel
+implementation."
   (let* ((str (replace-in-string str "í" "{\\'i}"))
          (str (replace-in-string str "æ" "{\\ae}"))
          (str (replace-in-string str "ć" "{\\'c}"))
@@ -344,16 +390,25 @@ used by another process"
 ;; START Bib entry utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun ref-man--preferred-venue (results)
+  "Return the preferred venue according to `ref-man-venue-priorities' for RESULTS."
   (if (= 1 (length results))
       0
-    (let* ((venues (mapcar (lambda (x) (gscholar-bibtex--xml-get-child x 'venue)) results))
-           (prefs (mapcar (lambda (x) (cdr (assoc (car (last x)) ref-man-venue-priorities))) venues)))
+    (let* ((venues (mapcar (lambda (x)
+                             (gscholar-bibtex--xml-get-child x 'venue))
+                           results))
+           (prefs (mapcar (lambda (x)
+                            (cdass (car (last x)) ref-man-venue-priorities))
+                          venues)))
       prefs)))
 
 (defun ref-man--preferred-venue-vector (results)
+  "Return the preferred venue according to `ref-man-venue-priorities' for RESULTS.
+Includes the case where RESULTS is a vector."
   (if (= 1 (length results))
       0
-    (let* ((venues (mapcar (lambda (x) (cdr (assoc 'venue x))) results))
+    (let* ((venues (mapcar (lambda (x)
+                             (cdr (assoc 'venue x)))
+                           results))
            (venues (mapcar (lambda (x)
                              (cond ((vectorp x) (downcase (aref x 0)))
                                    ((stringp x) (downcase x))
@@ -362,7 +417,9 @@ used by another process"
            (prefs (mapcar (lambda (x) (cdr (assoc x ref-man-venue-priorities))) venues)))
       prefs)))
 
+;; CHECK: What does this do exactly?
 (defun ref-man--validate-author (author)
+  "Remove numbers and stuff from AUTHOR string."
   (if (or (string-match-p "[0-9]+" (car (last author)))
                   (string-match-p "^i$\\|^ii$\\|^iii$\\|^iv$" (downcase (car (last author)))))
       (if (> (length author) 2) (butlast author) (nconc (butlast author) '("")))
@@ -372,9 +429,10 @@ used by another process"
 ;; clean the xml entry and keep relevant itmes. uses gscholar-bibtex
 ;;
 (defun ref-man--dblp-clean (result)
-  "cleans the xml entry and keeps relevant itmes according to
-ref-man-key-list, uses gscholar-bibtex. returns an assoc list of (key. value)
-pairs for only the top result from ref-man-venue-priorities"
+  "Clean the xml entry and keep relevant itmes according to `ref-man-key-list'.
+
+Uses `gscholar-bibtex'.  Returns an alist for only the top RESULT
+from `ref-man-venue-priorities'"
   (let ((result (nth (max-ind (ref-man--preferred-venue result)) result)))
     ;; TODO: handle this later
     (if result
@@ -385,15 +443,17 @@ pairs for only the top result from ref-man-venue-priorities"
                        (list
                         (symbol-name 'authors)
                         (string-join (mapcar (lambda (x) (car (last x)))
-                                             (butfirst (gscholar-bibtex--xml-get-child result x) 2)) ", "))
+                                             (-drop 2 (gscholar-bibtex--xml-get-child result x))) ", "))
                      (cons (symbol-name (first (gscholar-bibtex--xml-get-child result x)))
                            (last (gscholar-bibtex--xml-get-child result x)))))
                  ref-man-key-list)))))
 
 (defun ref-man--dblp-clean-vector (result)
-  "cleans the xml entry and keeps relevant itmes according to
-ref-man-key-list, uses gscholar-bibtex. returns an assoc list of (key. value)
-pairs for only the top result from ref-man-venue-priorities"
+  "Clean the xml entry and keep relevant itmes according to `ref-man-key-list'.
+
+Uses `gscholar-bibtex'.  Returns an alist with symbol keys for
+only the top RESULT from `ref-man-venue-priorities'"
+  ;; FIXME: inds is not used
   (let* ((inds (ref-man--preferred-venue-vector result))
          (result (aref result (max-ind (ref-man--preferred-venue-vector result)))))
     ;; TODO: handle this later
@@ -411,8 +471,12 @@ pairs for only the top result from ref-man-venue-priorities"
                      (list (symbol-name x) (cdr (assoc x result)))))
                  ref-man-key-list)))))
 
-;; TODO: What does this do exactly?
+;; CHECK: Might be faster with a pcase
 (defun ref-man--transcribe (str &optional change-list)
+  "Transcribe non-ascii characters in STR to ASCII lookalikes.
+Optional argument CHANGE-LIST is an alist of regexps, `(A . B)' changes
+from A to B. If CHANGE-LIST is nil, it defaults to
+`bibtex-autokey-transcriptions'"
   (let ((content str)
         (change-list (if change-list change-list bibtex-autokey-transcriptions)))
     (dolist (pattern change-list)
@@ -422,8 +486,8 @@ pairs for only the top result from ref-man-venue-priorities"
     content))
 
 (defun ref-man--build-bib-key-from-plist (str-plist)
-  "builds a unique key with the format [author year first-title-word]
-entry from a plist"
+  "Builds a unique key with the format [author year first-title-word].
+Entry STR-PLIST is a plist."
   (let* ((first-author-str (car (split-string (ref-man--trim-whitespace
                                                (plist-get str-plist :author))
                                               "," t)))
@@ -436,8 +500,7 @@ entry from a plist"
                                                             (plist-get str-plist :title))) " "))))
          (title-first (car (split-string (first title) "-")))
          (key (ref-man--replace-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))
-         (key (ref-man--remove-punc key))
-         (key (ref-man--transcribe key)))
+         (key (ref-man--transcribe (ref-man--remove-punc key))))
     key))
 
 ;;
@@ -445,10 +508,11 @@ entry from a plist"
 ;; redirects to the real url or may not even in some cases. If a pdf
 ;; url exists, don't mess with it and insert it as doi.
 ;;
-;; 
+;;
 (defun ref-man--build-bib-key (key-str &optional na)
-  "builds a unique key with the format [author year first-title-word]
-entry from the list of (key . value)"
+  "Builds a unique key with the format [author year first-title-word].
+Entry KEY-STR is an alist of string keys.  Optional NA argument
+appends \"na_\" if the key is non-authoritative."
   (let* ((first-author-str (car (split-string (ref-man--trim-whitespace (cadr (assoc "authors" key-str))) "," t)))
          (first-author (ref-man--validate-author (split-string first-author-str " " t)))
          (last-name (car (last first-author)))
@@ -459,66 +523,69 @@ entry from the list of (key . value)"
                                                             (cadr (assoc "title" key-str)))) " "))))
          (title-first (car (split-string (first title) "-")))
          (key (ref-man--replace-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))
-         (key (ref-man--remove-punc key))
-         (key (ref-man--transcribe key)))
+         (key (ref-man--transcribe (ref-man--remove-punc key))))
     (if na (concat "na_" key) key)))
 
-(defun ref-man--build-bib-key-from-parsed-org-bibtex (bib-assoc)
-  "builds a unique key with the format [author year
-  first-title-word] entry from the list of (key . value). Trims
-  the entries and converts multiple spaces to a single one."
-  (let* ((first-author-str (car (split-string (ref-man--trim-whitespace (cdr (assoc :author bib-assoc))) "," t)))
+(defun ref-man--build-bib-key-from-parsed-org-bibtex (bib-alist)
+  "Builds a unique key with the format [author year first-title-word].
+BIB-ALIST is an plist of parsed bibtex entry.  Returns the
+trimmed entries and converts multiple spaces to a single one."
+  (let* ((first-author-str (car (split-string (ref-man--trim-whitespace (cdr (assoc :author bib-alist))) "," t)))
          (first-author (ref-man--validate-author (split-string first-author-str " " t)))
          (last-name (car (last first-author)))
-         (year-pub (ref-man--trim-whitespace (cdr (assoc :year bib-assoc))))
+         (year-pub (ref-man--trim-whitespace (cdr (assoc :year bib-alist))))
          (title (remove-if 'ref-man--stop-word-p
                            (mapcar #'ref-man--remove-punc
                                    (split-string (downcase (ref-man--trim-whitespace
-                                                            (cdr (assoc :title bib-assoc)))) " "))))
+                                                            (cdr (assoc :title bib-alist)))) " "))))
          (title-first (car (split-string (first title) "-")))
-         (key (ref-man--replace-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) ""))))
-         (key (ref-man--remove-punc key))
+         (key (ref-man--replace-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))
+         (key (ref-man--transcribe (ref-man--remove-punc key))))
     key))
 
-(defun ref-man--build-bib-assoc-from-parsed-org-bibtex (bib-assoc)
-  "builds the association list. can be used to build both the bib
-entry and org entry"
-  (let* ((key (ref-man--build-bib-key-from-parsed-org-bibtex bib-assoc))
-         (author (cons "author" (ref-man--trim-whitespace (cdr (assoc :author bib-assoc)))))
-         (title (cons "title" (ref-man--trim-whitespace (cdr (assoc :title bib-assoc)))))
-         (year (cons "year" (ref-man--trim-whitespace (cdr (assoc :year bib-assoc)))))
-         (doi (cons "doi" (cdr (assoc :doi bib-assoc))))
-         (volume (cons "volume"  (cdr (assoc :volume bib-assoc))))
-         (number (cons "number"  (cdr (assoc :number bib-assoc))))
-         (pages  (cons "pages" (cdr (assoc :pages bib-assoc))))
-         (publisher  (cons "publisher" (cdr (assoc :publisher bib-assoc))))
-         (abstract (cons "abstract" (cdr (assoc :abstract bib-assoc))))
-         (url (cons "url" (cdr (assoc :ee bib-assoc))))
-         (url (cons "url" (cdr (assoc :ee bib-assoc))))
-         (url (if url url (cons "url" (cdr (assoc :url bib-assoc)))))
-         (tmp-venue (cdr (assoc :journal bib-assoc))) ;; TODO: expand venue
-         (tmp-venue (if tmp-venue tmp-venue (cdr (assoc :booktitle bib-assoc)))) ;; TODO: expand venue
-         (tmp-venue (if tmp-venue tmp-venue (cdr (assoc :venue bib-assoc)))) ;; TODO: expand venue
-         (venue (cons "venue" tmp-venue)) ;; TODO: expand venue
-         (howpublished (cdr (assoc :howpublished bib-assoc)))
-         (howpublished (when (and howpublished (> 1 (length (split-string howpublished "{"))))
-                           (when (string-match-p "url" (nth 0 (split-string howpublished "{")))
-                               (car (split-string (nth 1 (split-string howpublished "{")) "}"))))))
-    (list key (remove-if-not 'cdr (list abstract author title year doi volume number pages url venue publisher howpublished)))))
-
-(defun ref-man--build-bib-key-from-parsed-bibtex (bib-assoc)
-  "builds a unique key with the format [author year first-title-word]
-entry from the list of (key . value). Assumes the strings are all validated"
+(defun ref-man--build-bib-key-from-parsed-bibtex (bib-alist)
+  "Builds a unique key with the format [author year first-title-word].
+BIB-ALIST is an alist of string keys.  Assumes the strings are all validated"
   (let* ((last-name (car (split-string
-                          (car (split-string (ref-man--fix-curly (cdr (assoc "author" bib-assoc))) " and ")) ", ")))
-         (year-pub (cdr (assoc "year" bib-assoc)))
-         (title (remove-if 'ref-man--stop-word-p (split-string (ref-man--fix-curly (downcase (cdr (assoc "title" bib-assoc)))) " ")))
+                          (car (split-string (ref-man--fix-curly (cdr (assoc "author" bib-alist))) " and ")) ", ")))
+         (year-pub (cdr (assoc "year" bib-alist)))
+         (title (remove-if 'ref-man--stop-word-p (split-string (ref-man--fix-curly (downcase (cdr (assoc "title" bib-alist)))) " ")))
          (title-first (car (split-string (first title) "-"))))
-    (ref-man--remove-punc
-     (ref-man--replace-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))))
+    (ref-man--transcribe
+     (ref-man--remove-punc
+      (ref-man--replace-non-ascii
+       (mapconcat 'downcase (list last-name year-pub title-first) ""))))))
+
+;; TODO: Rename this
+;; CHECK: It's not even used anywhere
+(defun ref-man--build-bib-assoc-from-parsed-org-bibtex (bib-alist)
+  "Builds the association list.
+Can be used to build both the bib entry and org entry"
+  (let* ((key (ref-man--build-bib-key-from-parsed-org-bibtex bib-alist))
+         (author (cons "author" (ref-man--trim-whitespace (cdr (assoc :author bib-alist)))))
+         (title (cons "title" (ref-man--trim-whitespace (cdr (assoc :title bib-alist)))))
+         (year (cons "year" (ref-man--trim-whitespace (cdr (assoc :year bib-alist)))))
+         (doi (cons "doi" (cdr (assoc :doi bib-alist))))
+         (volume (cons "volume"  (cdr (assoc :volume bib-alist))))
+         (number (cons "number"  (cdr (assoc :number bib-alist))))
+         (pages  (cons "pages" (cdr (assoc :pages bib-alist))))
+         (publisher  (cons "publisher" (cdr (assoc :publisher bib-alist))))
+         (abstract (cons "abstract" (cdr (assoc :abstract bib-alist))))
+         (url (cons "url" (cdr (assoc :ee bib-alist))))
+         (url (if url url (cons "url" (cdr (assoc :url bib-alist)))))
+         (tmp-venue (cdr (assoc :journal bib-alist))) ;; TODO: expand venue
+         (tmp-venue (if tmp-venue tmp-venue (cdr (assoc :booktitle bib-alist)))) ;; TODO: expand venue
+         (tmp-venue (if tmp-venue tmp-venue (cdr (assoc :venue bib-alist)))) ;; TODO: expand venue
+         (venue (cons "venue" tmp-venue)) ;; TODO: expand venue
+         (howpublished (cdr (assoc :howpublished bib-alist)))
+         (howpublished (when (and howpublished (> 1 (length (split-string howpublished "{"))))
+                         (when (string-match-p "url" (nth 0 (split-string howpublished "{")))
+                           (car (split-string (nth 1 (split-string howpublished "{")) "}"))))))
+    (list key (remove-if-not 'cdr (list abstract author title year doi
+                                        volume number pages url venue publisher howpublished)))))
 
 (defun ref-man--build-bib-author (author-str)
-  "builds the \"author\" value according to bibtex format"
+  "Builds the \"author\" value according to bibtex format"
   (let* ((author-str (ref-man--replace-non-ascii author-str))
          (author-str (replace-in-string (replace-in-string author-str "\\.$" "") ",$" ""))
          (authors (split-string author-str "," t))
@@ -533,7 +600,7 @@ entry from the list of (key . value). Assumes the strings are all validated"
 
 (defun ref-man--build-vernacular-author (author-str)
   "Builds the \"author\" string as common spoken English. Assumes
-  that the input is in bib_author format"
+that the input is in bib_author format"
   (let* ((author-str (replace-in-string (replace-in-string author-str "\\.$" "") ",$" ""))
          (authors (split-string author-str " and " t "[ ]+"))
          (result-authors
@@ -543,7 +610,7 @@ entry from the list of (key . value). Assumes the strings are all validated"
     result-authors))
 
 (defun ref-man--build-bib-assoc (key-str &optional na)
-  "builds the association list. can be used to build both the bib
+  "Builds the association list. can be used to build both the bib
 entry and org entry"
   (let* ((key (ref-man--build-bib-key key-str na))
          (author (cons "author" (ref-man--build-bib-author
@@ -572,9 +639,9 @@ entry and org entry"
 ;; TODO: Add async callback with message "DONE" when done
 (defun ref-man-get-references ()
   "This is the only entry point to fetch and write the references
-to a buffer right now. can change to have it in multiple steps."
+to a buffer right now. Can change to have it in multiple steps."
   (interactive)
-  (setq my/dblp-results nil)            ; TODO: Not used
+  (setq my/dblp-results nil)            ; TODO: Not used after change to python backend
   (let*
       ((pdf-file-name (expand-file-name (buffer-file-name (current-buffer))))
        (json-string
@@ -618,21 +685,23 @@ to a buffer right now. can change to have it in multiple steps."
     (with-current-buffer buf (org-mode)) buf))
 
 (defun ref-man--generate-org-buffer-content (org-buf refs-list bib-assoc visiting-filename)
-"Entries are fetched from dblp with `ref-man--dblp-fetch-python'
+  "Entries are fetched from dblp with `ref-man--dblp-fetch-python'
 and synced before generating org buffer."
   (with-current-buffer org-buf
     (ref-man--org-bibtex-write-top-heading-from-assoc bib-assoc)
     (org-insert-heading-after-current)
     (org-demote-subtree)
     (insert "Refs")
-    (org-insert-heading-after-current)    
+    (org-insert-heading-after-current)
     (org-demote-subtree)
     (goto-char (point-max))
     (ref-man--dblp-fetch-python refs-list org-buf)
     (set-visited-file-name visiting-filename)))
 
+;; CHECK: Do I really need to send URL here? Maybe for debugging but there's no
+;;        debugging here. status of course is sent automatically
 (defun ref-man--post-json-callback (status url callback)
-"This should be named differently perhaps"
+  "This should be named differently perhaps"
   (goto-char (point-min))
   (forward-paragraph)
   (setq ref-man--json-data (json-read))
@@ -663,7 +732,7 @@ the calling func"
 
 (defun ref-man--dblp-fetch-python-process-results (refs-list org-buf results)
   "A partial application of this function is the callback which
-processes the response from the server"
+processes the response from the http server"
   ;; NOTE: Sometimes result is hash-table and sometime alist
   (let ((na-results (cond ((listp results)
                            (-filter (lambda (x) x)
@@ -699,13 +768,14 @@ processes the response from the server"
             na-results)
     (with-current-buffer org-buf
       (outline-up-heading 1)
-      (next-line)
+      (forward-line)
       (kill-line)
       (delete-blank-lines)
       (save-buffer))
     (message (format "Inserted %s references from DBLP, %s from SP"
                      (- (length refs-list) (length na-results)) (length na-results)))))
 
+;; TODO: Need another function to fetch a search string at prompt and copy to kill ring
 (defun ref-man--dblp-fetch-python (refs-list org-buf)
   "Fetches all dblp queries in parallel via a python
 server. `queries' are basically `car's of `refs-list'. `org-buf'
@@ -733,6 +803,7 @@ top level heading"
          (query-url (format "https://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" query))
          (buf (url-retrieve-synchronously query-url)))
     (with-current-buffer buf (set-buffer-multibyte t))
+    ;; CHECK: I've copied this pcase-let from somewhere but have no idea what's going on here
     (pcase-let ((`(,(and result `(result . ,_)))
                  (xml-parse-region nil nil buf)))
       (remove nil (ref-man--dblp-clean
@@ -787,7 +858,7 @@ top level heading"
          (bib-assoc (ref-man--build-bib-assoc key-str na))
          (filename  (car bib-assoc))
          (visiting-filename
-          (path-join (list ref-man-org-store-dir (concat (string-remove-prefix "na_" filename) ".org"))))
+          (path-join ref-man-org-store-dir (concat (string-remove-prefix "na_" filename) ".org")))
          (buf (find-buffer-visiting visiting-filename)))
     (if (not filename)
         (message "[ref-man] filename could not be generated!")
@@ -846,7 +917,7 @@ top level heading"
               (org-set-property (upcase (car ent)) (ref-man--fix-curly (cdr ent)))))
     (org-set-property "CUSTOM_ID" key)
     (org-set-property "BTYPE" "article")
-    (org-set-property "PDF-FILE" (concat "[[" ref-man--current-pdf-file-name "]]"))))
+    (org-set-property "PDF_FILE" (concat "[[" ref-man--current-pdf-file-name "]]"))))
 
 (defun ref-man--generate-NA-entry (key-hash)
   (if (and (gethash "title" key-hash) (gethash "authors" key-hash))
@@ -857,7 +928,6 @@ top level heading"
                                        (nth 1 first-author)))
                                    (if (gethash "year" key-hash) (format "%s" (gethash "year" key-hash)) "_")
                                    (car (split-string (gethash "title" key-hash) " " t))) ""))
-             (author '("author" . nil))
              (author (cons "author" (ref-man--build-bib-author
                                      (string-join (gethash "authors" key-hash) ", "))))
              (title (cons "title" (gethash "title" key-hash)))
@@ -887,7 +957,7 @@ top level heading"
             (org-set-property (upcase (car (cdr (split-string (symbol-name (car ent)) ":"))))
                               (cdr ent)))))
 
-(defun ref-man--org-bibtex-write-ref-from-assoc-permissive (entry)
+(defun ref-man--org-bibtex-write-ref-from-assoc-permissive (entry &optional ignore-errors)
   "Generate an org entry from an association list retrieved via
 json."
   (let* ((key (car entry))
@@ -911,7 +981,7 @@ json."
             (org-set-property (upcase (car ent))
                               (ref-man--replace-non-ascii (ref-man--fix-curly (cdr ent))))))
     (org-set-property "CUSTOM_ID" key)
-    (if (string-equal (assoc :type bib-assoc) "misc")
+    (if (string-equal (assoc "type" entry) "misc")
         (org-set-property "BTYPE" "misc")
       (org-set-property "BTYPE" "article"))))
 
@@ -920,7 +990,9 @@ json."
 json."
   ;; NOTE: insert only when title exists
   (when (cdass 'title entry)
-    ;; NOTE: insert heading only when not updating current heading   
+    (org-insert-heading-after-current)
+    (org-edit-headline (cdass 'title entry))
+    ;; NOTE: insert heading only when not updating current heading
     (when (assoc 'abstract entry)
       (ref-man-org-insert-abstract (cdass 'abstract entry))
       (insert "\n"))
@@ -960,7 +1032,7 @@ json."
       (let ((key (ref-man-parse-bib-property-key)))
         (unless (or key ignore-errors)
           (debug)
-          (setq key (read-from-minibuffer (format "Could not parse key:\nauthor: %s\ntitle: %s\nyear: "
+          (setq key (read-from-minibuffer (format "Could not parse key:\nauthor: %s\ntitle: %s\nyear: %s"
                                                   (org-entry-get (point) "AUTHOR")
                                                   (org-entry-get (point) "TITLE")
                                                   (org-entry-get (point) "YEAR")))))
@@ -977,7 +1049,7 @@ json."
         (kill-line))
       (insert (cdr (assoc 'title entry))))))
 
-(defun ref-man--org-bibtex-write-ref-from-assoc (entry)
+(defun ref-man--org-bibtex-write-ref-from-assoc (entry &optional ignore-errors)
   "Generate an org entry from an association list retrieved via
 json."
   (let* ((key (car entry))
@@ -1005,7 +1077,7 @@ json."
     (org-set-property "CUSTOM_ID" key)
     (org-set-property "BTYPE" "article")))
 
-(defun ref-man--org-bibtex-write-ref-from-plist (entry)
+(defun ref-man--org-bibtex-write-ref-from-plist (entry &optional ignore-errors)
   "Generate an org entry from an association list retrieved via
 json."
   (org-insert-heading-after-current)
@@ -1032,7 +1104,7 @@ json."
                             (ref-man--replace-non-ascii (ref-man--fix-curly (cdr ent))))))
   (let ((key (ref-man-parse-bib-property-key)))
     (unless key
-      (setq key (read-from-minibuffer (format "Could not parse key:\nauthor: %s\ntitle: %s\nyear: "
+      (setq key (read-from-minibuffer (format "Could not parse key:\nauthor: %s\ntitle: %s\nyear: %s"
                                               (org-entry-get (point) "AUTHOR")
                                               (org-entry-get (point) "TITLE")
                                               (org-entry-get (point) "YEAR")))))
@@ -1067,7 +1139,7 @@ json."
 ;;     (org-set-property "CUSTOM_ID" key)
 ;;     (org-set-property "BTYPE" "article")))
 
-(defun ref-man--org-bibtex-write-heading-from-bibtex (entry)
+(defun ref-man--org-bibtex-write-heading-from-bibtex (entry &optional ignore-errors)
   "Generate an org entry from a bibtex association list, parsed
 with 'bibtex from a bibtex entry"
   (org-insert-heading)
@@ -1088,7 +1160,16 @@ with 'bibtex from a bibtex entry"
           (`("=key=" . ,_) (org-set-property "CUSTOM_ID" (ref-man--fix-curly (cdr ent))))
           (`(,_ . ,_) (org-set-property (upcase (car ent)) (ref-man--fix-curly (cdr ent)))))))
 
-(defun ref-man-org-bibtex-read-bib-file-to-buffer (filename &optional buffername)
+(defun ref-man--bibtex-parse-buffer (buf)
+  (let (entries)
+    (with-current-buffer buf
+      (goto-char (point-min))
+      (while (search-forward "@" nil t)
+        (backward-char)
+        (push (bibtex-parse-entry t) entries)))
+    entries))
+
+(defun ref-man-org-bibtex-read-bib-file-to-org-buffer (filename &optional buffername)
   "Parse a bibtex file and convert it into an org buffer
 corresponding to the bib entries. If `buffername' is given, the
 entries are appended to that buffer else, the `filename' suffix
@@ -1105,11 +1186,13 @@ entries are appended to that buffer else, the `filename' suffix
               (if buffername (get-buffer buffername)
                 (ref-man--generate-org-buffer
                  (replace-regexp-in-string
-                  "\\.[a-z0-9]*$" ".org" filename)))))
-        (setq org-bibtex-entries nil)
-        (org-bibtex-read-buffer (find-file-noselect filename 'nowarn))
-        (ref-man--insert-refs-from-seq
-         org-bibtex-entries nil 'plist))
+                  "\\.[a-z0-9]*$" ".org" filename))))
+             (entries (ref-man--bibtex-parse-buffer (find-file-noselect filename 'nowarn))))
+        ;; (setq org-bibtex-entries nil)
+        ;; (org-bibtex-read-buffer (find-file-noselect filename 'nowarn))
+        (with-current-buffer org-buf
+          (ref-man--insert-refs-from-seq
+           entries nil 'bibtex)))
     (message (format "[ref-man] File %s does not exist" filename))))
 
 (defun ref-man-org-bibtex-read-from-headline ()
@@ -1253,17 +1336,17 @@ exists then goto that file or find that file, else insert to
                        ;; FIXME: This should be created dynamically?
                        "-f" (expand-file-name "~/.proxychains.conf")
                        "python3"
-                       (path-join `(,ref-man-home-dir "server.py"))
+                       (path-join ref-man-home-dir "server.py")
                        (concat "--data-dir=" data-dir)
                        (format "--port=%s" port) "-v")
       (start-process "ref-man-python-server" "*ref-man-python-server*" "python3"
-                     (path-join `(,ref-man-home-dir "server.py"))
+                     (path-join ref-man-home-dir "server.py")
                      (concat "--data-dir=" data-dir)
                      (format "--port=%s" port) "-v"))))
 
 (defun ref-man-kill-python-process ()
-  (interactive)
   "Kills the python server process"
+  (interactive)
   (signal-process (get-buffer "*ref-man-python-server*") 15))
 
 (defun ref-man--python-process-running-p ()
@@ -1319,6 +1402,9 @@ consolidating. It also maintains a local datastore."
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START Biblio stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;
+(defun biblio-crossref-backend (arg)
+  )
+
 (defun ref-man-org-search-heading-on-crossref-with-biblio ()
   "Searches for the current heading in google scholar in eww"
   (interactive)
@@ -1343,8 +1429,8 @@ Results are parsed with (BACKEND 'parse-buffer)."
   (biblio-generic-url-callback
    (lambda () ;; no allowed errors, so no arguments
      "Parse results of bibliographic search."
-     (let ((results (biblio--tag-backend 'biblio-crossref-backend
-                                         (funcall 'biblio-crossref-backend 'parse-buffer)))
+     (let ((results (biblio--tag-backend backend
+                                         (funcall backend 'parse-buffer)))
            (win (ref-man--get-or-create-window-on-side)))
        (with-current-buffer my/biblio-callback-buf
          (ref-man--biblio-insert-results results (biblio--search-results-header))
@@ -1358,7 +1444,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
   (interactive)
   (biblio--selection-forward-bibtex #'ref-man--biblio-insert-to-org))
 
-(defun ref-man--biblio-insert-to-org (bibtex entry)
+(defun ref-man--biblio-insert-to-org (bibtex)
   (let* ((current-key (with-current-buffer ref-man--org-gscholar-launch-buffer
                         (org-entry-get ref-man--org-gscholar-launch-point "CUSTOM_ID")))
          (bibtex (replace-in-string (replace-in-string
@@ -1373,7 +1459,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
     (cond ((not bib-assoc) (message "[ref-man] Received nil entry"))
           ((string-match-p "na_" current-key)
            (ref-man-org-bibtex-convert-bib-to-property bib-assoc ref-man--org-gscholar-launch-buffer))
-          ((y-or-n-p "Authoritative entry. Really replace?")
+          ((y-or-n-p "Authoritative entry.  Really replace?")
            (ref-man-org-bibtex-convert-bib-to-property bib-assoc ref-man--org-gscholar-launch-buffer)))
     (pop-to-buffer ref-man--org-gscholar-launch-buffer)))
 
@@ -1395,7 +1481,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
 ;; FIXME: All this eww mode hook should be separate
 (defun ref-man--eww-mode-hook ()
   (bind-key "b" 'ref-man-eww-keypress-b eww-mode-map)
-  (bind-key "b" 'ref-man-eww-keypress-b eww-link-keymap)  
+  (bind-key "b" 'ref-man-eww-keypress-b eww-link-keymap)
   (bind-key "i" 'ref-man-eww-keypress-i eww-mode-map)
   (bind-key "i" 'ref-man-eww-keypress-i eww-link-keymap)
   (bind-key "v" 'ref-man-eww-keypress-v eww-mode-map)
@@ -1489,6 +1575,8 @@ Results are parsed with (BACKEND 'parse-buffer)."
          (string-match-p filename path)))
 
 (defun ref-man--filename-from-url (url)
+  "Generates unique filename from a given URL.
+Returns path concatenated with `ref-man-documents-dir'."
   (let* ((obj (url-generic-parse-url url))
          ;; (path (car (url-path-and-query obj)))
          (path (cond ((string-match-p "openreview" url)
@@ -1504,15 +1592,99 @@ Results are parsed with (BACKEND 'parse-buffer)."
                      ((string-match-p "dl.acm.org" url)
                       (concat "acm_" (car (split-string (nth 1 (split-string url "?id=")) "&")) ".pdf"))
                      (t (car (url-path-and-query obj)))))
-         (file (path-join (list ref-man-documents-dir (file-name-nondirectory path)))))
+         (file (path-join ref-man-documents-dir (file-name-nondirectory path))))
     file))
 
-(defun ref-man--check-pdf-file-exists (url)
-  (let* ((file-name-a (ref-man--filename-from-url url))
-         (file-name-b (concat file-name-a ".pdf")))
-    (cond ((file-exists-p file-name-a) file-name-a)
-          ((file-exists-p file-name-b) file-name-b)
-          (t nil))))
+(defun ref-man--dirs-non-hidden (path recurse)
+  "Get all non-hidden directories recursively from PATH."
+  (f-directories path (lambda (x)
+                        (not (string-match-p "/\\." x)))
+                 recurse))
+
+;; (defun ref-man--files-non-hidden (path recurse)
+;;   (directory-files-recursively ref-man-extra-documents-dirs "."))
+
+(defun ref-man--fast-files-or-dirs (path f-or-d &optional recurse include-hidden)
+  "Get all files or dirs or both or everything, recursively from PATH.
+
+Copy of `util/fast-files-or-dirs'. Custom local package.
+
+F-OR-D can be one of 'f 'files 'd 'dirs or 'both. If anything
+else, is given, everything is returned, including symlinks etc.
+
+Optionally if RECURSE is non-nil recurse into the directories.
+INCLUDE-HIDDEN includes hidden files and files in hidden
+directories if non-nil.  Uses \"find\" shell command. Much faster
+than using `directory-files-recursively'"
+  (-remove #'string-empty-p (split-string
+                             (shell-command-to-string
+                              (format "find %s %s %s %s -print0" path
+                                      (if include-hidden "" "-not -path '*/\\.*'")
+                                      (pcase f-or-d
+                                        ((or 'files 'f) "-type f")
+                                        ((or 'dirs 'd) "-type d")
+                                        ('both "")
+                                        (_ ""))
+                                      (if recurse "" "-maxdepth 1"))) "\0")))
+
+(defun ref-man--files-non-hidden (path &optional recurse include-hidden)
+  "Get all non-hidden files recursively from PATH.
+Optionally if RECURSE is non-nil recurse into the directories.
+INCLUDE-HIDDEN includes hidden files and files in hidden
+directories if non-nil.  Uses \"find\" shell command. Much faster
+than using `directory-files-recursively'"
+  (ref-man--fast-files-or-dirs path 'f recurse include-hidden))
+
+(defun ref-man--file-in-other-dirs (fname)
+  "Check if filename FNAME exists in any of `ref-man-extra-documents-dirs'.
+Returns first path for that filename."
+  ;; NOTE: In case I keep a cache
+  ;; (setq ref-man--dirs-mod-time nil)
+  (let*
+      ;; NOTE: In case I keep a cache
+      ;; ((mod-times (mapcar (lambda (x)
+      ;;     (cons x  (time-to-seconds
+      ;;               (file-attribute-modification-time
+      ;;                (file-attributes x)))))
+      ;;                      ref-man-other-dirs))
+      ;;   (meh (-concat something)))
+      ((dirs-files (mapcar (lambda (x) (cons x (ref-man--files-non-hidden x t)))
+                           (if (listp ref-man-extra-documents-dirs)
+                               ref-man-extra-documents-dirs
+                             (list ref-man-extra-documents-dirs))))
+       (all-files (apply #'-concat (mapcar #'cdr dirs-files))))
+                                        ; return only the first element
+    (car (-filter (lambda (x) (or (string= (f-filename x) fname)
+                                  (string= (f-filename x) (f-base fname))))
+                  all-files))))
+
+(defun ref-man--copy-if-required-from-extra-to-documents-dir (file)
+  "Copy file if not in `ref-man-documents-dir'"
+  (when file
+    (if (or (not (f-absolute-p file))
+            (dir-equal-p (f-dirname file) ref-man-documents-dir))
+        file
+      (copy-file file (path-join ref-man-documents-dir (f-filename file)))
+      (path-join ref-man-documents-dir (f-filename file)))))
+
+(defun ref-man--check-pdf-file-exists (uri &optional check-extra)
+  "Check if a pdf file exists for a given URI in `ref-man-documents-dir'.
+If CHECK-EXTRA is given, then also check in additional
+directories given by `ref-man-extra-documents-dirs'"
+  (let* ((file-name-a (ref-man--filename-from-url uri))
+         (file-name-b (if (string-suffix-p ".pdf" file-name-a)
+                          (string-remove-suffix ".pdf" file-name-a)
+                        (concat file-name-a ".pdf")))
+         (file (cond ((file-exists-p file-name-a) file-name-a)
+                     ((file-exists-p file-name-b) file-name-b)
+                     (check-extra
+                      (let ((file-exists
+                             (ref-man--file-in-other-dirs (f-filename file-name-a))))
+                        (if file-exists
+                            file-exists
+                          (ref-man--file-in-other-dirs (f-filename file-name-b)))))
+                     (t nil))))
+    (ref-man--copy-if-required-from-extra-to-documents-dir file)))
 
 (defun ref-man--arxiv-id-from-url (url)
   (let ((suffix (car (last (split-string url "/")))))
@@ -1522,17 +1694,23 @@ Results are parsed with (BACKEND 'parse-buffer)."
 
 (defun ref-man-url-from-arxiv-id ()
   (interactive)
-  (let ((arxiv-id (cond ((org-entry-get (point) "ARXIVID")
-                         (org-entry-get (point) "ARXIVID"))
-                        ((org-entry-get (point) "EPRINT")
-                         (org-entry-get (point) "EPRINT"))
-                        (t nil))))
+  (let ((arxiv-id (pcase (or (org-entry-get (point) "ARXIVID")
+                             (org-entry-get (point) "EPRINT"))
+                    ((and val) val))
+                  ;; NOTE: Replaced with pcase
+                  ;; (cond ((org-entry-get (point) "ARXIVID")
+                  ;;        (org-entry-get (point) "ARXIVID"))
+                  ;;       ((org-entry-get (point) "EPRINT")
+                  ;;        (org-entry-get (point) "EPRINT"))
+                  ;;       (t nil))
+                  ))
     (when arxiv-id
-      (cond ((called-interactively-p 'any)
-             (when current-prefix-arg
-               (org-entry-put (point) "URL" (format "https://arxiv.org/abs/%s" arxiv-id)))
-             (kill-new (format "https://arxiv.org/abs/%s" arxiv-id)))
-            (t (format "https://arxiv.org/abs/%s" arxiv-id))))))
+      (if (called-interactively-p 'any)
+          (progn
+            (when current-prefix-arg
+              (org-entry-put (point) "URL" (format "https://arxiv.org/abs/%s" arxiv-id)))
+            (kill-new (format "https://arxiv.org/abs/%s" arxiv-id)))
+        (format "https://arxiv.org/abs/%s" arxiv-id)))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END url utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1617,7 +1795,7 @@ Goes to the next pdf link and cycles round if the last link is reached."
          (links (if (string-match-p "\\.arxiv\\.org" url)
                     (ref-man-eww-get-all-links buf nil nil "pdf")
                   (ref-man-eww-get-all-links buf nil nil "\\.pdf"))))))
- 
+
 (defun ref-man-eww-keypress-b (&optional org-buf)
   (interactive (list (when (and current-prefix-arg (not (boundp 'org-buf)))
                        (completing-read "Org buffer: "
@@ -1722,50 +1900,63 @@ callback is nil defaults to `ref-man-eww--gscholar-parse-bibtex'"
                            (goto-char (point-min)))
                          (if callback
                              (url-retrieve url callback
-                                           (list url (current-buffer) org))                             
+                                           (list url (current-buffer) org))
                            (url-retrieve url #'ref-man-eww--gscholar-parse-bibtex
                                          (list url (current-buffer) org))))))
 
 ;; FIXME: This function looks a bit redundant. It searches on gscholar but I've
 ;;        incorporated additional sources. It's sort of a last resort right now
-(defun ref-man--parse-bibtex (bib-buf &optional org url kill)
+;;
+;; CHECK: Not sure why the above fixme is there, as this function is being used
+;;        as a subroutine in other functions
+(defun ref-man--parse-bibtex (source-buf &optional org bib url kill)
   "Extracts a bibtex entry from a buffer to the org buffer if
 variable `org' is set otherwise to the temp bib file"
   ;; NOTE: Sanitize org entry and insert into org buffer
-  (let ((org-buf (cond ((stringp org) (get-buffer org))
+  (let ((org-buf (cond ((bufferp org) org)
+                       ((stringp org) (get-buffer org))
                        (ref-man--org-gscholar-launch-buffer ref-man--org-gscholar-launch-buffer)
                        (t nil)))
-        (buf-string (with-current-buffer bib-buf (buffer-string))))
-    (if org-buf
-        (progn
-          (message (concat "[ref-man] Trying to insert into org buffer: "
-                           (buffer-name org-buf)))
-          (ref-man--sanitize-org-entry org-buf)
-          (let ((bib-assoc (with-current-buffer bib-buf
-                             (goto-char (point-min))
-                             (when (string= "HTTP" (thing-at-point 'word))
-                               (forward-paragraph)
-                               (search-forward "@")
-                               (backward-char))
-                             (bibtex-parse-entry)))
-                (current-key (with-current-buffer org-buf
-                               (org-entry-get (point) "CUSTOM_ID"))))
-            (kill-buffer bib-buf)
-            (cond ((or (not current-key) (string-match-p "na_" current-key))
-                   (ref-man-org-bibtex-convert-bib-to-property
-                    bib-assoc org-buf nil t))
-                  ((y-or-n-p "Authoritative entry. Really replace?")
-                   (ref-man-org-bibtex-convert-bib-to-property
-                    bib-assoc org-buf nil t))))
-          (with-current-buffer org-buf
-            (when (and url (not (org-entry-get (point) "URL")))
-              (org-set-property "URL" url))))
-      (let* ((temp-bib-file-name (file-name-nondirectory ref-man-temp-bib-file-path))
-             (buf (if (get-buffer temp-bib-file-name) (get-buffer temp-bib-file-name)
-                    (find-file-noselect ref-man-temp-bib-file-path))))
-        (with-current-buffer buf (goto-char (point-min))
-                             (insert buf-string))
-        (message (concat "[ref-man] inserted bib entry into " temp-bib-file-name))))
+        (bib-buf (cond ((bufferp bib) bib)
+                       ((stringp bib) (get-buffer bib))
+                       ((not bib) nil)))
+        (kill (or kill (not (or org bib))))
+        (buf-string (with-current-buffer source-buf (buffer-string))))
+    (when org-buf
+      (progn
+        (message (concat "[ref-man] Trying to insert into org buffer: "
+                         (buffer-name org-buf)))
+        (ref-man--sanitize-org-entry org-buf)
+        (let ((bib-assoc (with-current-buffer source-buf
+                           (goto-char (point-min))
+                           (when (string= "HTTP" (thing-at-point 'word))
+                             (forward-paragraph)
+                             (search-forward "@")
+                             (backward-char))
+                           (bibtex-parse-entry)))
+              (current-key (with-current-buffer org-buf
+                             (org-entry-get (point) "CUSTOM_ID"))))
+          (kill-buffer source-buf)
+          (cond ((or (not current-key) (string-match-p "na_" current-key))
+                 (ref-man-org-bibtex-convert-bib-to-property
+                  bib-assoc org-buf nil t))
+                ((y-or-n-p "Authoritative entry. Really replace?")
+                 (ref-man-org-bibtex-convert-bib-to-property
+                  bib-assoc org-buf nil t))))
+        (with-current-buffer org-buf
+          (when (and url (not (org-entry-get (point) "URL")))
+            (org-set-property "URL" url)))))
+    (when bib-buf
+      (with-current-buffer bib-buf (goto-char (point-min))
+                           (insert buf-string))
+      (message (format "[ref-man] inserted bib entry into %s" bib-buf)))
+    ;; (when bib-buf
+    ;;   (let* ((temp-bib-file-name (file-name-nondirectory ref-man-temp-bib-file-path))
+    ;;          (buf (if (get-buffer temp-bib-file-name) (get-buffer temp-bib-file-name)
+    ;;                 (find-file-noselect ref-man-temp-bib-file-path))))
+    ;;     (with-current-buffer buf (goto-char (point-min))
+    ;;                          (insert buf-string))
+    ;;     (message (concat "[ref-man] inserted bib entry into " temp-bib-file-name))))
     (when kill
       (kill-new buf-string))))
 
@@ -1773,12 +1964,12 @@ variable `org' is set otherwise to the temp bib file"
 ;;        inserting bibtex. The other variable
 ;;        ref-man--org-gscholar-launch-buffer is used to insert children and
 ;;        other stuff and is used in other functions - They can cause confusion.
-;;        
+;;
 ;; TODO: Have changed some of my/org-*gscholar*launch* variables. Should change
 ;;       the rest.
-;;       
+;;
 ;; TODO: Why does it save my/bibtex-entry?
-;; 
+;;
 ;; FIXED: It doesn't store URL while inserting bibtex.  URL Will have to be
 ;;        fetched by going back and finding the first non-google URL I guess.
 (defun ref-man-eww--gscholar-parse-bibtex (status url buf org)
@@ -1959,7 +2150,7 @@ If the input doesn't look like a URL or a domain name."
         (setq ref-man--egal--url-text-start (point))
         (setq ref-man--egal--url-text-end (point))
         (while (< (point) ref-man--eww-buffer-endpoint)
-          ;; (debug)    
+          ;; (debug)
           ;; Debug info
           ;; (message (concat (format "%s" ref-man--egal--url-text-start) ", "
           ;; (format "%s" ref-man--egal--url-text-end)))
@@ -2011,7 +2202,7 @@ downloadable, else fetch a pdf url above it"
       (let* ((buf (current-buffer))         ; whatever its name is, but an eww buffer
              (url (if (and url (ref-man--downloadable-pdf-url-p url)) ; if it can be downloaded
                       url (car (last (ref-man-eww-get-all-links buf t t "pdf"))))) ; else
-             (file (ref-man--check-pdf-file-exists url)))
+             (file (ref-man--check-pdf-file-exists url t)))
         ;; (ref-man-maybe-create-or-insert-org-heading-and-property file)
         (if file
             (find-file-other-window file)
@@ -2031,18 +2222,21 @@ downloadable, else fetch a pdf url above it"
 ;; TODO: Make this async for large buffers
 ;;       Or perhaps cache the results
 ;; Not really hidden
-(defun ref-man-get-links-of-type-from-org-buffer (buf type &optional narrow)
-  "Retrieves all links of given `type' from the region. `type'
-can be `file', `http' etc."
+(defun ref-man-get-links-of-type-from-org-buffer (buf type &optional notype narrow)
+  "Retrieves all links of given `type' from the region.
+`type' can be `file', `http' etc.
+`notype' indicates not to concat `type' before the link"
   (with-current-buffer buf
     (save-restriction
       (when narrow (org-narrow-to-subtree))
       (org-element-map (org-element-parse-buffer) 'link
         (lambda (link)
           (when (string= (org-element-property :type link) type)
-            (concat type ":" (org-element-property :path link))))))))
+            (if notype
+                (org-element-property :path link)
+              (concat type ":" (org-element-property :path link)))))))))
 
-(defun ref-man-get-links-with-condition-from-org-buffer (buf condition &optional narrow raw)
+(defun ref-man-get-links-with-condition-from-org-buffer (buf condition &optional notype narrow raw)
   "Like `ref-man-get-links-of-type-from-org-buffer' but retrieves
 all links which satisfies the given condition
 `condition'. `condition' must be a function which returns `t' or
@@ -2079,14 +2273,14 @@ given buffer with the metadata"
         (goto-char ref-man--org-gscholar-launch-point)))))
 
 (defun ref-man--insert-org-pdf-file-property (file)
-  "Given a filename, check if the property PDF-FILE exists for the
+  "Given a filename, check if the property PDF_FILE exists for the
 corresponding headline and insert."
   (let ((props (org-entry-properties))
         (file-entry (concat "[[" file "]]")))
-    (if (and props (cdr (assoc "PDF-FILE" props)))
+    (if (and props (cdr (assoc "PDF_FILE" props)))
         (if (y-or-n-p "Entry already exists. Replace?")
-            (org-set-property "PDF-FILE" file-entry))
-      (org-set-property "PDF-FILE" file-entry))))
+            (org-set-property "PDF_FILE" file-entry))
+      (org-set-property "PDF_FILE" file-entry))))
 
 ;; CHECK: Not sure if the two functions below should be here
 (defun ref-man--eww-pdf-download-callback-store (status url point)
@@ -2100,15 +2294,16 @@ corresponding headline and insert."
         (setq ref-man--subtree-list
               (plist-put ref-man--subtree-list point file)))))
 
-(defun ref-man--eww-pdf-download-callback (status url)
-  (unless (plist-get status :error)
+(defun ref-man--eww-pdf-download-callback (status url &optional view overwrite)
+   (if (plist-get status :error)
+      (message (format "[ref-man] Error occured while download %s" url))
     (let ((file (ref-man--filename-from-url url)))
       (when ref-man--org-gscholar-launch-buffer
         (with-current-buffer ref-man--org-gscholar-launch-buffer
           (save-excursion
             (goto-char ref-man--org-gscholar-launch-point)
             (ref-man--insert-org-pdf-file-property file))))
-      (if (file-exists-p file)
+      (if (or overwrite (file-exists-p file))
           (when (y-or-n-p "File exists. Replace?")
             (goto-char (point-min))
             (re-search-forward "\r?\n\r?\n")
@@ -2119,7 +2314,8 @@ corresponding headline and insert."
         (write-region (point) (point-max) file)
         (message "[ref-man] Saved %s" file)
         ;; (ref-man-maybe-create-or-insert-org-heading-and-property file)
-        ))))
+        )
+      (when view (find-file-other-window file)))))
 
 (defun ref-man--get-number-of-http-links-from-org-buffer (&optional narrow)
   "From text corresponding to an org heading, get the total
@@ -2186,7 +2382,7 @@ python server as the middleman."
 (defun ref-man--try-fetch-bib-buf-for-url (url)
   "Fetches bib buffer if possible for the given URL"
   (cond ((string-match-p "arxiv.org" url)
-         (let* ((link (ref-man--get-bibtex-link-from-arxiv)))
+         (let* ((link (ref-man--get-bibtex-link-from-arxiv url)))
            (if link
                (url-retrieve-synchronously link)
              (ref-man--bib-buf-for-arxiv-api url))))
@@ -2227,24 +2423,43 @@ a list of `id-type' and `id'"
   "Inserts references from a given sequence at cursor. An org
 heading is generated where `name' is inserted after which the
 each element of the data which is a sequence is inserted"
-  (when name
-    (insert name))
-  (org-insert-heading-respect-content)
-  (org-demote)
+  (unless (eq major-mode 'org-mode)
+    (message "[ref-man] Can only insert to an org buffer"))
   (let ((write-func (cond ((eq seqtype 'ss)
                            #'ref-man--org-bibtex-write-ref-from-ss-ref)
                           ((eq seqtype 'assoc)
                            #'ref-man--org-bibtex-write-ref-from-assoc)
                           ((eq seqtype 'plist)
-                           #'ref-man--org-bibtex-write-ref-from-plist))))
-    (seq-do (lambda (ref)
-              (funcall write-func ref ignore-errors))
-            data))
-  (outline-up-heading 1)
-  (forward-line)
-  (kill-line)
-  (delete-blank-lines)
-  (outline-previous-heading))
+                           #'ref-man--org-bibtex-write-ref-from-plist)
+                          ((eq seqtype 'bibtex)
+                           #'ref-man--org-bibtex-write-heading-from-bibtex)
+                          (t nil))))
+    ;; (seq-do (lambda (ref)
+    ;;           (funcall write-func ref ignore-errors))
+    ;;         data)
+    ;; (org-insert-heading-respect-content)
+    ;; (org-demote)
+    ;; (outline-up-heading 1)
+    ;; (forward-line)
+    ;; (kill-line)
+    ;; (delete-blank-lines)
+    ;; (outline-previous-heading)
+
+    (if (not write-func)
+        (message (format "[ref-man] Illegal seqtype %s" seqtype))
+      (when name
+        (insert name))
+      (org-insert-heading-respect-content)
+      (org-demote)
+      (seq-do (lambda (ref)
+                (funcall write-func ref ignore-errors))
+              data)
+      (outline-up-heading 1)
+      (forward-line)
+      (kill-line)
+      (delete-blank-lines)
+      (outline-previous-heading))
+))
 
 (defun ref-man-insert-ss-data (ss-data &optional buf where ignore-errors)
   "Inserts Semantic Scholar Data into given buffer `buf' at the
@@ -2325,7 +2540,7 @@ citations after that."
          (link (ref-man--get-first-pdf-link-from-html-buffer buf)))
     (cond ((string-match-p "^[http|https]" link) link)
           ((string-match-p "^/paper/" link)
-           (concat (string-join (firstn (split-string url "/") 3) "/") link))
+           (concat (string-join (-take 3 (split-string url "/")) "/") link))
           (t nil))))
 
 (defun ref-man--get-pdf-link-from-mlr-url (url)
@@ -2366,8 +2581,8 @@ citations after that."
          (link (ref-man--get-first-pdf-link-from-html-buffer buf)))
     (cond ((string-match-p "^[http|https]" link) link)
           ((string-match-p "^../../content_.*" link)
-           (concat (string-join (firstn (split-string url "/") 3) "/") "/"
-                   (string-join (butfirst (split-string link "/") 2) "/")))
+           (concat (string-join (-take 3 (split-string url "/")) "/") "/"
+                   (string-join (-drop 2 (split-string link "/")) "/")))
           (t nil))))
 
 (defun ref-man--get-pdf-link-from-cvf-old-url (url)
@@ -2375,8 +2590,8 @@ citations after that."
          (link (ref-man--get-first-pdf-link-from-html-buffer buf)))
     (cond ((string-match-p "^[http|https]" link) link)
           ((string-match-p "^../../content_.*" link)
-           (concat (string-join (firstn (split-string url "/") 4) "/") "/"
-                   (string-join (butfirst (split-string link "/") 2) "/")))
+           (concat (string-join (-take 4 (split-string url "/")) "/") "/"
+                   (string-join (-drop 2 (split-string link "/")) "/")))
           (t nil))))
 
 (defun ref-man--get-pdf-link-from-openreview-url (url)
@@ -2402,7 +2617,7 @@ citations after that."
           ((string-match-p "openaccess.thecvf.com" url)
            (ref-man--get-pdf-link-from-cvf-url url))
           ((string-match-p "cv-foundation.org" url)
-           (ref-man--get-pdf-link-from-cvf-old-url url))          
+           (ref-man--get-pdf-link-from-cvf-old-url url))
           ((string-match-p "aaai.org" url)
            (ref-man--get-pdf-link-from-aaai-url url))
           ((string-match-p "dl.acm.org" url)
@@ -2413,6 +2628,7 @@ citations after that."
            (ref-man--get-pdf-link-from-ss-url url))
           (t url))))
 
+;; NOTE: This function currently is only used by `ref-man-try-fetch-and-store-pdf-in-org-entry'
 (defun ref-man--try-get-bib-url-according-to-source (url)
   (when url
     (cond ((string-match-p "doi.org" url)
@@ -2543,7 +2759,7 @@ citations after that."
         (when (and fetch-pdf (ref-man--downloadable-pdf-url-p url))
           (message (format "[ref-man] Fetching pdf for url %s" url))
           ;; CHECK: Is it possible to not fetch bib and pdf separately but simultaneously instead?
-          (ref-man--fetch-from-pdf-url url)))
+          (ref-man--fetch-from-pdf-url url nil)))
     (message "[ref-man] Not in org-mode")))
 
 (defun ref-man-convert-links-in-subtree-to-headings ()
@@ -2585,8 +2801,12 @@ is from a recognized parseable host. As of now, only ArXiv"
         (kill-new (buffer-string))
         (message "Killed entry as org heading")))))
 
+(defun ref-man-fetch-update-ss-data-on-disk-for-entry ()
+  (interactive)
+  (ref-man-fetch-ss-data-for-entry nil nil t))
+
 ;; CHECK: Should we update more than `arxivId'?
-(defun ref-man-fetch-ss-data-for-entry (&optional update display)
+(defun ref-man-fetch-ss-data-for-entry (&optional update display update-on-disk)
   "Tries to fetch the Semantic Scholar data for current entry. By
 default the data is fetched after converting to Org and displayed
 in a new buffer named \"*Semantic Scholar*\"
@@ -2597,13 +2817,14 @@ from the Semantic Scholar database.
 With two universal prefix arguments, both update the entry and
 display the data."
   (interactive)
-  (let ((meh current-prefix-arg))
-    (cond ((and meh (equal meh '(4)))   ; update only
-           (setq update t))
-          ((and meh (equal meh '(16)))  ; both update and display
-           (setq update t)
-           (setq display t))
-          (t (setq display t))))        ; by default only display
+  (when (called-interactively-p 'any)
+    (let ((meh current-prefix-arg))
+      (cond ((and meh (equal meh '(4)))   ; update only
+             (setq update t))
+            ((and meh (equal meh '(16)))  ; both update and display
+             (setq update t)
+             (setq display t))
+            (t (setq display t)))))        ; by default only display
   (if (eq major-mode 'org-mode)
       (progn
         (unless (org-at-heading-p)
@@ -2612,11 +2833,16 @@ display the data."
                (ss-data (when idtype-id
                           (with-current-buffer
                               (url-retrieve-synchronously
-                               (format "http://localhost:%s/semantic_scholar?id_type=%s&id=%s"
-                                       ref-man-python-server-port (car idtype-id) (cadr idtype-id)))
+                               (format "http://localhost:%s/semantic_scholar?id_type=%s&id=%s%s"
+                                       ref-man-python-server-port
+                                       (car idtype-id)
+                                       (cadr idtype-id)
+                                       (if update-on-disk "&force" "")))
                             (goto-char (point-min))
                             (forward-paragraph)
                             (json-read)))))
+          (unless ss-data
+            (message "[ref-man] Could not retrieve Semantic Scholar data for entry"))
           (when (and ss-data update)
             ;; (when (cdass 'arxivId ss-data)
             ;;   (org-entry-put (point) "ARXIVID" (cdass 'arxivId ss-data))
@@ -2647,7 +2873,7 @@ display the data."
           props-alist)
   (let ((key (ref-man-parse-bib-property-key)))
     (unless key
-      (setq key (read-from-minibuffer (format "Could not parse key:\nauthor: %s\ntitle: %s\nyear: "
+      (setq key (read-from-minibuffer (format "Could not parse key:\nauthor: %s\ntitle: %s\nyear: %s"
                                               (org-entry-get (point) "AUTHOR")
                                               (org-entry-get (point) "TITLE")
                                               (org-entry-get (point) "YEAR")))))
@@ -2655,7 +2881,7 @@ display the data."
   (when (string-empty-p (org-get-heading))
     (unless (org-at-heading-p)
       (outline-previous-heading))
-    (end-of-line)      
+    (end-of-line)
     (insert (cdass "TITLE" props-alist)))
   (when (assoc "ABSTRACT" props-alist)
     (ref-man-org-insert-abstract (cdass "ABSTRACT" props-alist) (current-buffer))))
@@ -2687,9 +2913,9 @@ display the data."
     (remove-if (lambda (x) (string-empty-p (cdr x))) retval)))
 
 ;; TODO: prompt by default
-;; 
+;;
 (defun ref-man-search-semantic-scholar (search-string &optional insert-first)
-  (interactive (list (let* ((ss (org-get-heading))
+  (interactive (list (let* ((ss (if (eq major-mode 'org-mode) (org-get-heading) ""))
                             (prompt (if (string-empty-p ss)
                                         "Search String: "
                                       (format "Search String (default %s): " ss))))
@@ -2700,6 +2926,8 @@ display the data."
       (cond ((and meh (equal meh '(4)))   ; update only
              (setq insert-first t))
             ))
+    ;; FIXME: Search is not complete
+    (debug)
     ;; TODO: fetch page from python server, should use jinja or lisp template
     (cond (insert-first
            (let* ((result (with-current-buffer
@@ -2742,31 +2970,43 @@ buffer is not gscholar"
   (if point
       (url-retrieve url callback (list url point))
     (url-retrieve url callback (list url))))
-  
+
 ;; FIXME: This storep thing is a huge issue. I don't exactly remember how to
 ;;        insert the pdfs into the subtree, the points are being captured
 ;;        correctly I think
 (defun ref-man--fetch-from-pdf-url (url storep)
-  (if (ref-man--check-pdf-file-exists url)
-      (let ((file (ref-man--check-pdf-file-exists url)))
+  (let ((file (ref-man--check-pdf-file-exists url t)))
+    (if file
         (if storep
-            ;; CHECK: Have to find a better way than to store (point) maybe
             (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) file))
-          (ref-man--insert-org-pdf-file-property file)))
-    (if storep
-        (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback-store url (point))
-      (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback url))))
+          (ref-man--insert-org-pdf-file-property file))
+      ;; CHECK: Have to find a better way than to store (point) maybe
+      (if storep
+          (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback-store url (point))
+        (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback url))
+      ))
+  ;; NOTE: Earlier implementations
+  ;; (if (ref-man--check-pdf-file-exists url t)
+  ;;     (let ((file (ref-man--check-pdf-file-exists url)))
+  ;;       (if storep
+  ;;           ;; CHECK: Have to find a better way than to store (point) maybe
+  ;;           (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) file))
+  ;;         (ref-man--insert-org-pdf-file-property file)))
+  ;;   (if storep
+  ;;       (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback-store url (point))
+  ;;     (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback url)))
 
   ;; (cond ((ref-man--check-pdf-file-exists url)
   ;;        (let ((file (ref-man--check-pdf-file-exists url)))
   ;;          (if storep
   ;;              (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) file))
   ;;            (ref-man--insert-org-pdf-file-property file))))
-  ;;       ((not (ref-man--check-pdf-file-exists 
+  ;;       ((not (ref-man--check-pdf-file-exists
   ;;              (if storep
   ;;                  (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback-store url (point))
   ;;                (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback url))))))
-  
+)
+
 
 ;; CHECK: Curious thing is, pdf retrieval is async and bib retrieval isn't I
 ;;        should make it uniform
@@ -2775,7 +3015,7 @@ buffer is not gscholar"
 (defun ref-man-try-fetch-pdf-from-url (url &optional retrieve-pdf retrieve-bib
                                            retrieve-title storep)
   "Try and fetch pdf and bib entry from url. Can only retrieve
-from specific URLs. 
+from specific URLs.
 
 `storep' specifies whether to store the retrieved data to org
 file or not.
@@ -2789,8 +3029,13 @@ the option is given. org buffer to insert the data is set by
   ;;       e.g. arxiv.org, nips, cvpr, iccv, aaai, tacl, aclweb, pmlr (jmlr,
   ;;       icml) Should it just return a downloadable link or download the file
   ;;       itself?
-  (setq ref-man--org-gscholar-launch-buffer (current-buffer)) ; needn't be at heading
-  (setq ref-man--org-gscholar-launch-point (point))
+  (if (eq major-mode 'org-mode)
+      (progn
+        (setq ref-man--org-gscholar-launch-buffer (current-buffer))
+        (setq ref-man--org-gscholar-launch-point (point)))
+    (setq ref-man--org-gscholar-launch-buffer nil)
+    (setq ref-man--org-gscholar-launch-point nil)) ; needn't be at heading
+
 
   ;; NOTE: We don't want to fetch the url more than once so we'll keep track of
   ;;       it in this variable
@@ -2860,18 +3105,18 @@ traverses one level depth as of now"
       (while (< (length ref-man--subtree-list) (* 2 ref-man--subtree-num-entries))
         (sleep-for 2)))
    (lambda (result)
-      (with-current-buffer ref-man--current-org-buffer
-        (message "Done")
-        (previous-line)
-        (outline-up-heading 1)
-        (org-show-all)
-        (widen)
-        (loop for x from 0 below (/ (length ref-man--subtree-list) 2)
-              do (let ((point (nth (* 2 x) ref-man--subtree-list))
-                       (pdf-file (plist-get ref-man--subtree-list (nth (* 2 x) ref-man--subtree-list))))
-                   (outline-next-heading)
-                   (ref-man--insert-org-pdf-file-property pdf-file)
-                   ))))))
+     (with-current-buffer ref-man--current-org-buffer
+       (message "Done")
+       (forward-line -1)
+       (outline-up-heading 1)
+       (org-show-all)
+       (widen)
+       (loop for x from 0 below (/ (length ref-man--subtree-list) 2)
+             do (let ((point (nth (* 2 x) ref-man--subtree-list))
+                      (pdf-file (plist-get ref-man--subtree-list (nth (* 2 x) ref-man--subtree-list))))
+                  (outline-next-heading)
+                  (ref-man--insert-org-pdf-file-property pdf-file)
+                  ))))))
 
 (defun ref-man--org-narrow-to-here ()
   (org-narrow-to-subtree)
@@ -2921,8 +3166,8 @@ text and if no URL could be found return nil."
 
 (defun ref-man--check-fix-pdf-file-property ()
   (let* ((props (org-entry-properties))
-         (pdf-file (cond ((assoc "PDF-FILE" props)
-                          (cdr (assoc "PDF-FILE" props)))
+         (pdf-file (cond ((assoc "PDF_FILE" props)
+                          (cdr (assoc "PDF_FILE" props)))
                          ((assoc "FILE_NAME" props)
                           (ref-man--insert-org-pdf-file-property
                            (replace-regexp-in-string "\\[\\|\\]" "" (cdr (assoc "FILE_NAME" props))))
@@ -2941,64 +3186,65 @@ text and if no URL could be found return nil."
 ;; TODO: What if entry exists but the file doesn't?
 (defun ref-man-try-fetch-and-store-pdf-in-org-entry (&optional storep)
   (interactive)
-  (let* ((props (org-entry-properties))
-         (ssidtype-id (ref-man--ss-id))
-         (pdf-file (ref-man--check-fix-pdf-file-property))
-         (url-prop (ref-man--check-fix-url-property))
-         (bib-prop (ref-man-parse-bib-property-key))
-         (headingp (ref-man--check-heading-p))
-         (retrieve-bib nil)
-         (retrieve-pdf nil)
-         (msg-str ""))
-    ;; FIXME: Make sure pdf file exists on disk, else remove prop
-    ;; FIXME: Actually I should get the :link property from text but MEH!
-
-    (let ((meh current-prefix-arg))
-      (cond ((and meh (equal meh '(4)))   ; update only
-             ;; Do something   
-             ))
-      )
-    ;; CHECK: storep signifies to store the filename in PDF-FILE property?
-    (setq msg-str
-          (concat msg-str
-                  (cond ((and pdf-file url-prop)
-                         (concat "[ref-man] PDF already exists."
-                                 (if (string= (replace-regexp-in-string "\\[\\|\\]" "" pdf-file)
-                                              (ref-man--filename-from-url url-prop))
-                                     " And is the same as URL"
-                                   " But is different from URL")))
-                        ((and pdf-file (not url-prop))
-                         "[ref-man] PDF exists, but no URL! What to do?!!")
-                        ((and (not pdf-file) url-prop)
-                         (setq retrieve-pdf t)
-                         "[ref-man] No pdf file in properties. Will fetch PDF from URL")
-                        ((and (not pdf-file) (not url-prop))
-                         "[ref-man] Nothing to be done here for pdf file"))
-                  "\n[ref-man] "
-                  ;; NOTE: Check for bibtex also
-                  (cond ((not bib-prop)
-                         (setq retrieve-bib t)
-                         "No bib in properties. Will fetch from URL")
-                        ((and bib-prop (not (cdr (assoc "CUSTOM_ID" props))))
-                         (org-set-property "CUSTOM_ID" bib-prop)
-                         "Bib in properties, but no CUSTOM_ID. Fixed!")
-                        ((and bib-prop (string= bib-prop (cdr (assoc "CUSTOM_ID" props))))
-                         "Bib in properties, and same as key!")
-                        ((and bib-prop (not (string= bib-prop (cdr (assoc "CUSTOM_ID" props)))))
-                         "Bib in properties, but different from key. Check!!"))
-                  "\n[ref-man]"
-                  (cond ((and headingp url-prop)
-                         (setq retrieve-title nil)
-                         "Heading exists!")
-                        ((and (not headingp) url-prop)
-                         (setq retrieve-title t)
-                         "No heading. Will fetch from URL!")
-                        ((and (not headingp) (not url-prop))
-                         (setq retrieve-title nil)
-                         "No heading and no URL. What to do?!!"))))
-    (message msg-str)
-    (when (or retrieve-pdf retrieve-bib)
-      (ref-man-try-fetch-pdf-from-url url-prop retrieve-pdf retrieve-bib retrieve-title storep))))
+  (if (eq major-mode 'org-mode)
+      (let* ((props (org-entry-properties))
+             (ssidtype-id (ref-man--ss-id))
+             (pdf-file (ref-man--check-fix-pdf-file-property))
+             (url-prop (ref-man--check-fix-url-property))
+             (bib-prop (ref-man-parse-bib-property-key))
+             (headingp (ref-man--check-heading-p))
+             retrieve-bib retrieve-pdf retrieve-title
+             (msg-str ""))
+        ;; TODO: Use helm instead of prefixes
+        ;; FIXME: Make sure pdf file exists on disk, else remove prop
+        ;; FIXME: Maybe check for :link property from text but MEH! NOTE: Not sure about this
+        (let ((meh current-prefix-arg))
+          (cond ((and meh (equal meh '(4)))   ; update only
+                 ;; Do something
+                 ))
+          )
+        ;; CHECK: storep signifies to store the filename in PDF_FILE property?
+        (setq msg-str
+              (concat msg-str
+                      (cond ((and pdf-file url-prop)
+                             (concat "[ref-man] PDF already exists."
+                                     (if (string= (replace-regexp-in-string "\\[\\|\\]" "" pdf-file)
+                                                  (ref-man--filename-from-url url-prop))
+                                         " And is the same as URL"
+                                       " But is different from URL")))
+                            ((and pdf-file (not url-prop))
+                             "[ref-man] PDF exists, but no URL! What to do?!!")
+                            ((and (not pdf-file) url-prop)
+                             (setq retrieve-pdf t)
+                             "[ref-man] No pdf file in properties. Will fetch PDF from URL")
+                            ((and (not pdf-file) (not url-prop))
+                             "[ref-man] Nothing to be done here for pdf file"))
+                      "\n[ref-man] "
+                      ;; NOTE: Check for bibtex also
+                      (cond ((not bib-prop)
+                             (setq retrieve-bib t)
+                             "No bib in properties. Will fetch from URL")
+                            ((and bib-prop (not (cdr (assoc "CUSTOM_ID" props))))
+                             (org-set-property "CUSTOM_ID" bib-prop)
+                             "Bib in properties, but no CUSTOM_ID. Fixed!")
+                            ((and bib-prop (string= bib-prop (cdr (assoc "CUSTOM_ID" props))))
+                             "Bib in properties, and same as key!")
+                            ((and bib-prop (not (string= bib-prop (cdr (assoc "CUSTOM_ID" props)))))
+                             "Bib in properties, but different from key. Check!!"))
+                      "\n[ref-man] "
+                      (cond ((and headingp url-prop)
+                             (setq retrieve-title nil)
+                             "Heading exists!")
+                            ((and (not headingp) url-prop)
+                             (setq retrieve-title t)
+                             "No heading. Will fetch from URL!")
+                            ((and (not headingp) (not url-prop))
+                             (setq retrieve-title nil)
+                             "No heading and no URL. What to do?!!"))))
+        (message msg-str)
+        (when (or retrieve-pdf retrieve-bib)
+          (ref-man-try-fetch-pdf-from-url url-prop retrieve-pdf retrieve-bib retrieve-title storep)))
+    (message "[ref-man] Not in org-mode")))
 
 ;; FIXED: Since the retrieval is now async, if I move to another
 ;;        headline while the file is being downloaded, the file link
@@ -3016,7 +3262,7 @@ text and if no URL could be found return nil."
 ;; from the url if it is a downloadable url or an arxiv url. If the
 ;; link is not a pdf link, call eww-browse-url. If the file exists,
 ;; don't retrieve the pdf file.
-;; In both cases, store the file link in PDF-FILE property in the org
+;; In both cases, store the file link in PDF_FILE property in the org
 ;; property drawer for the headline at point."
 ;;   (let* ((props (text-properties-at (point)))
 ;;          (url (car (mapcar (lambda (x) (cadr x))
@@ -3035,52 +3281,19 @@ text and if no URL could be found return nil."
 ;;                (org-set-property "URL" link-str))))
 ;;       (ref-man-try-fetch-pdf-from-url url storep))))
 
-;; FIXME: DEPRECATED (possibly)
-;;        Because `ref-man-try-fetch-pdf-from-url' does a better job I think
-;;        Should check
-;; TODO: This should always be async with callback
-;;       One issue then will be, how to correspond between threads
-;;       
-;;       That is, A single global variable will be overwritten and
-;;       say, I call it twice, and two url names are pushed on to
-;;       the stack, after the download is finished for the either,
-;;       that one is viewed, but will the ensuing download make it
-;;       switch to the new file?
-;;       - For the download problem, the url can be mapped to the
-;;         unique filename so it's ok
-;;       - But which one to view is a problem
-;;       - If I'm already viewing some pdf, the other one can just
-;;         message, else it opens it up in the adjacent window.
 (defun ref-man-eww-download-pdf (url &optional view)
   "Download the pdf file from a website and optionally view it"
   (interactive)
-  (if (not view)
-      (url-retrieve url #'ref-man--eww-pdf-download-callback (list url))
-    (let* ((buf (url-retrieve-synchronously url t))
-           (buf-string (with-current-buffer buf (buffer-string))))
-      (if buf-string
-          (let ((file (ref-man--filename-from-url url)))
-            ;; (file (concat ref-man-documents-dir (file-name-nondirectory path))))
-            ;; (eww-make-unique-file-name
-            ;;  (eww-decode-url-file-name (file-name-nondirectory path))
-            ;;  ref-man-documents-dir)
-            ;; (setq my/eww-imported-link nil)
-            (if (file-exists-p file)      ; This really will never execute
-                (if (y-or-n-p "File exists. Replace?")
-                    (with-current-buffer buf
-                      (goto-char (point-min))
-                      (re-search-forward "\r?\n\r?\n")
-                      (write-region (point) (point-max) file)))
-              (with-current-buffer buf
-                (goto-char (point-min))
-                (re-search-forward "\r?\n\r?\n")
-                (write-region (point) (point-max) file)))
-            (find-file-other-window file)))
-      (kill-buffer buf))))
+  (let ((file (ref-man--check-pdf-file-exists url t)))
+    (if file
+        (if (y-or-n-p "File exists. Download again?")
+            (url-retrieve url #'ref-man--eww-pdf-download-callback (list url view t)) ; retrieve and view
+          (when view (find-file-other-window file))) ; else view
+      (url-retrieve url #'ref-man--eww-pdf-download-callback (list url view)))))
 
 ;; called from an org buffer
 ;; when to set ref-man--org-gscholar-launch-buffer nil?
-;; 
+;;
 ;; when gscholar is called from any other buffer than previous
 ;; ref-man--org-gscholar-launch-point
 (defun ref-man-org-search-heading-on-gscholar-with-eww ()
@@ -3099,16 +3312,21 @@ eww. Stores the buffer and the position from where it was called."
 
 ;; FIXME: This function may take up a lot of processing. Should implement some
 ;;        cache for it Can be called after downloading pdf from any website
-;;        
+;;
 ;; FIXME: This function is referenced at some places but is commented
 ;;        out. Should check if I haven't implemented alternate versions
 ;;        DEPRECATED (possibly)
+;;
+;; NOTE: Actually I had wanted to import everything automatically from
+;;       eww. Heading if it existed, or create one. Check for files etc. I guess
+;;       I can do it later
 (defun ref-man-maybe-create-or-insert-org-heading-and-property (file)
-  "For a given filename, a heading and/or :PDF-FILE: property is
+  "For a given filename, a heading and/or :PDF_FILE: property is
 inserted in ref-man--org-gscholar-launch-buffer if it exists, or
 temp-org-buffer.
 a) org-gscholar-launch-buffer if it exists
 b) temp-org-buffer otherwise
+
 If the pdf already exists in the download directory
 a) org-gscholar-launch-buffer is checked for the entry"
   ;; - If org-gscholar-launch-buffer exists
@@ -3119,21 +3337,15 @@ a) org-gscholar-launch-buffer is checked for the entry"
   ;;       generate org-heading-after-checking if it exists
   ;;     - Else generate org-heading-from-title
   ;; - Else Repeat with temp-org-buffer instead
-  (let* ((filename (file-name-nondirectory file))
-         (buf (if ref-man--org-gscholar-launch-buffer ref-man--org-gscholar-launch-buffer
+  (let* ((buf (if ref-man--org-gscholar-launch-buffer ref-man--org-gscholar-launch-buffer
                 (get-buffer-create ref-man-org-links-file-path)))
-         (existing-files (map 'file-name-nondirectory
-                              (ref-man--get-links-of-type-from-org-buffer buf "file")))
-         (file-match (if (and existing-files (car (seq-drop-while
-                                                   (lambda (x) (not (string-match-p filename x)))
-                                                   existing-files))))))
+         (file (ref-man--check-pdf-file-exists file)))
     ;; Where is the corresponding headline?
     ;; Check if eww-import-link exists instead
-    (cond ((buf file-match)
+    (cond ((and buf file)
            (with-current-buffer buf
-             (if ref-man--eww-import-link
-                 org-set-property "URL" ref-man--eww-import-link)
-             ;; (ref-man--insert-org-pdf-file-property file)
+             (when ref-man--eww-import-link
+               org-set-property "URL" ref-man--eww-import-link)
              (with-current-buffer ref-man--org-gscholar-launch-buffer
                (save-excursion
                  (goto-char ref-man--org-gscholar-launch-point)
@@ -3143,15 +3355,16 @@ a) org-gscholar-launch-buffer is checked for the entry"
   (let ((props (org-entry-properties)))
     (and (org-at-heading-p) (assoc "BTYPE" props) (assoc "CUSTOM_ID" props) t)))
 
-;; NOTE: I wanted to do recursion also with this
+;; NOTE: I wanted to do recursion also with this. Maybe use helper
 (defun ref-man-parse-subtree-to-buffer-as-bibtex (&optional bib-buf)
   "Inserts contents of an org-subtree as bibtex entries to a bib file"
-  (interactive (list (unless (boundp 'bib-buf))
-                     (completing-read "Bib buffer: "
-                                      (mapcar (lambda (x) (format "%s" x)) (buffer-list)))))
+  (interactive)
+  (unless (boundp 'bib-buf)
+    (completing-read "Bib buffer: "
+                     (mapcar (lambda (x) (format "%s" x)) (buffer-list))))
   (if (org-at-heading-p)
       (when heading-has-children
-          
+
     ;; Import heading to bib buffer
     ;; Descend into subtree
     ;; On all children do recursive call to self
@@ -3170,3 +3383,5 @@ a) org-gscholar-launch-buffer is checked for the entry"
 ;;;;;;;;;;;;;;;;;;;;;;
 
 (provide 'ref-man-core)
+
+;;; ref-man-core.el ends here

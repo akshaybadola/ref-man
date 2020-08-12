@@ -25,6 +25,7 @@
 ;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
+(require 'cl)
 (require 'websocket)
 
 (defcustom ref-man-chrome-user-data-dir
@@ -40,7 +41,7 @@
   :group 'ref-man)
 
 (defcustom ref-man-chrome-history-limit
-  50 
+  50
   "How many pages to save in memory. Basically the page source is saved."
   :type 'interger
   :group 'ref-man)
@@ -88,13 +89,18 @@
                                                 :size ref-man-chrome-history-limit)))
 
 ;; NOTE: Used only on scholar.google.com
-;; 
+;;
 ;; FIXME: Should be fixed for browsing other URLs, though in that case I can
 ;;        just go with *eww*
 (defconst ref-man-chrome-root-url
   "https://scholar.google.com/"
   "Google Scholar URL from which relative URLs will be computed")
 
+;; FIXME: The key bindings for ref-man-chrome and ref-man-eww are inconsistent
+;;
+;; TODO: Actually ref-man-chrome should be renamed ref-man-eww and we should go
+;;       to gscholar only if google becomes annoying. It should happen
+;;       automatically with ref-man-chrome being a minor mode to ref-man-eww
 (defvar ref-man-chrome-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map "g" 'ref-man-chrome-reload)
@@ -113,7 +119,7 @@
     ;; (define-key map "u" 'eww-up-url)
     ;; (define-key map "t" 'eww-top-url)
     ;; (define-key map "&" 'eww-browse-with-external-browser)
-    (define-key map "d" 'ref-man-chrome-download)
+    (define-key map "d" 'ref-man-chrome-download-pdf)
     (define-key map "w" 'ref-man-chrome-copy-url)
     ;; (define-key map "C" 'url-cookie-list)
     (define-key map "u" 'ref-man-chrome-view-source)
@@ -128,7 +134,7 @@
     (define-key map "]" 'ref-man-chrome-gscholar-next)
     (define-key map "[" 'ref-man-chrome-gscholar-previous)
     ;; TODO: Bookmarks should be persistent
-    (define-key map "b" 'ref-man-chrome-add-bookmark)    
+    (define-key map "b" 'ref-man-chrome-add-bookmark)
     ;; TODO: Has to be a separate bookmarks mode
     (define-key map "B" 'ref-man-chrome-list-bookmarks)
     (define-key map "i" 'ref-man-chrome-insert-to-org)
@@ -180,7 +186,7 @@ WTF, right?
 ;; START ref-man-chrome commands
 
 ;; (defun ref-man-chrome--get-all-links)
-(defun ref-man-chrome-extract-bibtex-from-scholar (&optional org-buf)
+(defun ref-man-chrome-extract-bibtex-from-scholar (&optional org-buf bib-buf)
   "Like `ref-man-eww-get-bibtex-from-scholar' but maybe I thought
 earlier that it would extract more data or from more websites, as
 of now will only extract bibtex and insert to org."
@@ -196,22 +202,60 @@ of now will only extract bibtex and insert to org."
                     (erase-buffer)
                     (insert src)
                     (libxml-parse-html-region (point-min) (point-max))))
-             (bib-buf (get-buffer-create "*rfc-bib-buf*")))
+             (source-buf (get-buffer-create "*rfc-bib-buf*")))
         (when (ref-man--check-bibtex-string
-               (with-current-buffer bib-buf
+               (with-current-buffer source-buf
                  (erase-buffer)
                  (shr-insert-document dom)
                  (buffer-string)))
-          (if org-buf
-              (ref-man--parse-bibtex bib-buf org-buf)
-            (ref-man--parse-bibtex bib-buf nil nil t)))))))
+          (ref-man--parse-bibtex source-buf org-buf bib-buf nil)
+          ;; (cond (bib-buf )
+          ;;       (org-buf (ref-man--parse-bibtex source-buf org-buf))
+          ;;       (t (ref-man--parse-bibtex source-buf nil nil t)))
+          )))))
 
-(defun ref-man-chrome-extract-bibtex (&optional org-buf)
+(defun ref-man-chrome-extract-bibtex/old (&optional org-buf)
   (interactive (list (when (and current-prefix-arg (not (boundp 'org-buf)))
-                       (completing-read "Org buffer: "
-                                        (mapcar (lambda (x) (format "%s" x)) (buffer-list))))))
+                       (ido-completing-read "Org buffer: "
+                                            (mapcar
+                                             (lambda (x) (format "%s" x))
+                                             (remove-if-not
+                                              (lambda (x) (with-current-buffer x
+                                                            (eq major-mode 'org-mode)))
+                                              (buffer-list)))))))
   (when (string-match-p "scholar\\.google\\.com" ref-man-chrome--page-url)
     (ref-man-chrome-extract-bibtex-from-scholar org-buf)))
+
+;; TODO: This should extract bibtex based on scholar/arxiv etc, currently only
+;;       does from gscholar, but actually, I only need the chrome function to
+;;       work on gscholar, as the rest can be handled with eww directly
+;; TODO: Maybe extract to a file
+(defun ref-man-chrome-extract-bibtex ()
+  (interactive)
+  ;; (interactive (list ))
+  (if (eq major-mode 'ref-man-chrome-mode)
+      (let ((args (pcase
+                      (pcase current-prefix-arg
+                        ('(4) (list "Org" 'org-mode))
+                        ('(16) (list "Bib" 'bibtex-mode)))
+                    (`(,str ,mode) (list mode (ido-completing-read
+                                               (concat str " buffer: ")
+                                               (mapcar
+                                                (lambda (x) (format "%s" x))
+                                                (remove-if-not
+                                                 (lambda (x) (with-current-buffer x
+                                                               (eq major-mode mode)))
+                                                 (buffer-list))))))
+                    (_ '(nil nil)))))
+        (pcase args
+          (`(,mode ,buf)
+           (cond ((eq mode 'org-mode)
+                  (ref-man-chrome-extract-bibtex-from-scholar buf))
+                 ((eq mode 'bibtex-mode)
+                  (ref-man-chrome-extract-bibtex-from-scholar nil buf))
+                 (t (ref-man-chrome-extract-bibtex-from-scholar)))))
+        )
+    (message "[ref-man-chrome] Not ref-man-chrome mode")))
 
 (defun ref-man-chrome-gscholar-next ()
   (interactive)
@@ -243,8 +287,10 @@ of now will only extract bibtex and insert to org."
   ;;       insert bib also from gscholar buffer but I think it would be better
   ;;       if that were async
   (let (;; CHECK: What was I trying to do below?
+        ;; FIXME: unused
         ;; (parse-bib (string-prefix-p))
-        (url ref-man-chrome--page-url))
+        ;; (url ref-man-chrome--page-url)
+        )
     (ref-man-import-gscholar-link-to-org-buffer
      (ref-man-eww--gscholar-get-previous-non-google-link
       (current-buffer)))))
@@ -258,6 +304,7 @@ of now will only extract bibtex and insert to org."
       (setq-local buffer-read-only t))
     (pop-to-buffer (get-buffer "*rfc-source*"))))
 
+;; CHECK: Maybe should just use eww for non gscholar pages. It might be simpler
 (defun ref-man-chrome-browse-url (url)
   "Browse a url with ref-man-chrome. Special functions for google scholar."
   (interactive (list (shr-url-at-point current-prefix-arg)))
@@ -308,11 +355,22 @@ of now will only extract bibtex and insert to org."
   (kill-new url)
   (message "[ref-man-chrome] Copied %s" url))
 
-;; TODO: These are placeholders
-(defun ref-man-chrome-download ()
+(defun ref-man-chrome-download-pdf (&optional view)
   (interactive)
-  (message "[ref-man-chrome] Does nothing for now"))
+  (let (
+        ;; FIXME: unused
+        ;; (url (get-text-property (point) 'shr-url))
+        )
+    (if (eq major-mode 'ref-man-chrome-mode)
+        (ref-man-eww-download-pdf
+         (ref-man-eww--gscholar-get-previous-pdf-link (current-buffer)) view)
+      (message "[ref-man] Nothing to download here"))))
 
+(defun ref-man-chrome-view/download-pdf ()
+  (interactive)
+  (ref-man-chrome-download-pdf t))
+
+;; TODO: These are placeholders
 (defun ref-man-chrome-list-histories ()
   (interactive)
   (message "[ref-man-chrome] Does nothing for now"))
@@ -329,12 +387,8 @@ of now will only extract bibtex and insert to org."
   (interactive)
   (message "[ref-man-chrome] Does nothing for now"))
 
-(defun ref-man-chrome-view/download-pdf ()
-  (interactive)
-  (message "[ref-man-chrome] Does nothing for now"))
-
 ;; TODO: Check why code to put text property is not working.
-;; CHECK: Why is this interactive?
+;; NOTE: I think it was interactive for debugging purposes
 (defun ref-man-chrome-setup-buffer (&optional dont-save)
   (interactive)
   (unless dont-save
@@ -345,7 +399,9 @@ of now will only extract bibtex and insert to org."
     (save-excursion
       (let ((current nil)
             (start nil)
-            (end nil))
+            ;; FIXME: unused
+            ;; (end nil)
+            )
         (goto-char (point-min))
         (while (not (eobp))
           (let ((prop (get-text-property (point) 'shr-url)))
@@ -376,7 +432,7 @@ of now will only extract bibtex and insert to org."
   "Clear all history except the current url"
   (interactive)
   (loop for x in ref-man-chrome-history
-        do (unless (string= ref-man-chrome--page-url)
+        do (unless (string= ref-man-chrome--page-url x)
              (remhash x ref-man-chrome--history-table)))
   (setq ref-man-chrome-history `(,ref-man-chrome--page-url))
   (setq ref-man-chrome-history-position 0))
@@ -392,7 +448,7 @@ of now will only extract bibtex and insert to org."
 			  ": ")))
      (list (read-string prompt nil nil uris))))
   (unless ref-man-chrome--initialized-p
-    (ref-man-chrome-init))  
+    (ref-man-chrome-init))
   (if (eq major-mode 'org-mode)
       (progn (setq ref-man--org-gscholar-launch-buffer (current-buffer))
              (setq ref-man--org-gscholar-launch-point (point)))
@@ -412,7 +468,8 @@ of now will only extract bibtex and insert to org."
 		 (and (= (length (split-string url)) 1)
 		      (or (and (not (string-match-p "\\`[\"'].*[\"']\\'" url))
 			       (> (length (split-string url "[.:]")) 1))
-			  (string-match eww-local-regex url))))
+                          ;; NOTE: `localhost` was `eww-local-regex'
+			  (string-match "localhost" url))))
              (progn
                (unless (string-match-p "\\`[a-zA-Z][-a-zA-Z0-9+.]*://" url)
                  (setq url (concat "http://" url)))
@@ -456,7 +513,7 @@ from 2010 onwards will be displayed."
 
 ;; FIXME: Why do I have to call it twice for it to load correctly?
 ;;        Either a timing issue or a callback issue.
-;;        
+;;
 ;; CHECK: Do I still call it twice?
 (defun ref-man-chrome-search-heading-on-gscholar ()
   "Searches for the current heading in google scholar in
@@ -491,7 +548,7 @@ eww. Stores the buffer and the position from where it was called."
 (defun ref-man-chrome--which-chromium ()
   (setq ref-man-chrome-command
         (replace-regexp-in-string
-         "\n" "" 
+         "\n" ""
          (cond ((not (string-equal "" (shell-command-to-string "which chromium-browser")))
                 (shell-command-to-string "which chromium-browser"))
                ((not (string-equal "" (shell-command-to-string "which chromium")))
@@ -650,11 +707,12 @@ process. Uses `find-open-port'"
                                    :params params)))))
 
 (defun ref-man-chrome--on-open (socket)
-  (message "[ref-man-chrome]: Opened new websocket"))
+  (message (format "[ref-man-chrome]: Opened new websocket %s" socket)))
 
 (defun ref-man-chrome--on-close (socket)
-  (message "[ref-man-chrome]: closed websocket"))
   ;; (message "[ref-man-chrome]: Closed connection to " (format "%s") tab))
+  (message (format "[ref-man-chrome]: closed websocket %s" socket)))
+
 
 (defun ref-man-chrome--on-message-added (data)
   (when data
@@ -688,12 +746,12 @@ process. Uses `find-open-port'"
         (if (and id result)
             (progn
               (message (format "[ref-man-chrome] BOTH id result %s %s" id result))
-              (ref-man-chrome--dispatch-callback (plist-get id)
-                                                 (plist-get result)))
+              (ref-man-chrome--dispatch-callback (plist-get id params)
+                                                 (plist-get result params)))
           (message "[ref-man-chrome] NEITHER id result")))
     (when (and id result)
-      (ref-man-chrome--dispatch-callback (plist-get id)
-                                         (plist-get result)))))
+      (ref-man-chrome--dispatch-callback (plist-get id params)
+                                         (plist-get result params)))))
 
 (defun ref-man-chrome--failed-to-parse (params)
   (if params
@@ -726,7 +784,7 @@ process. Uses `find-open-port'"
 
 (defun ref-man-chrome--open-socket (url)
   (if url
-      (message "[ref-man-chrome]: Opening socket for" (format "%s" url))
+      (message (format "[ref-man-chrome]: Opening socket for %s" url))
       (message "[ref-man-chrome]: Opening socket for no url"))
   (websocket-open url
                   :on-open #'ref-man-chrome--on-open
@@ -761,7 +819,7 @@ process. Uses `find-open-port'"
 (defun ref-man-chrome-eval (eval-str id &optional callback)
   "Evaluate expression for either tab 0 or 1"
   (ref-man-chrome-call-rpc
-   "Runtime.evaluate"                   ; method 
+   "Runtime.evaluate"                   ; method
    (plist-get ref-man-chrome--sockets id) ; socket
    (list :expression eval-str             ; javascript code usually
          :returnByValue t)              ; params
@@ -780,7 +838,7 @@ process. Uses `find-open-port'"
     (ref-man-chrome-start-process (not not-headless))
     (setq ref-man--test-var nil)
     ;; (setq my/test-loop-iter 0)
-    (while (not ref-man--test-var)        
+    (while (not ref-man--test-var)
       ;; (setq my/test-loop-iter (+ 1 my/test-loop-iter))
       (condition-case ref-man--test-var
           (progn (ref-man-chrome-connect 0)
@@ -952,7 +1010,7 @@ html but only return the source; it also implies `no-pop'"
     (goto-char (point-min))))
 
 ;; CHECK: Another way could be to click the link on the chromium page
-;; 
+;;
 ;; NOTE: There was an issue with the whole process in that fetch page call was
 ;;       coming too quickly. (sleep-for 1) alleviates that to some extent but
 ;;       perhaps the wait time can be reduced.

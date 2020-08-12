@@ -133,7 +133,11 @@ def main(args):
                 id_type = request.args["id_type"]
             else:
                 return json.dumps("NO ID_TYPE GIVEN")
-            return semantic_scholar_paper_details(id_type, id, args.data_dir, ss_cache)
+            if "force" in request.args:
+                force = True
+            else:
+                force = False
+            return semantic_scholar_paper_details(id_type, id, args.data_dir, ss_cache, force)
         else:
             return json.dumps("METHOD NOT IMPLEMENTED")
 

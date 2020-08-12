@@ -43,20 +43,24 @@ def save_data(data, data_dir, ss_cache, acl_id):
     print("Updated metadata")
 
 
-def semantic_scholar_paper_details(id_type, id, data_dir, ss_cache):
+def semantic_scholar_paper_details(id_type, id, data_dir, ss_cache, force):
     urls = {"ss": f"https://api.semanticscholar.org/v1/paper/{id}",
             "doi": f"https://api.semanticscholar.org/v1/paper/{id}",
+            "mag": f"https://api.semanticscholar.org/v1/paper/MAG:{id}",
             "arxiv": f"https://api.semanticscholar.org/v1/paper/arXiv:{id}",
             "acl": f"https://api.semanticscholar.org/v1/paper/ACL:{id}",
+            "pubmed": "https://api.semanticscholar.org/v1/paper/PMID:{id}",
             "corpus": f"https://api.semanticscholar.org/v1/paper/CorpusID:{id}"}
     if id_type not in urls:
         return json.dumps("INVALID ID TYPE")
     else:
-        if id_type == "ss":
+        if id_type == "ss" and not force:
+            print(f"Fetching from disk for {id_type}, {id}")
             with open(os.path.join(data_dir, id)) as f:
                 return json.load(f)
-        elif id_type in {"doi", "acl", "arxiv", "corpus"} and\
-                id in ss_cache[id_type] and ss_cache[id_type][id]:
+        elif id_type in {"doi", "acl", "arxiv", "corpus"}\
+             and id in ss_cache[id_type] and ss_cache[id_type][id]\
+             and not force:
             print(f"Fetching from cache for {id_type}, {id}")
             with open(os.path.join(data_dir, ss_cache[id_type][id])) as f:
                 return json.load(f)
@@ -64,18 +68,28 @@ def semantic_scholar_paper_details(id_type, id, data_dir, ss_cache):
             acl_id = ""
             if id_type == "acl":
                 acl_id = id
-            print(f"Data not in cache for {id_type}, {id}. Fetching")
+            if not force:
+                print(f"Data not in cache for {id_type}, {id}. Fetching")
+            else:
+                print(f"Forced Fetching for {id_type}, {id}")
             url = urls[id_type] + "?include_unknown_references=true"
             response = requests.get(url)
-            save_data(json.loads(response.content), data_dir, ss_cache, acl_id)
-            return response.content  # already JSON
+            if response.status_code == 200:
+                save_data(json.loads(response.content), data_dir, ss_cache, acl_id)
+                return response.content  # already JSON
+            else:
+                print(f"Server error. Could not fetch")
+                return json.dumps(None)
 
 
 def semantic_scholar_search(query, title_only=False, authors=[], cs_only=True,
                             pub_types=[], has_github=False, year_filter=None):
-    """
+    """Perform a search on semantic scholar and return the results in JSON format
+    By default the search is performed in Computer Science subjects
+
     pub_types can be ["Conference", "JournalArticle"]
     year_filter has to be a :class:`dict` of type {"max": 1995, "min": 1990}
+
     """
     if year_filter and not ("min" in year_filter and "max" in year_filter and
                             year_filter["max"] > year_filter["min"]):

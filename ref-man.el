@@ -1,4 +1,4 @@
-;; ref-man.el --- Manage bibliographic references and associated documents in  emacs. Integrates with org-mode to fetch, retrieve and manage the documents and metadata. ;;; -*- lexical-binding: t; -*-
+;;; ref-man.el --- Manage bibliographic references and associated documents in  emacs. Integrates with org-mode to fetch, retrieve and manage the documents and metadata. ;;; -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2018,2019,2020
 ;; Akshay Badola
@@ -6,7 +6,9 @@
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Time-stamp:	<Wednesday 24 June 2020 09:16:15 AM IST>
-;; Keywords:	pdfs, references, bibtex, org, eww
+;; Keywords:	pdfs, references, bibtex, org-mode, eww
+;; Version:     0.1
+;; Package-Requires: ((async "1.9.4") (org "9.1.9") (biblio-core "0.2.1") (gscholar-bibtex "0.3.1") (websocket "1.12") (dash "2.17.0") (dash-functional "1.2.0") (bind-key "2.4"))
 
 ;; This file is *NOT* part of GNU Emacs.
 
@@ -24,21 +26,32 @@
 ;; GNU Emacs; see the file COPYING.  If not, write to the Free Software
 ;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+;;; Commentary:
+
+;; TODO
+
+;;; Code:
 
 (defcustom ref-man-science-parse-server-port 8080
-  "Server port on which to communicate with science parse server"
+  "Server port on which to communicate with science parse server."
   :type 'integer
   :group 'ref-man)
 
 (defcustom ref-man-science-parse-jar-file nil
-  "Jar file which will launch the Science Parse Server. This
-should be compiled from source.
+  "Jar file which will launch the Science Parse Server.
+This should be compiled from source.
 See URL `https://github.com/allenai/science-parse' for details"
   :type 'file
   :group 'ref-man)
 
 (defconst ref-man-home-dir (file-name-directory load-file-name)
-  "Home or install directory for ref-man")
+  "Home or install directory for ref-man.")
+
+(defconst ref-man-version "0.1"
+  "`ref-man' version number.")
+
+;;; Commentary:
+;;
 
 (require 'ref-man-core)
 (require 'ref-man-chrome)
@@ -52,7 +65,7 @@ See URL `https://github.com/allenai/science-parse' for details"
   ;; TODO: Check if already running
   (if has-java
     (if (and ref-man-science-parse-jar-file ref-man-science-parse-server-port)
-        (if (y-or-n-p "[ref-man] Start Science Parse Server?")
+        (if (y-or-n-p "[ref-man] Start Science Parse Server? ")
             (progn
               (unless (string-match-p "science-parse" (shell-command-to-string  "ps -ef | grep java"))
                 (start-process "science-parse" "*science-parse*"
@@ -72,3 +85,7 @@ See URL `https://github.com/allenai/science-parse' for details"
 
 (ref-man-try-start-science-parse-server)
 (provide 'ref-man)
+
+(provide 'ref-man)
+
+;;; ref-man.el ends here
