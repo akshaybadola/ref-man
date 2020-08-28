@@ -4,6 +4,11 @@
 
 (package-file "ref-man.el")
 
+;; NOTE: How to depend on a git repo
+;; (depends-on "dropboxer"
+;;             :git "https://gitlab.com/NobbZ/emacs-dropboxer.git"
+;;             :branch "master")
+
 (development
  (depends-on "f")
  (depends-on "org-plus-contrib")

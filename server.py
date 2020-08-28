@@ -150,7 +150,10 @@ def main(args):
                 return json.dumps("NO QUERY GIVEN or EMPTY QUERY")
             return semantic_scholar_search(query)
         else:
-            return json.dumps("METHOD NOT IMPLEMENTED")
+            args = dict((k, False if v.lower() == "false" else v)
+                        for k, v in request.json.items())
+            query = args.pop("q")
+            return semantic_scholar_search(query, **args)
 
     @app.route("/version", methods=["GET"])
     def version():

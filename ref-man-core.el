@@ -24,7 +24,17 @@
 ;; GNU Emacs; see the file COPYING.  If not, write to the Free Software
 ;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
-
+;;; Commentary:
+;;  
+;; Core components include `eww', `org', `bibtex', `science-parse', `python'
+;; python interface is used as an interface to arxiv, dblp and semanticscholar.
+;; There are some file and pdf functions also and functions specific for
+;; gscholar also.
+;;
+;; Perhaps I'll add functions for markdown also (to convert to manuscript)
+;; though `org' export can also be used, though I'll have to reconfigure my
+;; settings for that and I'm not sure if it'll be as capable as pandoc.
+;;
 ;; TODO: I should separate these according to:
 ;;       - ref-man-bibtex
 ;;       - ref-man-org
@@ -32,31 +42,35 @@
 ;;         - ref-man-chrome can be a separate subpackage of eww
 ;;       - ref-man-util
 ;;       - ref-man-pdf
+;;       - ref-man-dblp
+;;       - ref-man-ss (for semanticscholar)
+;;       - ref-man-gscholar (for gscholar utils)
+;;       - ref-man-arxiv
 ;;       python utils are in any case separate
-
-
-;;; Commentary:
 ;;
-
-(require 'async)
-(require 'thingatpt)
-(require 'biblio-core)
-;; Primary function I use from 'bibtex is 'bibtex-parse-entry
-(require 'bibtex)
-(require 'cl)
-(require 'eww)
-(require 'gscholar-bibtex)
-(require 'json)
-(require 'org)
-(require 'seq)
-(require 'shr)
-(require 'url)
-(require 'xml)
-(require 'subr-x)
-(require 'dash)
-(require 'dash-functional)
+;; TODO: Also the code is very messy and very little documentation. I have to
+;;       add them
 
 ;;; Code:
+
+(require 'async)
+(require 'biblio-core)
+(require 'bibtex)   ; Primary function I use from 'bibtex is 'bibtex-parse-entry
+(require 'bind-key)
+(require 'cl-lib)
+(require 'dash)
+(require 'dash-functional)
+(require 'eww)
+(require 'gscholar-bibtex)              ; NOTE: Maybe remove this eventually
+(require 'json)
+(require 'org)
+(require 'org-element)
+(require 'seq)
+(require 'shr)
+(require 'subr-x)
+(require 'thingatpt)
+(require 'url)
+(require 'xml)
 
 (defgroup ref-man nil
   "Bibliography Manager"
@@ -113,6 +127,10 @@
   :type 'integer
   :group 'ref-man)
 
+(defvar ref-man-key-list
+  '(authors title venue volume number pages year doi ee)
+  "Only these keys from bibtex are retained (I think).")
+
 ;; TODO: If `ref-man-use-proxy' is t then all external requests for ref-man
 ;;       should be routed through the proxy and not just the python requests
 (defcustom ref-man-use-proxy nil
@@ -138,11 +156,25 @@
 ;;        used causing confusion
 ;; (setq ref-man--org-gscholar-launch-buffer nil)
 ;; (setq ref-man--org-gscholar-launch-point nil)
-(setq ref-man--org-gscholar-launch-buffer nil)
-(setq ref-man--org-gscholar-launch-point nil)
-(setq ref-man--eww-import-link nil)
-(setq ref-man--subtree-list nil)
-(setq ref-man--current-org-buffer nil)
+
+;; NOTE: External variables
+;; from `ref-man'
+(defvar ref-man-home-dir)
+(defvar ref-man-science-parse-server-port)
+
+;; (declare-function 'string-match-p "subr")
+
+;; NOTE: Internal variables
+(defvar ref-man--org-gscholar-launch-buffer nil)
+(defvar ref-man--org-gscholar-launch-point nil)
+(defvar ref-man--eww-import-link nil)
+(defvar ref-man--subtree-list nil)
+(defvar ref-man--current-org-buffer nil)
+(defvar ref-man--science-parse-data nil)
+(defvar ref-man--json-data nil)
+(defvar ref-man--document-title nil)
+(defvar ref-man--current-pdf-file-name nil)
+(defvar ref-man--biblio-callback-buf nil)
 
 (defvar shr-map
   (let ((map (make-sparse-keymap)))
@@ -160,6 +192,8 @@
     (define-key map "o" 'shr-save-contents)
     (define-key map "\r" 'shr-browse-url)
     map))
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ref-man constants  ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;
@@ -168,16 +202,17 @@
 ;; Constants. perhaps can name them better
 ;; Also should be shifted to defcustom
 ;;
-(setq ref-man-venue-priorities (let* ((confs '("icml" "nips" "iccv" "cvpr" "eccv"))
-       (confs-seq (number-sequence (length confs) 1 -1)))
-       (mapcar* 'cons confs confs-seq)))
-(setq ref-man-key-list '(authors title venue volume number pages year doi ee))
-(setq ref-man-stop-words '("i" "it" "its" "what" "which" "who" "that" "these" "is" "are" "was" "were" "have" "has" "had" "having" "do" "does" "did" "a" "an" "the" "and" "because" "as" "of" "at" "by" "for" "with" "about" "against" "between" "into" "through" "during" "before" "after" "above" "below" "to" "from" "up" "down" "in" "out" "on" "off" "over" "under" "again" "further" "then" "once" "here" "there" "when" "where" "why" "how" "all" "any" "both" "each" "few" "more" "most" "other" "some" "such" "no" "nor" "not" "only" "own" "same" "so" "than" "too" "very" "s" "t" "can" "will" "just" "don" "should" "now"))
+(defvar ref-man-venue-priorities
+  (let* ((confs '("icml" "nips" "iccv" "cvpr" "ijcai" "aaai" "eccv"))
+         (confs-seq (number-sequence (length confs) 1 -1)))
+    (cl-mapcar 'cons confs confs-seq))
+  "Venue priority list from high to low")
+(defconst ref-man-stop-words '("a" "about" "above" "after" "again" "against" "all" "an" "and" "any" "are" "as" "at" "because" "before" "below" "between" "both" "by" "can" "did" "do" "does" "don" "down" "during" "each" "few" "for" "from" "further" "had" "has" "have" "having" "here" "how" "i" "in" "into" "is" "it" "its" "just" "more" "most" "no" "nor" "not" "now" "of" "off" "on" "once" "only" "other" "out" "over" "own" "same" "should" "so" "some" "such" "t" "than" "that" "the" "then" "there" "these" "through" "to" "too" "under" "up" "very" "was" "were" "what" "when" "where" "which" "who" "why" "will" "with"))
 
-(setq ref-man--num-to-months
-      '((1 . "Jan") (2 . "Feb") (3 . "Mar") (4 . "Apr")
-        (5 . "May") (6 . "Jun") (7 . "Jul") (8 . "Aug")
-        (9 . "Sep") (10 . "Oct") (11. "Nov") (12 . "Dec")))
+(defconst ref-man--num-to-months
+  '((1 . "Jan") (2 . "Feb") (3 . "Mar") (4 . "Apr")
+    (5 . "May") (6 . "Jun") (7 . "Jul") (8 . "Aug")
+    (9 . "Sep") (10 . "Oct") (11. "Nov") (12 . "Dec")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; end ref-man constants  ;;
@@ -217,7 +252,7 @@ They need not exist."
 ;; TODO: Document this
 (defun max-ind (seq)
   (let* ((max-ind--max-val 0) (max-ind--temp-ind -1) (max-ind--max 0))
-    (loop for x in seq
+    (cl-loop for x in seq
           do
           (progn
             (setq max-ind--temp-ind (+ 1 max-ind--temp-ind))
@@ -228,7 +263,7 @@ They need not exist."
 
 (defun find-open-port (init)
   "Finds the next open port from INIT in case it's being used by another process."
-  (loop for port from init to 65531
+  (cl-loop for port from init to 65531
         when (string-match-p
               "refused" (shell-command-to-string
                          (format "nc -z -v localhost %s" port)))
@@ -271,6 +306,19 @@ BEG and END are region markers.  See `sort-words'."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START ref-man string utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defun ref-man-remove-bookmarks-from-pandoc-tex ()
+  "Remove bookmarks from tex generated by pandoc.
+The strings are of the form \"{[}\\\\protect\\\\hyperlink{ref-author2020title}{20}{]}\".
+They are replaced with [num], e.g., previous one is replaced with [20]."
+  (interactive)
+  (save-excursion
+    (save-restriction
+      (when (region-active-p)
+        (narrow-to-region (region-beginning) (region-end))
+        (goto-char (point-min)))
+      (while (re-search-forward "{\\[}.*?{\\([0-9]+\\)}{\\]}" nil t nil)
+        (replace-match "[\\1]")))))
+
 (defun ref-man--trim-whitespace (str &optional remove-quotes)
   "Trims the string, removes newlines and multiple spaces with a single one."
   (let ((str (replace-regexp-in-string "[ \t]+" " "
@@ -390,14 +438,16 @@ implementation."
 ;; START Bib entry utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun ref-man--preferred-venue (results)
-  "Return the preferred venue according to `ref-man-venue-priorities' for RESULTS."
+  "Return the preferred venue according to `ref-man-venue-priorities' for RESULTS.
+If multiple venues are found for a result, pick the one where
+venue has higher priority."
   (if (= 1 (length results))
       0
     (let* ((venues (mapcar (lambda (x)
                              (gscholar-bibtex--xml-get-child x 'venue))
                            results))
            (prefs (mapcar (lambda (x)
-                            (cdass (car (last x)) ref-man-venue-priorities))
+                            (cdass (downcase (car (last x))) ref-man-venue-priorities))
                           venues)))
       prefs)))
 
@@ -425,28 +475,37 @@ Includes the case where RESULTS is a vector."
       (if (> (length author) 2) (butlast author) (nconc (butlast author) '("")))
     author))
 
+
+(defun ref-man--dblp-clean-helper (result)
+  "Subroutine for `ref-man-dblp-clean'."
+  (remove '("nil")
+          (mapcar
+           (lambda (x)
+             (if (eq x 'authors)
+                 (list
+                  (symbol-name 'authors)
+                  (string-join (mapcar (lambda (x) (car (last x)))
+                                       (-drop 2 (gscholar-bibtex--xml-get-child result x))) ", "))
+               (cons (symbol-name (car (gscholar-bibtex--xml-get-child result x)))
+                     (last (gscholar-bibtex--xml-get-child result x)))))
+           ref-man-key-list)))
+
 ;;
 ;; clean the xml entry and keep relevant itmes. uses gscholar-bibtex
 ;;
-(defun ref-man--dblp-clean (result)
+(defun ref-man-dblp-clean (results &optional all)
   "Clean the xml entry and keep relevant itmes according to `ref-man-key-list'.
+RESULTS are results obtained from parsing xml from dblp.
+Optional ALL specifies to process all results. By default only
+the top result is processed. 
 
-Uses `gscholar-bibtex'.  Returns an alist for only the top RESULT
-from `ref-man-venue-priorities'"
-  (let ((result (nth (max-ind (ref-man--preferred-venue result)) result)))
-    ;; TODO: handle this later
-    (if result
-        (remove '("nil")
-                (mapcar
-                 (lambda (x)
-                   (if (eq x 'authors)
-                       (list
-                        (symbol-name 'authors)
-                        (string-join (mapcar (lambda (x) (car (last x)))
-                                             (-drop 2 (gscholar-bibtex--xml-get-child result x))) ", "))
-                     (cons (symbol-name (first (gscholar-bibtex--xml-get-child result x)))
-                           (last (gscholar-bibtex--xml-get-child result x)))))
-                 ref-man-key-list)))))
+Uses `gscholar-bibtex'. If ALL is NIL returns only the top
+processed result according to `ref-man-venue-priorities'"
+  (if (and results all)
+      (mapcar #'ref-man--dblp-clean-helper results)
+    (let ((result (nth (max-ind (ref-man--preferred-venue results)) results)))
+      (when result
+        (ref-man--dblp-clean-helper result)))))
 
 (defun ref-man--dblp-clean-vector (result)
   "Clean the xml entry and keep relevant itmes according to `ref-man-key-list'.
@@ -494,11 +553,11 @@ Entry STR-PLIST is a plist."
          (first-author (ref-man--validate-author (split-string first-author-str " " t)))
          (last-name (car (last first-author)))
          (year-pub (ref-man--trim-whitespace (plist-get str-plist :year)))
-         (title (remove-if 'ref-man--stop-word-p
+         (title (-remove 'ref-man--stop-word-p
                            (mapcar #'ref-man--remove-punc
                                    (split-string (downcase (ref-man--trim-whitespace
                                                             (plist-get str-plist :title))) " "))))
-         (title-first (car (split-string (first title) "-")))
+         (title-first (car (split-string (car title) "-")))
          (key (ref-man--replace-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))
          (key (ref-man--transcribe (ref-man--remove-punc key))))
     key))
@@ -517,11 +576,11 @@ appends \"na_\" if the key is non-authoritative."
          (first-author (ref-man--validate-author (split-string first-author-str " " t)))
          (last-name (car (last first-author)))
          (year-pub (ref-man--trim-whitespace (car (cdr (assoc "year" key-str)))))
-         (title (remove-if 'ref-man--stop-word-p
+         (title (-remove 'ref-man--stop-word-p
                            (mapcar #'ref-man--remove-punc
                                    (split-string (downcase (ref-man--trim-whitespace
                                                             (cadr (assoc "title" key-str)))) " "))))
-         (title-first (car (split-string (first title) "-")))
+         (title-first (car (split-string (car title) "-")))
          (key (ref-man--replace-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))
          (key (ref-man--transcribe (ref-man--remove-punc key))))
     (if na (concat "na_" key) key)))
@@ -534,11 +593,11 @@ trimmed entries and converts multiple spaces to a single one."
          (first-author (ref-man--validate-author (split-string first-author-str " " t)))
          (last-name (car (last first-author)))
          (year-pub (ref-man--trim-whitespace (cdr (assoc :year bib-alist))))
-         (title (remove-if 'ref-man--stop-word-p
+         (title (-remove 'ref-man--stop-word-p
                            (mapcar #'ref-man--remove-punc
                                    (split-string (downcase (ref-man--trim-whitespace
                                                             (cdr (assoc :title bib-alist)))) " "))))
-         (title-first (car (split-string (first title) "-")))
+         (title-first (car (split-string (car title) "-")))
          (key (ref-man--replace-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))
          (key (ref-man--transcribe (ref-man--remove-punc key))))
     key))
@@ -549,8 +608,8 @@ BIB-ALIST is an alist of string keys.  Assumes the strings are all validated"
   (let* ((last-name (car (split-string
                           (car (split-string (ref-man--fix-curly (cdr (assoc "author" bib-alist))) " and ")) ", ")))
          (year-pub (cdr (assoc "year" bib-alist)))
-         (title (remove-if 'ref-man--stop-word-p (split-string (ref-man--fix-curly (downcase (cdr (assoc "title" bib-alist)))) " ")))
-         (title-first (car (split-string (first title) "-"))))
+         (title (-remove 'ref-man--stop-word-p (split-string (ref-man--fix-curly (downcase (cdr (assoc "title" bib-alist)))) " ")))
+         (title-first (car (split-string (car title) "-"))))
     (ref-man--transcribe
      (ref-man--remove-punc
       (ref-man--replace-non-ascii
@@ -581,8 +640,8 @@ Can be used to build both the bib entry and org entry"
          (howpublished (when (and howpublished (> 1 (length (split-string howpublished "{"))))
                          (when (string-match-p "url" (nth 0 (split-string howpublished "{")))
                            (car (split-string (nth 1 (split-string howpublished "{")) "}"))))))
-    (list key (remove-if-not 'cdr (list abstract author title year doi
-                                        volume number pages url venue publisher howpublished)))))
+    (list key (-filter 'cdr (list abstract author title year doi
+                                  volume number pages url venue publisher howpublished)))))
 
 (defun ref-man--build-bib-author (author-str)
   "Builds the \"author\" value according to bibtex format"
@@ -626,7 +685,7 @@ entry and org entry"
                                  (replace-in-string tmp-pages "-" "--") " " ""))))
          (url (cons "url" (cadr (assoc "ee" key-str))))
          (venue (cons "venue" (cadr (assoc "venue" key-str)))))
-    (list key (remove-if-not 'cdr (list author title year doi volume number pages url venue)))))
+    (list key (-filter 'cdr (list author title year doi volume number pages url venue)))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END Bib entry utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -641,7 +700,7 @@ entry and org entry"
   "This is the only entry point to fetch and write the references
 to a buffer right now. Can change to have it in multiple steps."
   (interactive)
-  (setq my/dblp-results nil)            ; TODO: Not used after change to python backend
+  ;; (setq my/dblp-results nil)            ; TODO: Not used after change to python backend
   (let*
       ((pdf-file-name (expand-file-name (buffer-file-name (current-buffer))))
        (json-string
@@ -707,8 +766,22 @@ and synced before generating org buffer."
   (setq ref-man--json-data (json-read))
   (apply callback (list ref-man--json-data)))
 
+(defun ref-man--post-json-synchronous (url data)
+  "Send an HTTP POST request to URL with DATA.
+DATA should be an alist of key-value pairs.  The request is sent
+content-type as application/json and DATA is encoded as json."
+  (let ((url-request-extra-headers
+         `(("Content-Type" . "application/json")))
+        (url-request-method "POST")
+        (url-request-data
+         (encode-coding-string (json-encode-alist data) 'utf-8)))
+    (url-retrieve-synchronously url)))
+
 (defun ref-man--post-json (url queries callback)
-  "Send an HTTP POST request with content-type as application/json"
+  "Send an HTTP POST request to URL.
+QUERIES is a list of strings which is encoded as json. The
+request is sent with content-type as application/json. CALLBACK
+is called after the URL is retrieved."
   (let ((url-request-extra-headers
          `(("Content-Type" . "application/json")))
         (url-request-method "POST")
@@ -780,7 +853,7 @@ processes the response from the http server"
   "Fetches all dblp queries in parallel via a python
 server. `queries' are basically `car's of `refs-list'. `org-buf'
 is the buffer where they'll be inserted"
-  (setq ref-man--temp-ref nil)
+  ;; (setq ref-man--temp-ref nil)
   (let ((queries (mapcar 'car refs-list))
         (url (format "http://localhost:%s/dblp" ref-man-python-server-port)))
     ;; ;; NOTE: For `ref-man--post-json-new' encode-func has to be provided
@@ -794,22 +867,28 @@ is the buffer where they'll be inserted"
 
 ;;
 ;; Called by ref-man--generate-buffer-and-fetch-if-required
-;; CHECK: Maybe do this also async?
+;; NOTE: I was thinking to make it async but it's still useful
 ;;
-(defun ref-man--dblp-fetch-serial (query)
-  "Fetch the dblp data synchronously. Would be used to insert the
-top level heading"
+(defun ref-man-dblp-fetch-serial (query &optional all)
+  "Fetch the dblp data synchronously for query.
+QUERY should be the title string of pubilcation or a combination
+of title or author string. When called from
+`ref-man--generate-buffer-and-fetch-if-required', it's used to
+insert the top level heading.
+
+By default returns only the top result. With non-nil ALL, returns
+all results."
   (let* ((query (replace-in-string query " " "+"))
          (query-url (format "https://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" query))
          (buf (url-retrieve-synchronously query-url)))
     (with-current-buffer buf (set-buffer-multibyte t))
-    ;; CHECK: I've copied this pcase-let from somewhere but have no idea what's going on here
     (pcase-let ((`(,(and result `(result . ,_)))
                  (xml-parse-region nil nil buf)))
-      (remove nil (ref-man--dblp-clean
+      (remove nil (ref-man-dblp-clean
                    (mapcar (lambda (hit)
                              (gscholar-bibtex--xml-get-child hit 'info))
-                           (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit)))))))
+                           (xml-get-children (gscholar-bibtex--xml-get-child result 'hits) 'hit))
+                   all)))))
 
 ;; (defun my/generate-key-hash-from-science-parse ()
 ;;   (let ((key-hash (make-hash-table :test 'equal)))
@@ -847,7 +926,7 @@ top level heading"
 
 ;; Fixed: "What if not key-str"
 (defun ref-man--generate-buffer-and-fetch-if-required (refs-list)
-  (let* ((key-str (ref-man--dblp-fetch-serial  ;; assoc list
+  (let* ((key-str (ref-man-dblp-fetch-serial  ;; assoc list
                    (concat
                     (replace-regexp-in-string "[^\t\n\r\f -~]" ""
                                               (gethash "title" ref-man--science-parse-data)) " "
@@ -880,7 +959,9 @@ top level heading"
                (ref-man--generate-org-buffer-content org-buf refs-list bib-assoc visiting-filename)))))))
 
 (defun ref-man-org-insert-abstract (abs &optional buf)
-"Insert abstract as text in entry after property drawer if it exists"
+  "Insert abstract as text in entry after property drawer if it exists.
+ABS is the abstract string. Insert to `current-buffer' if BUF is
+nil else to BUF."
   (unless buf (setq buf (current-buffer)))
   (with-current-buffer buf
     (let ((pblock (org-get-property-block)))
@@ -911,7 +992,7 @@ top level heading"
       (insert "No abstract found")) ;; Hack to get abstractText
     (fill-paragraph)
     (org-insert-property-drawer)
-    (loop for ent in entry
+    (cl-loop for ent in entry
           do
           (if (not (string-equal (car ent) "abstract"))
               (org-set-property (upcase (car ent)) (ref-man--fix-curly (cdr ent)))))
@@ -940,7 +1021,7 @@ top level heading"
              (year (cons "year" (format "%s" (gethash "year" key-hash))))
              (venue (cons "venue" (when (gethash "venue" key-hash)
                                       (replace-in-string (gethash "venue" key-hash) ",$" ""))))
-             (entry (list key (remove-if-not 'cdr (list author title year venue volume number pages)))))
+             (entry (list key (-filter 'cdr (list author title year venue volume number pages)))))
         entry)))
 
 (defun ref-man--org-bibtex-write-ref-NA-from-keyhash (key-hash)
@@ -951,7 +1032,7 @@ top level heading"
     (insert (cdr (assoc :title entry)))
     (insert "\n")
     (org-insert-property-drawer)
-    (loop for ent in entry
+    (cl-loop for ent in entry
           do
           (when (not (string-equal (symbol-name (car ent)) ":type"))
             (org-set-property (upcase (car (cdr (split-string (symbol-name (car ent)) ":"))))
@@ -975,7 +1056,7 @@ json."
       (org-indent-line)
       (insert (format "- %s\n" (concat "Published as: " (cdr (assoc "venue" entry))))))
     (org-insert-property-drawer)
-    (loop for ent in entry
+    (cl-loop for ent in entry
           do
           (when (not (string-equal (car ent) "abstract"))
             (org-set-property (upcase (car ent))
@@ -1004,7 +1085,7 @@ json."
       (org-insert-item)
       (insert (concat (cdass 'venue entry) ", " (format "%s" (cdass 'year entry))))
       (org-insert-property-drawer)
-      (loop for ent in entry
+      (cl-loop for ent in entry
             do
             (cond ((or (eq (car ent) 'author) (eq (car ent) 'authors))
                    (when (not (string-empty-p author-str))
@@ -1069,7 +1150,7 @@ json."
     (org-insert-item)
     (insert (concat (cdr (assoc "venue" entry)) ", " (cdr (assoc "year" entry))))
     (org-insert-property-drawer)
-    (loop for ent in entry
+    (cl-loop for ent in entry
           do
           (when (not (string-equal (car ent) "abstract"))
             (org-set-property (upcase (car ent))
@@ -1096,7 +1177,7 @@ json."
   (insert (concat (if (cdr (assoc :venue entry)) (cdr (assoc :venue entry)) "NO VENUE")
                   ", " (cdr (assoc :year entry))))
   (org-insert-property-drawer)
-  (loop for ent in entry
+  (cl-loop for ent in entry
         do
         (when (and (not (eq (car ent) :abstract))
                    (not (eq (car ent) :key)))
@@ -1131,7 +1212,7 @@ json."
 ;;     (org-insert-item)
 ;;     (insert (concat (cdr (assoc "venue" entry)) ", " (cdr (assoc "year" entry))))
 ;;     (org-insert-property-drawer)
-;;     (loop for ent in entry
+;;     (cl-loop for ent in entry
 ;;           do
 ;;           (when (not (string-equal (car ent) "abstract"))
 ;;             (org-set-property (upcase (car ent))
@@ -1152,7 +1233,7 @@ with 'bibtex from a bibtex entry"
       (org-indent-line)
       (fill-paragraph))
   (org-insert-property-drawer)
-  (loop for ent in entry
+  (cl-loop for ent in entry
         do
         (pcase ent
           (`("abstract" . ,_))
@@ -1270,7 +1351,7 @@ exists then goto that file or find that file, else insert to
       (when (and (not no-edit-headline) (cdr (assoc "title" assoc-list)))
         (org-edit-headline (ref-man--trim-whitespace
                             (ref-man--fix-curly (cdr (assoc "title" assoc-list))))))
-      (loop for ent in entry
+      (cl-loop for ent in entry
             do
             (pcase ent
               (`("abstract" . ,_))
@@ -1354,7 +1435,7 @@ exists then goto that file or find that file, else insert to
 the port being used by the server if it exists"
   (let ((python-strings
          (split-string (shell-command-to-string "ps -ef | grep python | grep server") "\n")))
-    (loop for x in python-strings
+    (cl-loop for x in python-strings
           do
           (if (and (string-match-p "port" x) (string-match-p "data-dir" x))
               (setq ref-man-python-server-port
@@ -1425,19 +1506,19 @@ consolidating. It also maintains a local datastore."
 Results are parsed with (BACKEND 'parse-buffer)."
   ;; TODO: Did let not work here?
   ;;       Gotta check.
-  (setq my/biblio-callback-buf results-buffer)
+  (setq ref-man--biblio-callback-buf results-buffer)
   (biblio-generic-url-callback
    (lambda () ;; no allowed errors, so no arguments
      "Parse results of bibliographic search."
      (let ((results (biblio--tag-backend backend
                                          (funcall backend 'parse-buffer)))
            (win (ref-man--get-or-create-window-on-side)))
-       (with-current-buffer my/biblio-callback-buf
+       (with-current-buffer ref-man--biblio-callback-buf
          (ref-man--biblio-insert-results results (biblio--search-results-header))
          (local-set-key (kbd "n") 'biblio--selection-next)
          (local-set-key (kbd "p") 'biblio--selection-previous)
          (local-set-key (kbd "o") 'ref-man--parse-selected-entry-to-org))
-       (set-window-buffer win my/biblio-callback-buf)
+       (set-window-buffer win ref-man--biblio-callback-buf)
        (message "[ref-man] Tip: learn to browse results with `h'")))))
 
 (defun ref-man--parse-selected-entry-to-org ()
@@ -1454,7 +1535,7 @@ Results are parsed with (BACKEND 'parse-buffer)."
                                       (goto-char (point-min))
                                       (bibtex-parse-entry)))
          (new-key (ref-man--build-bib-key-from-parsed-bibtex bib-assoc))
-         (bib-assoc (remove-if 'ref-man--bibtex-key-p bib-assoc)))
+         (bib-assoc (-remove 'ref-man--bibtex-key-p bib-assoc)))
     (setf (alist-get "=key=" bib-assoc) new-key)
     (cond ((not bib-assoc) (message "[ref-man] Received nil entry"))
           ((string-match-p "na_" current-key)
@@ -1499,7 +1580,10 @@ Results are parsed with (BACKEND 'parse-buffer)."
 (global-set-key (kbd "C-c e e") 'eww)
 (global-set-key (kbd "C-c e g") 'ref-man-eww-gscholar)
 (setq browse-url-browser-function 'eww-browse-url)
-(setq ref-man--gscholar-launch-buffer-list nil)
+(defvar ref-man--gscholar-launch-buffer-list
+  nil
+  "List of org buffers from where launched")
+(make-obsolete-variable 'ref-man--gscholar-launch-buffer-list nil "")
 
 ;; (setq url-user-agent "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:46.0) Gecko/20100101 Firefox/46.0")
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1524,21 +1608,21 @@ Results are parsed with (BACKEND 'parse-buffer)."
            (not (string-prefix-p "/" url)))))
 
 (defun ref-man-eww--filter-non-gscholar (url-list)
-  (remove-if (lambda (x) (not (ref-man-eww--non-gscholar-url-p x)))
+  (-remove (lambda (x) (not (ref-man-eww--non-gscholar-url-p x)))
              url-list))
 
 (defun ref-man--parseable-link (url)
   (cond ((string-match-p "arxiv.org" url)
          ; Either arxiv has bibtex link or get from API
          )
-        (string-match-p "aclweb.org" url)
-        (string-match-p "papers.nips.cc" url)
-        (string-match-p "mlr.press" url)
-        (string-match-p "openaccess.thecvf.com" url)
-        (string-match-p "cv-foundation.org" url)
-        (string-match-p "aaai.org" url)
-        (string-match-p "dl.acm.org" url)
-        (string-match-p "openreview.net" url)
+        ((string-match-p "aclweb.org" url))
+        ((string-match-p "papers.nips.cc" url))
+        ((string-match-p "mlr.press" url))
+        ((string-match-p "openaccess.thecvf.com" url))
+        ((string-match-p "cv-foundation.org" url))
+        ((string-match-p "aaai.org" url))
+        ((string-match-p "dl.acm.org" url))
+        ((string-match-p "openreview.net" url))
         )
 
   )
@@ -2129,6 +2213,21 @@ If the input doesn't look like a URL or a domain name."
 ;; TODO: ref-man-eww-keypress-d and maybe some others don't work
 ;;       as expected. The keypresses on regions of google-scholar
 ;;       which are not links, give me incorrect results.
+;; NOTE: They're used in the loop. Should use let though, I'll test with let later
+(defvar ref-man--egal--save-point)
+(defvar ref-man--eww-buffer-links)
+(defvar ref-man--egal--prev-url)
+(defvar ref-man--egal--current-url)
+(defvar ref-man--egal--url-text-start)
+(defvar ref-man--egal--url-text-end)
+(defvar ref-man--eww-buffer-endpoint)
+(make-obsolete-variable 'ref-man--egal--save-point nil "")
+(make-obsolete-variable 'ref-man--eww-buffer-links nil "")
+(make-obsolete-variable 'ref-man--egal--prev-url nil "")
+(make-obsolete-variable 'ref-man--egal--current-url nil "")
+(make-obsolete-variable 'ref-man--egal--url-text-start nil "")
+(make-obsolete-variable 'ref-man--egal--url-text-end nil "")
+(make-obsolete-variable 'ref-man--eww-buffer-endpoint nil "")
 (defun ref-man-eww-get-all-links (&optional buf frombegin before-point substring)
   "Get all links from given buffer :buf (defaults to *eww*) with the given options
 :frombegin gets all the links in the buffer
@@ -2215,6 +2314,24 @@ downloadable, else fetch a pdf url above it"
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START org utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defun ref-man-get-title-according-to-mode (user-input)
+  "Get the title string to search.
+In `org-mode' the heading is searched, in `bibtex-mode' the title
+is searched. If no mode matches, prompt to read from
+minibuffer. Can add more modes later."
+  (interactive)
+  (if user-input
+      (read-string
+       "[ref-man-chrome] Enter the string to search: ")
+    (cond ((eq major-mode 'org-mode)
+           (setq ref-man--org-gscholar-launch-point (point)) ; CHECK: must be at heading?
+           (setq ref-man--org-gscholar-launch-buffer (current-buffer))
+           (substring-no-properties (org-get-heading t t)))
+          ((eq major-mode 'bibtex-mode)
+           (bibtex-autokey-get-field "title"))
+          (t (read-string
+              "[ref-man-chrome] Unknown mode. Enter the string to search: ")))))
+
 (defun ref-man--org-property-is-url-p (prop)
   (and (listp prop) (string-equal (symbol-name (car prop)) ":uri")))
 
@@ -2350,7 +2467,7 @@ corresponding headline and insert."
               (org-set-property "URL" link-str))))))))
 
 (defun ref-man--move-first-link-to-org-property-drawer ()
-  (block func
+  (cl-block func
     (save-excursion
       (save-restriction
         (org-narrow-to-subtree)
@@ -2361,7 +2478,7 @@ corresponding headline and insert."
                 (delete-region (org-element-property :begin link)
                                (org-element-property :end link))
                 (org-set-property "URL" url)
-                (return-from func t)))))))))
+                (cl-return-from func t)))))))))
 
 (defun ref-man--bib-buf-for-arxiv-api (url)
   "Fetches bib generated from arxiv api, returns the buffer. Uses
@@ -2490,6 +2607,22 @@ citations after that."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START html utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; NOTE: Not implemented functions
+(defun ref-man--get-bibtex-link-from-nips-url  (url))
+(defun ref-man--get-bibtex-link-from-cvf-url  (url))
+(defun ref-man--get-bibtex-link-from-aaai-url  (url))
+(defun ref-man--get-bibtex-link-from-acm-url  (url))
+(defun ref-man--get-bibtex-link-from-openreview-url  (url))
+(defun ref-man--get-supplementary-url-from-doi  (url))
+(defun ref-man--get-supplementary-url-from-arxiv  (url))
+(defun ref-man--get-supplementary-url-from-acl  (url))
+(defun ref-man--get-supplementary-url-from-nips-url  (url))
+(defun ref-man--get-supplementary-url-from-cvf-url  (url))
+(defun ref-man--get-supplementary-url-from-aaai-url  (url))
+(defun ref-man--get-supplementary-url-from-acm-url  (url))
+(defun ref-man--get-supplementary-url-from-openreview-url (url))
+
 (defun ref-man--get-first-pdf-link-from-html-buffer (buf)
   (let* ((temp-buf (get-buffer-create " *temp-buf*"))
         (link (with-current-buffer temp-buf
@@ -2710,6 +2843,8 @@ citations after that."
   ;; If link is cvpr or iccv, then find the cvf link and go to that site
   (message "[ref-man] Not Implemented yet") nil)
 
+;; FIXME: This could be `let' I think
+(defvar ref-man--ieee-parse)
 (defun ref-man--parse-ieee-page (url)
   (let* ((buf (url-retrieve-synchronously url t))
          (ieee-xml-parse (with-current-buffer buf
@@ -2762,6 +2897,8 @@ citations after that."
           (ref-man--fetch-from-pdf-url url nil)))
     (message "[ref-man] Not in org-mode")))
 
+;; FIXME: This could be `let'
+(defvar ref-man-convert-links-in-subtree-to-headings-fetch--pdfs)
 (defun ref-man-convert-links-in-subtree-to-headings ()
   "Convert all the links in the subtree to headings, if the link
 is from a recognized parseable host. As of now, only ArXiv"
@@ -2910,11 +3047,14 @@ display the data."
           retval)
     (push `("TITLE". ,(cdass 'text (cdass 'title result))) retval)
     (push '("TYPE" . "article") retval)
-    (remove-if (lambda (x) (string-empty-p (cdr x))) retval)))
+    (-remove (lambda (x) (string-empty-p (cdr x))) retval)))
 
 ;; TODO: prompt by default
 ;;
-(defun ref-man-search-semantic-scholar (search-string &optional insert-first)
+(defun ref-man-search-semantic-scholar (search-string &optional insert-first &rest args)
+  "Search Semantic Scholar for SEARCH-STRING.
+ARGS should valid json, e.g., {cs_only: true, has_github: false}
+corresponding to javascript semantics"
   (interactive (list (let* ((ss (if (eq major-mode 'org-mode) (org-get-heading) ""))
                             (prompt (if (string-empty-p ss)
                                         "Search String: "
@@ -2926,23 +3066,24 @@ display the data."
       (cond ((and meh (equal meh '(4)))   ; update only
              (setq insert-first t))
             ))
-    ;; FIXME: Search is not complete
-    (debug)
     ;; TODO: fetch page from python server, should use jinja or lisp template
-    (cond (insert-first
-           (let* ((result (with-current-buffer
-                                  (url-retrieve-synchronously
-                                   (format "http://localhost:%s/semantic_scholar_search?q=%s"
-                                           ref-man-python-server-port search-string))
-                                (goto-char (point-min))
-                                (forward-paragraph)
-                                (json-read)))
-                  (results (cdass 'results result)))
-             (if (> (length results) 0)
-                 (ref-man--update-props-from-assoc (ref-man-parse-ss-search-result (aref results 0)))
-               (message "[ref-man] No results from Semantic Scholar"))))
-          (t nil)))
-  )
+    (let* ((args (when args (string-join args "&")))
+           (url (concat (format "http://localhost:%s/semantic_scholar_search?q=%s"
+                                ref-man-python-server-port search-string)
+                        (if args (concat "&" args) "")))
+           (buf (if args (ref-man--post-json-synchronous url args)
+                  (url-retrieve-synchronously url)))
+           (result (with-current-buffer buf
+                     (goto-char (point-min))
+                     (forward-paragraph)
+                     (json-read)))
+           (results (cdass 'results result)))
+      (if (> (length results) 0)
+          (if insert-first
+              (ref-man--update-props-from-assoc
+               (ref-man-parse-ss-search-result (aref results 0)))
+            results)
+        (message "[ref-man] No results from Semantic Scholar")))))
 
 ;; TODO: Currently no TODO attribute is set on the org entry and no
 ;;       timestamp is marked. I should fix that.
@@ -3012,6 +3153,9 @@ buffer is not gscholar"
 ;;        should make it uniform
 ;; NOTE: Adding update heading also if heading is null
 ;; NOTE: This is only called by `ref-man-try-fetch-and-store-pdf-in-org-entry'
+;;
+;; FIXME: Can this bet `let'
+(defvar ref-man--fetched-url-title)
 (defun ref-man-try-fetch-pdf-from-url (url &optional retrieve-pdf retrieve-bib
                                            retrieve-title storep)
   "Try and fetch pdf and bib entry from url. Can only retrieve
@@ -3083,6 +3227,9 @@ the option is given. org buffer to insert the data is set by
 ;;        (add-text-properties begin end '(read-only t)))
 ;;        https://www.gnu.org/software/emacs/manual/html_node/elisp/Text-Properties.html#Text-Properties
 ;;        https://www.gnu.org/software/emacs/manual/html_node/elisp/Special-Properties.html#Special-Properties
+
+;; CHECK: Can this bet `let'?
+(defvar ref-man--subtree-num-entries)
 (defun ref-man-try-fetch-and-store-pdf-in-org-subtree-entries ()
   "Fetches and stores pdfs for all entries in the subtree. Only
 traverses one level depth as of now"
@@ -3097,7 +3244,7 @@ traverses one level depth as of now"
     (setq ref-man--subtree-num-entries 0)
     (while (not (eobp))
       (when (outline-next-heading)
-        (incf ref-man--subtree-num-entries)
+        (cl-incf ref-man--subtree-num-entries)
         (ref-man-try-fetch-and-store-pdf-in-org-entry t))))
   (async-start
    `(lambda ()
@@ -3111,25 +3258,30 @@ traverses one level depth as of now"
        (outline-up-heading 1)
        (org-show-all)
        (widen)
-       (loop for x from 0 below (/ (length ref-man--subtree-list) 2)
+       (cl-loop for x from 0 below (/ (length ref-man--subtree-list) 2)
              do (let ((point (nth (* 2 x) ref-man--subtree-list))
                       (pdf-file (plist-get ref-man--subtree-list (nth (* 2 x) ref-man--subtree-list))))
                   (outline-next-heading)
                   (ref-man--insert-org-pdf-file-property pdf-file)
                   ))))))
 
+;; FIXME: I'm sure two thingies below can be let
+;; (defvar ref-man--point-min)
+;; (defvar ref-man--point-max)
 (defun ref-man--org-narrow-to-here ()
-  (org-narrow-to-subtree)
-  (save-excursion
-    (org-show-subtree)
-    (beginning-of-line)
-    (if (eq (point-min) (point))
-        (setq ref-man--point-min (point))
-      (org-previous-visible-heading 1)
-      (setq ref-man--point-min (point)))
-    (org-next-visible-heading 1)
-    (setq ref-man--point-max (point))
-    (narrow-to-region ref-man--point-min ref-man--point-max)))
+  (let (ref-man--point-min
+        ref-man--point-max)
+    (org-narrow-to-subtree)
+    (save-excursion
+      (org-show-subtree)
+      (beginning-of-line)
+      (if (eq (point-min) (point))
+          (setq ref-man--point-min (point))
+        (org-previous-visible-heading 1)
+        (setq ref-man--point-min (point)))
+      (org-next-visible-heading 1)
+      (setq ref-man--point-max (point))
+      (narrow-to-region ref-man--point-min ref-man--point-max))))
 
 (defun ref-man--check-heading-p ()
   (> (length (string-trim (substring-no-properties (org-get-heading t t)))) 0))
@@ -3170,8 +3322,8 @@ text and if no URL could be found return nil."
                           (cdr (assoc "PDF_FILE" props)))
                          ((assoc "FILE_NAME" props)
                           (ref-man--insert-org-pdf-file-property
-                           (replace-regexp-in-string "\\[\\|\\]" "" (cdr (assoc "FILE_NAME" props))))
-                          (t nil)))))
+                           (replace-regexp-in-string "\\[\\|\\]" "" (cdr (assoc "FILE_NAME" props)))))
+                         (t nil))))
     (when (assoc "FILE_NAME" props)
       (org-delete-property "FILE_NAME"))
     pdf-file))
@@ -3188,6 +3340,7 @@ text and if no URL could be found return nil."
   (interactive)
   (if (eq major-mode 'org-mode)
       (let* ((props (org-entry-properties))
+             ;; CHECK: Why's this note used?
              (ssidtype-id (ref-man--ss-id))
              (pdf-file (ref-man--check-fix-pdf-file-property))
              (url-prop (ref-man--check-fix-url-property))
@@ -3196,6 +3349,7 @@ text and if no URL could be found return nil."
              retrieve-bib retrieve-pdf retrieve-title
              (msg-str ""))
         ;; TODO: Use helm instead of prefixes
+        ;;       Actually Should use `hydra' but that should be for everything
         ;; FIXME: Make sure pdf file exists on disk, else remove prop
         ;; FIXME: Maybe check for :link property from text but MEH! NOTE: Not sure about this
         (let ((meh current-prefix-arg))
@@ -3266,7 +3420,7 @@ text and if no URL could be found return nil."
 ;; property drawer for the headline at point."
 ;;   (let* ((props (text-properties-at (point)))
 ;;          (url (car (mapcar (lambda (x) (cadr x))
-;;                            (remove-if-not #'ref-man--org-property-is-url-p props))))
+;;                            (-filter #'ref-man--org-property-is-url-p props))))
 ;;          (url (if url url (org-element-property :raw-link
 ;;                                                 (ref-man--get-first-link-from-org-heading)))))
 ;;     (when url
@@ -3345,7 +3499,7 @@ a) org-gscholar-launch-buffer is checked for the entry"
     (cond ((and buf file)
            (with-current-buffer buf
              (when ref-man--eww-import-link
-               org-set-property "URL" ref-man--eww-import-link)
+               (org-set-property "URL" ref-man--eww-import-link))
              (with-current-buffer ref-man--org-gscholar-launch-buffer
                (save-excursion
                  (goto-char ref-man--org-gscholar-launch-point)
@@ -3363,12 +3517,13 @@ a) org-gscholar-launch-buffer is checked for the entry"
     (completing-read "Bib buffer: "
                      (mapcar (lambda (x) (format "%s" x)) (buffer-list))))
   (if (org-at-heading-p)
-      (when heading-has-children
+      (let (heading-has-children)
+        (when heading-has-children
 
-    ;; Import heading to bib buffer
-    ;; Descend into subtree
-    ;; On all children do recursive call to self
-        )
+          ;; Import heading to bib buffer
+          ;; Descend into subtree
+          ;; On all children do recursive call to self
+          ))
     (message "[ref-man] Not at heading"))                             ; HERE
   (when (ref-man--at-bib-heading-p)
     (ref-man-parse-subtree-to-buffer-as-bibtex bib-buf))

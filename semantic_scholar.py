@@ -105,7 +105,7 @@ def semantic_scholar_search(query, title_only=False, authors=[], cs_only=True,
               'queryString': query,
               'requireViewablePdf': False,
               'sort': 'relevance',
-              'useRankerService': True,
+              # 'useFallbackRankerService': False,
               'venues': [],
               'yearFilter': year_filter}
     if cs_only:

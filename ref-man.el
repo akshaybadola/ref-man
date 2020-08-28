@@ -27,10 +27,12 @@
 ;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 ;;; Commentary:
-
+;;
 ;; TODO
 
 ;;; Code:
+
+;; TODO: Should make ref-man minor mode
 
 (defcustom ref-man-science-parse-server-port 8080
   "Server port on which to communicate with science parse server."
@@ -49,9 +51,6 @@ See URL `https://github.com/allenai/science-parse' for details"
 
 (defconst ref-man-version "0.1"
   "`ref-man' version number.")
-
-;;; Commentary:
-;;
 
 (require 'ref-man-core)
 (require 'ref-man-chrome)
@@ -84,7 +83,6 @@ See URL `https://github.com/allenai/science-parse' for details"
     (message "[ref-man] java not found"))))
 
 (ref-man-try-start-science-parse-server)
-(provide 'ref-man)
 
 (provide 'ref-man)
 
