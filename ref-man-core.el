@@ -35,7 +35,12 @@
 ;; though `org' export can also be used, though I'll have to reconfigure my
 ;; settings for that and I'm not sure if it'll be as capable as pandoc.
 ;;
-;; TODO: I should separate these according to:
+;; Actually `org-ref' has a lot of useful features and I feel in my zeal I've
+;; reinvented the wheel a bit, but some of the features here I didn't have
+;; so...not sure. Especially the `eww' ones. semanticscholar also I won't find I
+;; think easily.
+;;
+;; TODO: I have to separate these according to:
 ;;       - ref-man-bibtex
 ;;       - ref-man-org
 ;;       - ref-man-eww
@@ -268,16 +273,6 @@ They need not exist."
               "refused" (shell-command-to-string
                          (format "nc -z -v localhost %s" port)))
         return port))
-
-(defun sort-words (reverse beg end)
-  "Sort words in region alphabetically, in REVERSE if negative.
-
-BEG and END are the region markers.  Prefixed with negative
-\\[universal-argument], sorts in reverse.  The variable
-`sort-fold-case' determines whether alphabetic case affects the
-sort order.  See `sort-regexp-fields'."
-  (interactive "*P\nr")
-  (sort-regexp-fields reverse "\\w+" "\\&" beg end))
 
 (defun replace-in-string (in what with)
   (replace-regexp-in-string
