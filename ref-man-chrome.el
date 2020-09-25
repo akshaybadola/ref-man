@@ -1,4 +1,4 @@
-;;; ref-man-chrome.el --- Module to route the eww requests through chromium so that google doesn't complain about lack of javascript. Mosty is used to browse google scholar but can be used for any other website. ;;; -*- lexical-binding: t; -*-
+;;; ref-man-chrome.el --- Module to route the eww requests through chromium so that google doesn't complain about lack of javascript. ;;; -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2018,2019,2020
 ;; Akshay Badola
@@ -27,7 +27,7 @@
 
 ;;; Commentary:
 ;;
-;; Extension to ref-man `eww' related functions for google scholar.  In case
+;; Extension to `ref-man-web' primarily for accessing google scholar.  In case
 ;; Google starts to complain about enabling javascript we can proxy the requests
 ;; through a headless chromium/chrome.
 ;;
@@ -47,6 +47,8 @@
 (require 'url-http)
 (require 'websocket)
 
+(require 'ref-man-web)
+
 ;; NOTE: Even though chromium supports different user directories, latest
 ;;       editions of chromium do not let you sign into google services if you
 ;;       use a non default user-data-dir. I'm not sure why this is
@@ -57,6 +59,19 @@
   "Chromium profile directory."
   :type 'directory
   :group 'ref-man)
+
+(defcustom ref-man-chrome-command nil
+  "The chromium executable to use.
+If this is non-nil then `ref-man-chrome--which-chromium' always
+returns its value instead of searching for the chromium
+executable."
+  :type 'string
+  :group 'ref-man)
+
+(defvar ref-man-chrome-chromium-names
+  '("chromium-browser" "chromium" "chromium-freeworld" "google-chrome")
+  "Possible executable names to check for Chromium Browser.
+The names are checked in order for the current active PATH variable.")
 
 (defcustom ref-man-chrome-port-number-start-from
   9222
@@ -166,7 +181,6 @@ sockets are opened and verified.")
 (defvar url-http-end-of-headers)
 
 ;; from `ref-man'
-(defvar ref-man-chrome-command)
 (defvar ref-man-use-proxy)
 (defvar ref-man-proxy-port)
 
@@ -176,8 +190,9 @@ sockets are opened and verified.")
 
 ;; NOTE: External functions
 (declare-function ref-man--check-bibtex-string "ref-man-core")
-(declare-function ref-man--parse-bibtex "ref-man-core")
-(declare-function ref-man-import-gscholar-link-to-org-buffer "ref-man-core")
+(declare-function ref-man-parse-bibtex "ref-man-core")
+(declare-function ref-man-org-import-link "ref-man-core")
+(declare-function ref-man-import-pdf-url-to-org-buffer "ref-man-core")
 (declare-function ref-man-eww-download-pdf "ref-man-core")
 (declare-function ref-man-eww--gscholar-get-previous-pdf-link "ref-man-core")
 (declare-function ref-man-eww--gscholar-get-previous-non-google-link "ref-man-core")
@@ -235,7 +250,9 @@ sockets are opened and verified.")
     (define-key map "b" 'ref-man-chrome-add-bookmark)
     ;; TODO: Has to be a separate bookmarks mode
     (define-key map "B" 'ref-man-chrome-list-bookmarks)
-    (define-key map "i" 'ref-man-chrome-insert-to-org)
+    (define-key map "i" nil)
+    (define-key map "ii" 'ref-man-chrome-insert-link-to-org)
+    (define-key map "ie" 'ref-man-chrome-insert-everything-to-org)
     (define-key map "e" nil) ; extract things
     (define-key map "eb" 'ref-man-chrome-extract-bibtex) ; extract bibtex
     ;; (define-key map "ep" 'ref-man-chrome-extract-bibtex) ; extract pdf?
@@ -248,7 +265,9 @@ sockets are opened and verified.")
 (defvar ref-man-link-map
   (let ((map (make-sparse-keymap)))
     (define-key map "a" 'shr-show-alt-text)
-    (define-key map "i" 'ref-man-chrome-insert-to-org)
+    (define-key map "i" nil)
+    (define-key map "ii" 'ref-man-chrome-insert-link-to-org)
+    (define-key map "ie" 'ref-man-chrome-insert-everything-to-org)
     (define-key map "z" 'shr-zoom-image)
     (define-key map [?\t] 'shr-next-link)
     (define-key map [?\M-\t] 'shr-previous-link)
@@ -284,7 +303,7 @@ WTF, right?
 ;; START ref-man-chrome commands
 
 ;; (defun ref-man-chrome--get-all-links)
-(defun ref-man-chrome-extract-bibtex-from-scholar (&optional org-buf bib-buf)
+(defun ref-man-chrome-extract-bibtex-from-scholar (&optional org-buf bib-buf org-point)
   "Like `ref-man-eww-get-bibtex-from-scholar'.
 
 Earlier I had thought that it would extract more data or from
@@ -295,7 +314,8 @@ BIB-BUF."
   (save-excursion
     (let ((bib-url (progn (search-forward "import into bibtex")
                           (backward-char)
-                          (car (eww-links-at-point)))))
+                          (car (eww-links-at-point))))
+          (url (ref-man-eww--gscholar-get-previous-non-google-link (current-buffer))))
       (setq ref-man-chrome--check-str "title=")
       (let* ((src (plist-get (ref-man-chrome--set-location-fetch-html bib-url 1 t t) :source))
              (buf (get-buffer-create "*rfc-nr-source*"))
@@ -309,10 +329,10 @@ BIB-BUF."
                  (erase-buffer)
                  (shr-insert-document dom)
                  (buffer-string)))
-          (ref-man--parse-bibtex source-buf org-buf bib-buf nil)
+          (ref-man-parse-bibtex source-buf org-buf org-point bib-buf url)
           ;; (cond (bib-buf )
-          ;;       (org-buf (ref-man--parse-bibtex source-buf org-buf))
-          ;;       (t (ref-man--parse-bibtex source-buf nil nil t)))
+          ;;       (org-buf (ref-man-parse-bibtex source-buf org-buf))
+          ;;       (t (ref-man-parse-bibtex source-buf nil nil t)))
           )))))
 
 ;; (defun ref-man-chrome-extract-bibtex/old (&optional org-buf)
@@ -361,10 +381,7 @@ gscholar buffer."
            (cond ((eq mode 'org-mode)
                   ;; This one is a bit slow, would prefer to extract bibtex
                   ;; async from the URL
-                  (ref-man-chrome-extract-bibtex-from-scholar buf)
-                  (ref-man-import-gscholar-link-to-org-buffer ; also extract file link
-                   (ref-man-eww--gscholar-get-previous-non-google-link
-                    (current-buffer))))
+                  (ref-man-chrome-import-everything (current-buffer) buf t))
                  ((eq mode 'bibtex-mode)
                   (ref-man-chrome-extract-bibtex-from-scholar nil buf))
                  (t (ref-man-chrome-extract-bibtex-from-scholar))))))
@@ -396,22 +413,46 @@ gscholar buffer."
             (message "[ref-man-chrome] Going to Previous Page")
             (throw 'retval t)))))))
 
-(defun ref-man-chrome-insert-to-org ()
+(defun ref-man-chrome-insert-link-to-org (&optional update)
+  (interactive)
+  (ref-man-chrome-insert-to-org
+   (or update (if current-prefix-arg 'current 'next)) 'link))
+
+(defun ref-man-chrome-insert-everything-to-org (&optional update)
+  (interactive)
+  (ref-man-chrome-insert-to-org
+   (or update (if current-prefix-arg 'current 'next)) 'everything))
+
+(defun ref-man-chrome-insert-to-org (update extract)
   "Extract and insert the current entry to an org buffer.
+UPDATE can be either 'current or 'next and EXTRACT is one of
+'link or 'everything.  When UPDATE is 'next, create a new heading
+which is a child of the org heading at point in the org buffer,
+else update the heading at point.
+
 The default buffer is `ref-man--org-gscholar-launch-buffer' if
 it's non-nil, else `ref-man-org-links-file-path'."
-  (interactive)
-  ;; NOTE: parse-bib does nothing for now. Was supposed to be used to fetch and
-  ;;       insert bib also from gscholar buffer but I think it would be better
-  ;;       if that were async
-  (let (;; CHECK: What was I trying to do below?
-        ;; FIXME: unused
-        ;; (parse-bib (string-prefix-p))
-        ;; (url ref-man-chrome--page-url)
-        )
-    (ref-man-import-gscholar-link-to-org-buffer
-     (ref-man-eww--gscholar-get-previous-non-google-link
-      (current-buffer)))))
+  (cond ((eq extract 'link)
+         (ref-man-org-import-link
+          (ref-man-web-extract-import-link-data (current-buffer)) (eq update 'current)))
+        ((eq extract 'everything)
+         (ref-man-chrome-import-everything (current-buffer) nil (eq update 'current)))
+        (t (debug))))
+
+(defun ref-man-chrome-import-everything (web-buf &optional org-buf update)
+  "Extract link, text and publication properties.
+Web buffer WEB-BUF is an `shr' buffer.  Optional ORG-BUF
+specifies the org buffer to insert the data.  If UPDATE is
+non-nil then update the current entry in the org buffer ORG-BUF
+instead of inserting a subheading."
+  (let* ((insert-data (ref-man-org-import-link ; also extract file link
+                       (ref-man-web-extract-import-link-data web-buf) update))
+         (org-buf (plist-get insert-data :buffer))
+         (heading (plist-get insert-data :heading))
+         (pt (plist-get insert-data :point)))
+    (ref-man-chrome-extract-bibtex-from-scholar org-buf nil pt) ; extract bibtex to properties
+    (ref-man-import-pdf-url-to-org-buffer ; also extract pdf url
+     (ref-man-eww--gscholar-get-previous-pdf-link web-buf) nil org-buf pt)))
 
 (defun ref-man-chrome-view-source ()
   "View the source of current *chrome* buffer."
@@ -429,7 +470,7 @@ it's non-nil, else `ref-man-org-links-file-path'."
 We have special functions for google scholar."
   (interactive (list (shr-url-at-point current-prefix-arg)))
   (if (not url)
-      (message "[ref-man-chrome] No URL under point")
+      (call-interactively #'ref-man-chrome-gscholar)
     (setq url (url-encode-url url))
     (unless (string-prefix-p "http" url)
       (setq url (concat ref-man-chrome-root-url (string-remove-prefix "/" url))))
@@ -694,35 +735,25 @@ Stores the buffer and the position from where it was called."
 	(list (get-text-property (point) 'shr-url)
 	      (get-text-property (point) 'image-url))))
 
-;; I'm calling it ref-man-chrome- sub package
-;; A free open port can be chosen randomly and chromium or chromium-browser can start
-;; Check for "google-chrome", "chromium", "chromium-browser"
-;; "which [chrome]" doesn't always correspond to the file in the running process
-;; 
-;; TODO: Should allow choosing between different executables in case multiple
-;;       ones are found.
 (defun ref-man-chrome--which-chromium ()
-  "Find the chromium executable."
-  (setq ref-man-chrome-command
-        (replace-regexp-in-string
-         "\n" ""
-         (cond ((not (string-equal "" (shell-command-to-string "which chromium-browser")))
-                (shell-command-to-string "which chromium-browser"))
-               ((not (string-equal "" (shell-command-to-string "which chromium")))
-                (shell-command-to-string "which chromium"))
-               ((not (string-equal "" (shell-command-to-string "which google-chrome")))
-                (shell-command-to-string "which google-chrome"))
-               (t nil)))))
+  "Find the chromium executable.
+Returns the first executable found from candidates in
+`ref-man-chrome-chromium-names'.  If `ref-man-chrome-command' is
+non-nil then the value of that is returned instead."
+  (or ref-man-chrome-command
+      (-first #'identity
+              (mapcar #'executable-find ref-man-chrome-chromium-names))))
 
 (defun ref-man-chrome--chromium-running ()
   "Check if any chromium process is running.
 Only checks for the chromium process associated with
 `ref-man-chrome'."
-  (let* ((chrome (file-name-nondirectory (ref-man-chrome--which-chromium)))
-         (grep-string (concat "ps -ef | grep " chrome))
-         (text (replace-regexp-in-string ".*grep.*" ""
-                                         (shell-command-to-string grep-string))))
-    (string-match-p chrome text)))
+  (or (ref-man-chrome--chromium-process)
+      (let* ((chrome (file-name-nondirectory (ref-man-chrome--which-chromium)))
+             (grep-string (concat "ps -ef | grep " chrome))
+             (text (replace-regexp-in-string ".*grep.*" ""
+                                             (shell-command-to-string grep-string))))
+        (string-match-p chrome text))))
 
 (defun ref-man-chrome--find-open-port ()
   "Find the next open debugging port for chromium.
@@ -736,7 +767,6 @@ process.  Uses `find-open-port'"
 Optional HEADLESS implies to start in headless mode: no window.
 DATA-DIR is where to load/store user data and profiles.  PORT is
 which debugging port to open."
-  (message "[ref-man-chrome] Starting Chromium process")
   (if ref-man-use-proxy
       (if headless
           (start-process "chromium" "*chromium*" (ref-man-chrome--which-chromium)
@@ -753,9 +783,10 @@ which debugging port to open."
                        (format "--remote-debugging-port=%s" port))
       (start-process "chromium" "*chromium*" (ref-man-chrome--which-chromium)
                      (concat "--user-data-dir=" data-dir)
-                     (format "--remote-debugging-port=%s" port)))))
+                     (format "--remote-debugging-port=%s" port))))
+  (message "[ref-man-chrome] Started Chromium process"))
 
-(defun ref-man-chrome--kill-chrome-process ()
+(defun ref-man-chrome--kill-chromium-process ()
   "Kill the chrome process."
   (when (get-process "chromium")
     (signal-process (get-buffer "*chromium*") 15)))
@@ -770,15 +801,21 @@ Start in headless mode if HEADLESS is non-nil, else windowed
 mode."
   (interactive)
   (let ((port (ref-man-chrome--find-open-port))
-        (data-dir ref-man-chrome-user-data-dir))
+        (data-dir ref-man-chrome-user-data-dir)
+        (chromium (or (and (processp (ref-man-chrome--chromium-running)) 'internal)
+                      (and (integerp (ref-man-chrome--chromium-running)) 'external))))
     (setq ref-man-chrome--chromium-port port)
-    (if (ref-man-chrome--chromium-running)
-        (if (y-or-n-p "Existing chrome process found.  Kill it and start headless? ")
-            (progn
-              (ref-man-chrome--kill-chrome-process)
-              (ref-man-chrome--process-helper headless data-dir port))
-          (message "[ref-man-chrome] Not starting chromium"))
-      (ref-man-chrome--process-helper headless data-dir port))))
+    (cond ((eq chromium 'internal)
+           (if (y-or-n-p "Existing internal chromium process found. Kill it and start headless? ")
+               (progn (ref-man-chrome--kill-chromium-process)
+                      (message "[ref-man-chrome] Killing old and starting new chromium.")
+                      (ref-man-chrome--process-helper headless data-dir port))
+             (message "[ref-man-chrome] Not starting chromium")))
+          ((eq chromium 'external)
+           (message "[ref-man-chrome] Chromium running outside emacs. Cannot kill and start new."))
+          ((not chromium)
+           (message "[ref-man-chrome] Starting new chromium.")
+           (ref-man-chrome--process-helper headless data-dir port)))))
 
 (defun ref-man-chrome-restart ()
   "Restart the chrome process.
@@ -1045,13 +1082,27 @@ non-nil.  With a `C-u' universal prefix arugment or if called
 programmatically with the optional CLEAR-HISTORY, reset the
 history also."
   (interactive)
-  (ref-man-chrome--kill-chrome-process)
-  (message "Killed chromium process")
-  (ref-man-chrome-reset (or clear-history current-prefix-arg))
-  (when restart
-    (sleep-for 1)
-    (message "Restarting...")
-    (ref-man-chrome-init)))
+  (let ((msg
+         (concat "[ref-man-chrome]"
+                 (cond ((processp (ref-man-chrome--chromium-running))
+                        (if (ref-man-chrome--kill-chromium-process)
+                            " Killed chromium process."
+                          " Could not kill chromium process."))
+                       ((integerp (ref-man-chrome--chromium-running))
+                        " Chromium running outside emacs. Cannot kill and start new.")
+                       ((not (ref-man-chrome--chromium-running))
+                        " No chromium process found.")
+                       (t (message "[ref-man-chrome] Something weird happened. Check."))))))
+    (setq msg (concat msg " Resetting `ref-man-chrome'."
+                      (if (or clear-history current-prefix-arg)
+                          " Resetting history also."
+                        " Not resetting history.")))
+    (ref-man-chrome-reset (or clear-history current-prefix-arg))
+    (message msg)
+    (when restart
+      (sleep-for 1)
+      (message " Restarting...")
+      (ref-man-chrome-init))))
 
 (defun ref-man-chrome-init-history ()
   "Initialize the history table."

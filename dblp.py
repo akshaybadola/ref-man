@@ -3,24 +3,6 @@ import requests
 from q_helper import QHelper
 
 
-def dblp_fetch(query, q, ret_type="json", verbose=False):
-    """Fetch `query` from the dblp server and store the response in
-    :class:queue.Queue `q`.
-
-    `ret_type` is the format in to query the server. Valid values can be `json`
-    and `xml`. `xml` isn't implemented right now.
-
-    """
-    if verbose:
-        print(f"Fetching from DBLP, query: {query}\n")
-    if ret_type == "json":
-        response = requests.request("GET", f"https://dblp.uni-trier.de/search/publ/api" +
-                                    f"?q={query}&format=json")
-        q.put((query, response))
-    else:
-        q.put((query, "INVALID"))
-
-
 class _DBLPHelper:
     """Private class which handles the various results of the query. Should make an
     ABC here maybe. It's just to isolate a couple of variables and functions.
@@ -28,6 +10,26 @@ class _DBLPHelper:
     """
 
     verbose = False
+    proxies = None
+
+    @classmethod
+    def dblp_fetch(cls, query, q, ret_type="json", verbose=None):
+        """Fetch `query` from the dblp server and store the response in
+        :class:queue.Queue `q`.
+
+        `ret_type` is the format in to query the server. Valid values can be `json`
+        and `xml`. `xml` isn't implemented right now.
+
+        """
+        if cls.verbose:
+            print(f"Fetching from DBLP, query: {query}\n")
+        if ret_type == "json":
+            response = requests.request("GET", f"https://dblp.uni-trier.de/search/publ/api" +
+                                        f"?q={query}&format=json",
+                                        proxies=cls.proxies)
+            q.put((query, response))
+        else:
+            q.put((query, "INVALID"))
 
     @classmethod
     def _dblp_success(cls, query, response, content):
@@ -78,8 +80,9 @@ class _DBLPHelper:
             content[query] = [f"ERROR"]
 
 
-def dblp_helper(verbose=False):
+def dblp_helper(proxies=None, verbose=False):
+    _DBLPHelper.proxies = proxies
     _DBLPHelper.verbose = verbose
-    return QHelper(_DBLPHelper._dblp_success,
-                   _DBLPHelper._dblp_no_result,
-                   _DBLPHelper._dblp_error, verbose)
+    return _DBLPHelper.dblp_fetch, QHelper(_DBLPHelper._dblp_success,
+                                           _DBLPHelper._dblp_no_result,
+                                           _DBLPHelper._dblp_error, verbose)
