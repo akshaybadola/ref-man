@@ -1,6 +1,18 @@
 (require 'bibtex)
 
-(defconst ref-man-stop-words '("a" "about" "above" "after" "again" "against" "all" "an" "and" "any" "are" "as" "at" "because" "before" "below" "between" "both" "by" "can" "did" "do" "does" "don" "down" "during" "each" "few" "for" "from" "further" "had" "has" "have" "having" "here" "how" "i" "in" "into" "is" "it" "its" "just" "more" "most" "no" "nor" "not" "now" "of" "off" "on" "once" "only" "other" "out" "over" "own" "same" "should" "so" "some" "such" "t" "than" "that" "the" "then" "there" "these" "through" "to" "too" "under" "up" "very" "was" "were" "what" "when" "where" "which" "who" "why" "will" "with"))
+(defconst ref-man-stop-words
+  '("a" "about" "above" "after" "again" "against"
+    "all" "an" "and" "any" "are" "as" "at" "because"
+    "before" "below" "between" "both" "by" "can" "did"
+    "do" "does" "don" "down" "during" "each" "few"
+    "for" "from" "further" "had" "has" "have" "having"
+    "here" "how" "i" "in" "into" "is" "it" "its"
+    "just" "more" "most" "no" "nor" "not" "now"
+    "of" "off" "on" "once" "only" "other" "out"
+    "over" "own" "same" "should" "so" "some" "such"
+    "t" "than" "that" "the" "then" "there" "these"
+    "through" "to" "too" "under" "up" "very" "was" "were"
+    "what" "when" "where" "which" "who" "why" "will" "with"))
 
 (defvar ref-man-bibtex-ascii-replacement-strings
   '(("í" . "{\\\\'i}")

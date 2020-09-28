@@ -144,14 +144,16 @@ class Server:
         self.proxy_everything = args.proxy_everything
         self.proxy_everything_port = args.proxy_everything_port
         self.verbose = args.verbose
+        self.threaded = args.threaded
         self.update_cache_thread = None
 
         # NOTE: This soup stuff should be separate buffer
-        self.cvpr_files = [f for f in os.listdir(".") if f.lower().startswith("cvpr")]
+        self.cvpr_files = [f for f in os.listdir(os.path.dirname(os.path.abspath(__file__)))
+                           if f.lower().startswith("cvpr")]
         self.soups = {}
         for f in self.cvpr_files:
             with open(f) as _f:
-                self.soups[f] = BeautifulSoup(_f.read())
+                self.soups[f] = BeautifulSoup(_f.read(), features="lxml")
 
         self.ss_cache = load_ss_cache(self.data_dir)
         self.update_cache_run = False
@@ -162,6 +164,7 @@ class Server:
         # TODO: Maybe ssh_socks proxy server should also be entirely in python
         #       paramiko maybe? Or some tunnel library
         if self.proxy_port:
+            print(f"Will redirect fetch_proxy to on {self.proxy_port}")
             proxies = {"http": f"http://127.0.0.1:{self.proxy_port}",
                        "https": f"http://127.0.0.1:{self.proxy_port}"}
             flag = Event()
@@ -171,6 +174,7 @@ class Server:
         else:
             proxies = None
         if self.proxy_everything_port:
+            print(f"Will proxy everything on {self.proxy_everything_port}")
             everything_proxies = {"http": f"http://127.0.0.1:{self.proxy_everything_port}",
                                   "https": f"http://127.0.0.1:{self.proxy_everything_port}"}
             flag = Event()
@@ -204,7 +208,11 @@ class Server:
             except requests.exceptions.Timeout:
                 print("Proxy not reachable")
                 return 1
+        self.proxies = proxies
+        self.everything_proxies = everything_proxies
+        self.init_routes()
 
+    def init_routes(self):
         @app.route("/arxiv", methods=["GET", "POST"])
         def arxiv():
             if request.method == "GET":
@@ -252,20 +260,21 @@ class Server:
                 query = args.pop("q")
                 return semantic_scholar_search(query, **args)
 
-        @app.route("/fetch_proxy")
-        def fetch_proxy():
-            if "url" in request.args and request.args["url"]:
-                url = request.args["url"]
-            else:
-                return json.dumps("NO URL GIVEN or BAD URL")
-            if self.verbose:
-                print(f"Fetching {url} with proxies {proxies}")
-            response = requests.get(url, proxies=proxies)
-            if response.url != url:
-                return json.dumps({"redirect": response.url,
-                                   "content": response.content.decode('utf-8')})
-            else:
-                return Response(response.content)
+        if self.proxies:
+            @app.route("/fetch_proxy")
+            def fetch_proxy():
+                if "url" in request.args and request.args["url"]:
+                    url = request.args["url"]
+                else:
+                    return json.dumps("NO URL GIVEN or BAD URL")
+                if self.verbose:
+                    print(f"Fetching {url} with proxies {self.proxies}")
+                response = requests.get(url, proxies=self.proxies)
+                if response.url != url:
+                    return json.dumps({"redirect": response.url,
+                                       "content": response.content.decode('utf-8')})
+                else:
+                    return Response(response.content)
 
         @app.route("/update_links_cache")
         def update_links_cache():
@@ -369,7 +378,7 @@ class Server:
         # _dblp_helper = partial(q_helper, _dblp_success, _dblp_no_result,
         #                        _dblp_error)
         # _dblp_helper = QHelper(_dblp_success, _dblp_no_result, _dblp_error)
-        _proxy = everything_proxies if self.proxy_everything else None
+        _proxy = self.everything_proxies if self.proxy_everything else None
         dblp_fetch, _dblp_helper = dblp_helper(_proxy, True)
         @app.route("/dblp", methods=["POST"])
         def dblp():
@@ -378,7 +387,7 @@ class Server:
             return result
 
         @app.route("/shutdown")
-        def shutodwn():
+        def shutdown():
             self.updating_cache_event.clear()
             if self.update_cache_thread is not None:
                 self.update_cache_thread.join()
@@ -386,7 +395,9 @@ class Server:
             func()
             return "Shutting down"
 
-        serving.run_simple("127.0.0.1", self.port, app, threaded=args.threaded)
+    def run(self):
+        "Run the server"
+        serving.run_simple("127.0.0.1", self.port, app, threaded=self.threaded)
 
 
 if __name__ == '__main__':
@@ -409,4 +420,5 @@ if __name__ == '__main__':
                         help="Simultaneous connections to DBLP")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
-    Server(args)
+    server = Server(args)
+    server.run()

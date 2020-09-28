@@ -7,7 +7,7 @@
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Time-stamp:	<Wednesday 24 June 2020 09:16:15 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org-mode, eww
-;; Version:     0.1
+;; Version:     0.3.0
 ;; Package-Requires: ((async "1.9.4") (org "9.1.9") (biblio-core "0.2.1") (gscholar-bibtex "0.3.1") (websocket "1.12") (dash "2.17.0") (dash-functional "1.2.0") (bind-key "2.4") (org-ref "1.1.1"))
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -33,6 +33,7 @@
 ;;; Code:
 
 ;; TODO: Should make ref-man minor mode
+;; TODO: Have to set debug levels. The info is way too much
 
 (defcustom ref-man-science-parse-server-port 8080
   "Server port on which to communicate with science parse server."
@@ -49,7 +50,7 @@ See URL `https://github.com/allenai/science-parse' for details"
 (defconst ref-man-home-dir (file-name-directory load-file-name)
   "Home or install directory for `ref-man'.")
 
-(defconst ref-man-version "0.2"
+(defconst ref-man-version "0.3.0"
   "`ref-man' version number.")
 
 (require 'ref-man-core)

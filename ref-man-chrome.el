@@ -68,6 +68,11 @@ executable."
   :type 'string
   :group 'ref-man)
 
+(defcustom ref-man-chrome-use-proxy nil
+  "Whether to use proxy for chromium requests also.
+If non-nil the chromium process is started with an option
+\"--proxy-server=http://localhost:`ref-man-proxy-port'\".")
+
 (defvar ref-man-chrome-chromium-names
   '("chromium-browser" "chromium" "chromium-freeworld" "google-chrome")
   "Possible executable names to check for Chromium Browser.
@@ -181,8 +186,8 @@ sockets are opened and verified.")
 (defvar url-http-end-of-headers)
 
 ;; from `ref-man'
-(defvar ref-man-use-proxy)
 (defvar ref-man-proxy-port)
+(defvar ref-man-pdf-proxy-port)
 
 ;; from `ref-man-core'
 (defvar ref-man--org-gscholar-launch-buffer)
@@ -230,7 +235,7 @@ sockets are opened and verified.")
     (define-key map "p" 'previous-line)
     ;; (define-key map "u" 'eww-up-url)
     ;; (define-key map "t" 'eww-top-url)
-    ;; (define-key map "&" 'eww-browse-with-external-browser)
+    (define-key map "&" 'ref-man-chrome-browse-with-external-browser)
     (define-key map "d" 'ref-man-chrome-download-pdf)
     (define-key map "w" 'ref-man-chrome-copy-url)
     ;; (define-key map "C" 'url-cookie-list)
@@ -521,6 +526,13 @@ instead."
   (kill-new url)
   (message "[ref-man-chrome] Copied %s" url))
 
+(defun ref-man-chrome-browse-with-external-browser (&optional url)
+  "Browse current page URL with external browser.
+Like `eww-browse-with-external-browser' and in fact calls that
+function."
+  (interactive)
+  (eww-browse-with-external-browser ref-man-chrome--page-url))
+
 (defun ref-man-chrome-download-pdf (&optional view)
   "Download the pdf for current google scholar entry.
 With optional VIEW, view the pdf also."
@@ -767,14 +779,14 @@ process.  Uses `find-open-port'"
 Optional HEADLESS implies to start in headless mode: no window.
 DATA-DIR is where to load/store user data and profiles.  PORT is
 which debugging port to open."
-  (if ref-man-use-proxy
+  (if ref-man-chrome-use-proxy
       (if headless
           (start-process "chromium" "*chromium*" (ref-man-chrome--which-chromium)
-                         (format "--proxy-server=socks://localhost:%d" ref-man-proxy-port)
+                         (format "--proxy-server=http://localhost:%d" ref-man-proxy-port)
                          "--headless" (concat "--user-data-dir=" data-dir)
                          (format "--remote-debugging-port=%s" port))
         (start-process "chromium" "*chromium*" (ref-man-chrome--which-chromium)
-                       (format "--proxy-server=socks://localhost:%d" ref-man-proxy-port)
+                       (format "--proxy-server=http://localhost:%d" ref-man-proxy-port)
                        (concat "--user-data-dir=" data-dir)
                        (format "--remote-debugging-port=%s" port)))
     (if headless

@@ -34,32 +34,11 @@
 (unless (featurep 'ref-man-util)
   (require 'ref-man-util))
 
-;; TODO: I should consolidate the variables below, such that if the proxy is
-;;       non-nil then automatically use proxy
-
-;; CHECK: Maybe rename to ref-man-proxy-port
 (defcustom ref-man-pdf-proxy-port nil
-  "Socks proxy port if enabled."
-  :type 'integer
-  :group 'ref-man)
-
-;; TODO: If `ref-man-use-proxy' is t then all external requests for ref-man
-;;       should be routed through the proxy and not just the python requests.
-;;       I think I can do something similar to `ref-man-url-maybe-proxy'.
-(defcustom ref-man-use-proxy nil
-  "Should we use the proxy for all python requests?"
-  :type 'symbol
-  :group 'ref-man)
-
-(defcustom ref-man-proxy-port nil
-  "Should we use the proxy for all python requests?"
-  :type 'integer
-  :group 'ref-man)
-
-(defcustom ref-man-get-pdfs-with-proxy nil
-  "Whether to fetch pdfs over a proxy server.
+  "Fetch PDFs over a proxy server if non-nil.
 If this is non-nil then the all the pdf downloads go through the
-python server which additionally fetches it from an http proxy."
+python server which additionally fetches it from an http proxy at
+localhost specified by this port."
   :type 'boolean
   :group 'ref-man)
 
@@ -117,18 +96,18 @@ python server which additionally fetches it from an http proxy."
          (string-match-p filename path)))
 
 (defun ref-man-url-maybe-proxy (url)
-  "Return proxy URL if `ref-man-get-pdfs-with-proxy' is non-nil, else same URL."
+  "Return proxy URL if `ref-man-pdf-proxy-port' is non-nil, else same URL."
   (let ((prefix (format "http://localhost:%s/fetch_proxy?url="
                         ref-man-python-server-port)))
-    (if (and ref-man-get-pdfs-with-proxy (not (string-prefix-p "http://localhost" url)))
+    (if (and ref-man-pdf-proxy-port (not (string-prefix-p "http://localhost" url)))
         (concat prefix url)
       url)))
 
 (defun ref-man-url-maybe-unproxy (url)
-  "Remove proxy prefix and return URL if `ref-man-get-pdfs-with-proxy' is non-nil, else same URL."
+  "Remove proxy prefix and return URL if `ref-man-pdf-proxy-port' is non-nil, else same URL."
   (let ((prefix (format "http://localhost:%s/fetch_proxy?url="
                         ref-man-python-server-port)))
-    (if (and ref-man-get-pdfs-with-proxy (string-prefix-p prefix url))
+    (if (and ref-man-pdf-proxy-port (string-prefix-p prefix url))
         (string-remove-prefix prefix url)
       url)))
 
@@ -425,7 +404,8 @@ links."
                                          (with-current-buffer buf (buffer-string)))
                          (url-retrieve-synchronously (ref-man-url-get-last-link-from-html-buffer buf) t)
                        buf)))
-           (ref-man-url-get-last-link-from-html-buffer buf)))
+           (replace-regexp-in-string "/paper/view/" "/paper/viewFile/"
+                                     (ref-man-url-get-last-link-from-html-buffer buf))))
         ((eq site 'acm)
          (let ((link (with-temp-shr-buffer
                       buf
@@ -454,7 +434,9 @@ links."
                  (t nil))))
         ((eq site 'openreview)
          (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-           (when (string-match-p "^[http|https]" link) link)))))
+           (if (string-match-p "^[http|https]" link)
+               link
+             (url-join "https://openreview.net" link))))))
 
 (defun ref-man-url-get-pdf-link (site url &optional callback cbargs)
   "Helper function to get a pdf link from URL and website SITE.
@@ -481,12 +463,14 @@ much more easily without going through a DOI redirect."
       (ref-man-python-get-cvpr-url (plist-get cbargs :heading) url)
     (doi-utils-get-pdf-url url)))
 
-(defun ref-man-url-arxiv-pdf-link-helper (url)
-  "Get PDF URL for an arxiv url."
+(defun ref-man-url-arxiv-pdf-link-helper (url &rest args)
+  "Get PDF URL for an arxiv url.
+ARGS is for compatibility and not used."
   (concat (replace-regexp-in-string "/abs/" "/pdf/" url) ".pdf"))
 
-(defun ref-man-url-acl-pdf-link-helper (url)
-  "PDF link helper for an ACL URL."
+(defun ref-man-url-acl-pdf-link-helper (url &rest args)
+  "PDF link helper for an ACL URL.
+ARGS is for compatibility and not used."
   (if (string-match-p "aclweb.org" url)
       (concat (replace-regexp-in-string "/$" "" url) ".pdf")
     (concat "https://www.aclweb.org/anthology/"
@@ -499,7 +483,7 @@ with PDF link and CBARGS."
   (when url
     (let ((helper
            (cond ((string-match-p "doi.org" url)
-                  (-partial #'ref-man-url-doi-pdf-link-helper url cbargs))
+                  #'ref-man-url-doi-pdf-link-helper)
                  ((string-match-p "arxiv.org" url)
                   #'ref-man-url-arxiv-pdf-link-helper)
                  ((string-match-p "aclanthology.info\\|aclweb.org" url)
@@ -522,10 +506,10 @@ with PDF link and CBARGS."
                   (-partial #'ref-man-url-get-pdf-link-helper 'ss))
                  (t nil))))
       (cond ((and helper (symbolp helper) callback)
-             (let ((link (funcall helper url)))
+             (let ((link (funcall helper url cbargs)))
                (funcall callback link cbargs)))
             ((and helper (symbolp helper))
-             (funcall helper url))
+             (funcall helper url cbargs))
             ((and helper callback)
              (url-retrieve url (lambda (status url helper callback cbargs)
                                  (if (plist-get status :error)
