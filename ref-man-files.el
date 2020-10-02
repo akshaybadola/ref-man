@@ -1,7 +1,7 @@
 (require 'f)
 (require 'ref-man-url)
 
-(defcustom ref-man-documents-dir (expand-file-name "~/.ref-man/pdfs")
+(defcustom ref-man-documents-dir (expand-file-name "~/.ref-man/docs")
   "Directory where the downloaded pdf files will be stored."
   :type 'directory
   :group 'ref-man)
@@ -28,7 +28,7 @@ Returns path concatenated with `ref-man-documents-dir'."
                       (concat (string-join (last (split-string url "/") 2) "-") ".pdf"))
                      ((string-match-p "aaai.org" url)
                       (concat "aaai_" (string-join (last (split-string url "/") 2) "_") ".pdf"))
-                     ((string-match-p "dl.acm.org" url)
+                     ((string-match-p "acm.org" url)
                       (if (string-match-p "doi/pdf" url)
                           (concat "acm_" (mapconcat #'identity (-take-last 2 (split-string url "/")) "_") ".pdf")
                         (concat "acm_" (car (split-string (nth 1 (split-string url "?id=")) "&")) ".pdf")))

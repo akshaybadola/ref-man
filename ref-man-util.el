@@ -145,7 +145,7 @@ They need not exist."
 Replace IN string WITH WHAT."
   (replace-regexp-in-string
    (regexp-quote what) with in nil 'literal))
-;; (make-obsolete 'replace-in-string 'replace-regexp-in-string "")
+;; (make-obsolete 'replace-in-string 'replace-regexp-in-string "ref-man 0.3.0")
 
 (defun sort-symbols (reverse beg end)
   "Sort symbols in region alphabetically, in REVERSE if negative.
@@ -198,6 +198,13 @@ also."
         (replace-regexp-in-string "\"" "" str)
       str)))
 
+(defun ref-man--trim-and-unquote (str)
+  "Trim the input string STR and remove surrounding quotes if present.
+Identical to `ref-man--trim-whitespace' but remove quotes also."
+  (let ((str (replace-regexp-in-string "[ \t]+" " "
+                                       (replace-regexp-in-string "\n" "" (string-trim str)))))
+    (replace-regexp-in-string "\"" "" str)))
+
 (defun ref-man--fix-curly (str)
   "Gets text between parentheses for {STR}."
   (string-remove-suffix "}" (string-remove-prefix "{" str)))
@@ -234,5 +241,47 @@ replacements are a union of both above alists."
                                     (-union ref-man-bibtex-ascii-replacement-strings
                                             org-ref-nonascii-latex-replacements))
                                ref-man-bibtex-ascii-replacement-strings)))
+
+(defun ref-man-save-headings-before-pdf-file-open (arg)
+  "Add advice to save headings and paths before calling `org-open-at-point'.
+Used to insert ORG_FILE back into the file in case an org buffer
+is saved in `ref-man-org-store-dir' from `ref-man-get-references'."
+  (if arg
+      (advice-add #'org-open-at-point :before #'ref-man-save-heading-before-open-advice)
+    (advice-remove #'org-open-at-point #'ref-man-save-heading-before-open-advice)))
+
+(defvar ref-man-headings-before-pdf-open nil
+  "Saved org headings and paths when a pdf file was opened from org.")
+(defun ref-man-save-heading-before-open-advice (&optional arg)
+  "Save org heading and file path if a pdf file is opened from PDF_FILE property.
+This function is used as advice to `org-open-at-point' and
+optional ARG is passed through to it.  Org heading and path for
+the link are added to `ref-man-headings-before-pdf-open'."
+  (let* ((heading (substring-no-properties (org-get-heading t t t t)))
+         (context (org-element-context))
+         (maybe-link (cond ((and (eq (car context) 'headline)
+                                 (plist-get (cadr context) :PDF_FILE))
+                            (plist-get (cadr context) :PDF_FILE))
+                           ((eq (car context) 'node-property)
+                            (plist-get (cadr context) :value))
+                           ;; NOTE: we don't save if link is in text (for now)
+                           ;; ((eq (car context) 'link)
+                           ;;  context)
+                           (t nil)))
+         (path (cond ((and maybe-link (stringp maybe-link))
+                      (pcase (with-temp-buffer
+	                       (let ((org-inhibit-startup nil))
+	                         (insert maybe-link)
+	                         (org-mode)
+	                         (goto-char (point-min))
+	                         (org-element-link-parser)))
+                        (`nil (user-error "No valid link in %S" heading))
+                        (link (and link (plist-get (cadr link) :path)))))
+                     ((and (eq (car maybe-link) 'link)
+                           (equal (plist-get (cadr maybe-link) :type) "file"))
+                      (plist-get (cadr maybe-link) :path))
+                     (t nil))))
+    (when path
+      (add-to-list 'ref-man-headings-before-pdf-open (list :heading heading :path path)))))
 
 (provide 'ref-man-util)

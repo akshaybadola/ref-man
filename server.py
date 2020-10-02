@@ -1,7 +1,9 @@
 import os
+import sys
 import json
 import time
 import shutil
+import logging
 import requests
 import argparse
 from queue import Queue
@@ -20,17 +22,35 @@ from dblp import dblp_helper
 from semantic_scholar import load_ss_cache, semantic_scholar_search, semantic_scholar_paper_details
 
 
+def get_stream_logger(name="default",
+                      handler_log_level=logging.DEBUG,
+                      log_level=logging.DEBUG,
+                      datefmt=None, fmt=None):
+    if datefmt is None:
+        datefmt = '%Y/%m/%d %I:%M:%S %p'
+    if fmt is None:
+        '%(asctime)s %(message)s'
+    logger = logging.getLogger(name)
+    formatter = logging.Formatter(datefmt=datefmt, fmt=fmt)
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setLevel(handler_log_level)
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(stream_handler)
+    logger.setLevel(log_level)
+    return logger
+
+
 app = Flask(__name__)
 
 
-def post_json_wrapper(request, fetch_func, helper, batch_size, verbose):
+def post_json_wrapper(request, fetch_func, helper, batch_size, logger):
     """Helper function to parallelize the requests and gather them.
 
     :param request: `request` is of type `Flask.request`
     :param fetch_func: :class:`function``fetch_func` fetches the request from the server
     :param helper: :class:`function` checks and collates the results
     :param batch_size: :class:`int` Number of simultaneous fetch requests
-    :param verbose: Self explanatory
+    :param verbosity: verbosity level
 
     """
     if not isinstance(request.json, str):
@@ -40,6 +60,8 @@ def post_json_wrapper(request, fetch_func, helper, batch_size, verbose):
             data = json.loads(request.json)
         except Exception:
             return json.dumps("BAD REQUEST")
+    logger.info(f"Fetching {len(data)} queries from dblp")
+    verbosity = True
     j = 0
     content = {}
     while True:
@@ -53,7 +75,7 @@ def post_json_wrapper(request, fetch_func, helper, batch_size, verbose):
         threads = []
         for d in _data:
             threads.append(Thread(target=fetch_func, args=[d, q],
-                                  kwargs={"verbose": verbose}))
+                                  kwargs={"verbosity": verbosity}))
             threads[-1].start()
         for t in threads:
             t.join()
@@ -82,13 +104,12 @@ def check_proxy(proxies, flag):
 
 
 def update_links_cache_helper(local_dir, remote_dir, cache_file, ev,
-                              success_ev, verbose):
+                              success_ev, logger):
     if not ev.is_set():
         ev.set()
     if success_ev.is_set():
         success_ev.clear()
-    if verbose:
-        print(f"Updating local cache {cache_file}")
+    logger.info(f"Updating local cache {cache_file}")
     init_cache_size = None
     try:
         local_files = [os.path.join(local_dir, f) for f in os.listdir(local_dir)
@@ -104,26 +125,24 @@ def update_links_cache_helper(local_dir, remote_dir, cache_file, ev,
             try:
                 start = time.time()
                 path = os.path.join(remote_dir, os.path.basename(f))
+                if " " in path:
+                    path = f'"{path}"'
                 p = Popen(f"rclone -v link {path}", shell=True, stdout=PIPE, stderr=PIPE)
                 out, err = p.communicate(timeout=10)
                 duration = time.time() - start
                 if err and "error 403" in err.decode("utf-8").lower():
-                    print(f"File {f} does not exist on remote.")
+                    logger.warning(f"File {f} does not exist on remote. Copying")
                     p = Popen(f"rclone -v copy f {path}", shell=True, stdout=PIPE, stderr=PIPE)
                     out, err = p.communicate(timeout=10)
                 elif err:
-                    print(f"Could not get link for {f}. {err.decode('utf-8')}.")
+                    logger.error(f"Could not get link for {f}. {err.decode('utf-8')}.")
                 else:
                     link = out.decode("utf-8").replace("\n", "")
-                    # TODO: should be "if debug" instead
-                    if verbose:
-                        print(f"got link {link} for file {f} in {duration} seconds")
+                    logger.debug(f"got link {link} for file {f} in {duration} seconds")
                     cache.append(f"{f};{link}")
             except TimeoutExpired:
-                if verbose:
-                    print(f"Timeout for file {f}")
-        if verbose:
-            print(f"Writing {len(cache) - init_cache_size} links to {cache_file}")
+                logger.warning(f"Timeout for file {f}")
+        logger.info(f"Writing {len(cache) - init_cache_size} links to {cache_file}")
         shutil.copyfile(cache_file, cache_file + ".bak")
         with open(cache_file, "w") as cf:
             cf.write("\n".join(cache))
@@ -131,8 +150,8 @@ def update_links_cache_helper(local_dir, remote_dir, cache_file, ev,
         success_ev.set()
     except Exception as e:
         ev.clear()
-        print(f"Error {e} while updating cache")
-        print(f"Overwritten {cache_file}. Original file backed up to {cache_file}.bak")
+        logger.error(f"Error {e} while updating cache")
+        logger.error(f"Overwritten {cache_file}. Original file backed up to {cache_file}.bak")
 
 
 class Server:
@@ -143,17 +162,30 @@ class Server:
         self.proxy_port = args.proxy_port
         self.proxy_everything = args.proxy_everything
         self.proxy_everything_port = args.proxy_everything_port
-        self.verbose = args.verbose
+        self.verbosity = args.verbosity
         self.threaded = args.threaded
         self.update_cache_thread = None
-
+        # We set "error" to warning
+        verbosity_levels = {"info": logging.INFO,
+                            "error": logging.WARNING,
+                            "debug": logging.DEBUG}
+        if self.verbosity not in verbosity_levels:
+            self.verbosity = "info"
+            self.logger = get_stream_logger(log_level=verbosity_levels[self.verbosity])
+            self.logger.warning(f"{args.verbosity} was not in known levels." +
+                                f"Set to {self.verbosity}")
+        else:
+            self.logger = get_stream_logger(log_level=verbosity_levels[self.verbosity])
+            self.logger.debug(f"Log level is set to {args.verbosity}.")
         # NOTE: This soup stuff should be separate buffer
-        self.cvpr_files = [f for f in os.listdir(os.path.dirname(os.path.abspath(__file__)))
+        cur_dir = os.path.dirname(os.path.abspath(__file__))
+        self.cvpr_files = [os.path.join(cur_dir, f) for f in os.listdir(cur_dir)
                            if f.lower().startswith("cvpr")]
         self.soups = {}
         for f in self.cvpr_files:
             with open(f) as _f:
                 self.soups[f] = BeautifulSoup(_f.read(), features="lxml")
+        self.logger.debug(f"Loaded conference files {self.soups.keys()}")
 
         self.ss_cache = load_ss_cache(self.data_dir)
         self.update_cache_run = False
@@ -164,17 +196,17 @@ class Server:
         # TODO: Maybe ssh_socks proxy server should also be entirely in python
         #       paramiko maybe? Or some tunnel library
         if self.proxy_port:
-            print(f"Will redirect fetch_proxy to on {self.proxy_port}")
+            self.logger.info(f"Will redirect fetch_proxy to on {self.proxy_port}")
             proxies = {"http": f"http://127.0.0.1:{self.proxy_port}",
                        "https": f"http://127.0.0.1:{self.proxy_port}"}
-            flag = Event()
-            flag.set()
-            check_proxy_thread = Thread(target=check_proxy, args=[proxies, flag])
-            check_proxy_thread.start()
+            # flag = Event()
+            # flag.set()
+            # check_proxy_thread = Thread(target=check_proxy, args=[proxies, flag])
+            # check_proxy_thread.start()
         else:
             proxies = None
         if self.proxy_everything_port:
-            print(f"Will proxy everything on {self.proxy_everything_port}")
+            self.logger.info(f"Will proxy everything on {self.proxy_everything_port}")
             everything_proxies = {"http": f"http://127.0.0.1:{self.proxy_everything_port}",
                                   "https": f"http://127.0.0.1:{self.proxy_everything_port}"}
             flag = Event()
@@ -189,25 +221,25 @@ class Server:
                 response = requests.get("http://google.com", proxies=everything_proxies,
                                         timeout=1)
                 if response.status_code == 200:
-                    print("Proxy everything seems to work")
+                    self.logger.info("Proxy everything seems to work")
                 else:
-                    print("Proxy everything seems reachable but wrong" +
-                          f" status_code {response.status_code}")
-                print("Warning: proxy_everything is only implemented for DBLP.")
+                    self.logger.info("Proxy everything seems reachable but wrong" +
+                                     f" status_code {response.status_code}")
+                self.logger.warning("Warning: proxy_everything is only implemented for DBLP.")
             except requests.exceptions.Timeout:
-                print("Proxy for everything else not reachable")
+                self.logger.error("Proxy for everything else not reachable")
                 return 1
         if proxies is not None:
             try:
                 response = requests.get("http://google.com", proxies=proxies,
                                         timeout=1)
                 if response.status_code == 200:
-                    print("Proxy seems to work")
+                    self.logger.info("Proxy seems to work")
                 else:
-                    print(f"Proxy seems reachable but wrong status_code {response.status_code}")
+                    self.logger.info(f"Proxy seems reachable but wrong status_code {response.status_code}")
             except requests.exceptions.Timeout:
-                print("Proxy not reachable")
-                return 1
+                self.logger.error("Proxy not reachable")
+                sys.exit(1)
         self.proxies = proxies
         self.everything_proxies = everything_proxies
         self.init_routes()
@@ -223,7 +255,7 @@ class Server:
                 return arxiv_get(id)
             else:
                 result = post_json_wrapper(request, arxiv_fetch, arxiv_helper,
-                                           args.batch_size, self.verbose)
+                                           args.batch_size, self.verbosity)
                 return json.dumps(result)
 
         @app.route("/semantic_scholar", methods=["GET", "POST"])
@@ -267,8 +299,7 @@ class Server:
                     url = request.args["url"]
                 else:
                     return json.dumps("NO URL GIVEN or BAD URL")
-                if self.verbose:
-                    print(f"Fetching {url} with proxies {self.proxies}")
+                self.logger.debug(f"Fetching {url} with proxies {self.proxies}")
                 response = requests.get(url, proxies=self.proxies)
                 if response.url != url:
                     return json.dumps({"redirect": response.url,
@@ -302,7 +333,7 @@ class Server:
                 self.update_cache_thread = Thread(target=update_links_cache_helper,
                                                   args=[local_dir, remote_dir, cache_file,
                                                         self.updating_cache_event,
-                                                        self.updated_success_event, self.verbose])
+                                                        self.updated_success_event, self.logger])
                 self.update_cache_thread.start()
                 return f"Updating cache for {len(files)} files"
             else:
@@ -383,7 +414,7 @@ class Server:
         @app.route("/dblp", methods=["POST"])
         def dblp():
             result = post_json_wrapper(request, dblp_fetch, _dblp_helper,
-                                       args.batch_size, self.verbose)
+                                       args.batch_size, self.verbosity)
             return result
 
         @app.route("/shutdown")
@@ -418,7 +449,8 @@ if __name__ == '__main__':
                         help="Semantic Scholar cache directory")
     parser.add_argument("--batch-size", "-b", dest="batch_size", type=int, default=16,
                         help="Simultaneous connections to DBLP")
-    parser.add_argument("--verbose", "-v", action="store_true")
+    parser.add_argument("--verbosity", "-v", type=str, default="info",
+                        help="Verbosity level. One of [error, info, debug]")
     args = parser.parse_args()
     server = Server(args)
     server.run()

@@ -71,7 +71,9 @@ executable."
 (defcustom ref-man-chrome-use-proxy nil
   "Whether to use proxy for chromium requests also.
 If non-nil the chromium process is started with an option
-\"--proxy-server=http://localhost:`ref-man-proxy-port'\".")
+\"--proxy-server=http://localhost:`ref-man-proxy-port'\"."
+  :type 'boolean
+  :group 'ref-man)
 
 (defvar ref-man-chrome-chromium-names
   '("chromium-browser" "chromium" "chromium-freeworld" "google-chrome")
@@ -176,7 +178,7 @@ sockets are opened and verified.")
 ;; CHECK: If a closure would be enough for these
 (defvar ref-man-chrome--tab-id)
 (defvar ref-man-chrome--test-connect)
-(make-obsolete-variable 'ref-man-chrome--test-connect nil "")
+(make-obsolete-variable 'ref-man-chrome--test-connect nil "ref-man 0.3.0")
 (defvar ref-man-chrome--init-0)
 (defvar ref-man-chrome--init-1)
 (defvar ref-man-chrome--fetched-sentinel)

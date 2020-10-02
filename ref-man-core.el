@@ -26,10 +26,11 @@
 
 ;;; Commentary:
 ;;
-;; Core components include `eww', `org', `bibtex', `science-parse', `python'
-;; python interface is used as an interface to arxiv, dblp and semanticscholar.
-;; There are some file and pdf functions also and functions specific for
-;; gscholar also.
+;; Core components include data structures and functions and commands forx
+;; `org', `bibtex', `science-parse' and `python'. A python flask server
+;; interface is used as an interface to arxiv, dblp and semanticscholar.  There
+;; are some file and pdf functions also and functions specific for gscholar
+;; also.
 ;;
 ;; Perhaps I'll add functions for markdown also (to convert to manuscript)
 ;; though `org' export can also be used, though I'll have to reconfigure my
@@ -43,13 +44,14 @@
 ;; TODO: I have to separate these according to:
 ;;       - ref-man-bibtex
 ;;       - ref-man-org
-;;       - ref-man-util
 ;;       - ref-man-pdf
 ;;       - ref-man-dblp
 ;;       - ref-man-ss (for semanticscholar)
 ;;       - ref-man-gscholar (for gscholar utils)
-;;       - ref-man-arxiv
 ;;       python utils are in any case separate
+;;
+;; NOTE: I think I'll keep the python interface, the processes, the data
+;;       structures all here and move org to a new file next.
 ;;
 ;; TODO: Also the code is very messy and very little documentation.  I have to
 ;;       add them
@@ -109,6 +111,11 @@
   :type 'directory
   :group 'ref-man)
 
+(defcustom ref-man-update-pdf-url-when-download nil
+  "When non-nil insert/update PDF_URL property of heading when fetching pdf."
+  :type 'boolean
+  :group 'ref-man)
+
 (defcustom ref-man-python-server-port-start 9999
   "Server port on which to communicate with python server."
   :type 'integer
@@ -134,6 +141,10 @@ go through this http proxy at localhost, specified by this port."
 (defvar ref-man-key-list
   '(authors title venue volume number pages year doi ee)
   "Only these keys from bibtex are retained (I think).")
+
+(defvar ref-man-bibtex-save-ring
+  nil
+  "List to store parsed bibtex entries when they're not killed.")
 
 ;; NOTE: External functions
 (declare-function ref-man-try-start-science-parse-server "ref-man")
@@ -195,9 +206,9 @@ go through this http proxy at localhost, specified by this port."
     map))
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;
-;; ref-man constants  ;;
-;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; START ref-man constants  ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;
 ;; Constants. perhaps can name them better
@@ -215,17 +226,8 @@ go through this http proxy at localhost, specified by this port."
     (9 . "Sep") (10 . "Oct") (11. "Nov") (12 . "Dec")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; end ref-man constants  ;;
+;; END ref-man constants  ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-
-;; CHECK: Maybe move these to a separate file?
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; START elementary utility functions ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; END elementary utility functions ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START ref-man string utility functions ;;
@@ -347,15 +349,14 @@ only the top RESULT from `ref-man-venue-priorities'"
 (defun ref-man--build-bib-key-from-plist (str-plist)
   "Builds a unique key with the format [author year first-title-word].
 Entry STR-PLIST is a plist."
-  (let* ((first-author-str (car (split-string (ref-man--trim-whitespace
-                                               (plist-get str-plist :author))
-                                              "," t)))
+  (let* ((first-author-str (car (split-string (ref-man--trim-and-unquote
+                                               (plist-get str-plist :author)) ",")))
          (first-author (ref-man--validate-author (split-string first-author-str " " t)))
          (last-name (car (last first-author)))
-         (year-pub (ref-man--trim-whitespace (plist-get str-plist :year)))
+         (year-pub (ref-man--trim-and-unquote (plist-get str-plist :year)))
          (title (-remove 'ref-man--stop-word-p
                            (mapcar #'ref-man--remove-punc
-                                   (split-string (downcase (ref-man--trim-whitespace
+                                   (split-string (downcase (ref-man--trim-and-unquote
                                                             (plist-get str-plist :title))) " "))))
          (title-first (car (split-string (car title) "-")))
          (key (ref-man--replace-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))
@@ -372,13 +373,13 @@ Entry STR-PLIST is a plist."
   "Builds a unique key with the format [author year first-title-word].
 Entry KEY-STR is an alist of string keys.  Optional NA argument
 appends \"na_\" if the key is non-authoritative."
-  (let* ((first-author-str (car (split-string (ref-man--trim-whitespace (cadr (assoc "authors" key-str))) "," t)))
+  (let* ((first-author-str (car (split-string (ref-man--trim-and-unquote (cadr (assoc "authors" key-str))) ",")))
          (first-author (ref-man--validate-author (split-string first-author-str " " t)))
          (last-name (car (last first-author)))
-         (year-pub (ref-man--trim-whitespace (car (cdr (assoc "year" key-str)))))
+         (year-pub (ref-man--trim-and-unquote (car (cdr (assoc "year" key-str)))))
          (title (-remove 'ref-man--stop-word-p
                            (mapcar #'ref-man--remove-punc
-                                   (split-string (downcase (ref-man--trim-whitespace
+                                   (split-string (downcase (ref-man--trim-and-unquote
                                                             (cadr (assoc "title" key-str)))) " "))))
          (title-first (car (split-string (car title) "-")))
          (key (ref-man--replace-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))
@@ -389,13 +390,13 @@ appends \"na_\" if the key is non-authoritative."
   "Builds a unique key with the format [author year first-title-word].
 BIB-ALIST is an plist of parsed bibtex entry.  Returns the
 trimmed entries and converts multiple spaces to a single one."
-  (let* ((first-author-str (car (split-string (ref-man--trim-whitespace (cdr (assoc :author bib-alist))) "," t)))
+  (let* ((first-author-str (car (split-string (ref-man--trim-and-unquote (cdr (assoc :author bib-alist))) ",")))
          (first-author (ref-man--validate-author (split-string first-author-str " " t)))
          (last-name (car (last first-author)))
-         (year-pub (ref-man--trim-whitespace (cdr (assoc :year bib-alist))))
+         (year-pub (ref-man--trim-and-unquote (cdr (assoc :year bib-alist))))
          (title (-remove 'ref-man--stop-word-p
                            (mapcar #'ref-man--remove-punc
-                                   (split-string (downcase (ref-man--trim-whitespace
+                                   (split-string (downcase (ref-man--trim-and-unquote
                                                             (cdr (assoc :title bib-alist)))) " "))))
          (title-first (car (split-string (car title) "-")))
          (key (ref-man--replace-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))
@@ -424,9 +425,9 @@ BIB-ALIST is an alist of string keys.  Assumes the strings are all validated"
   "Builds the str alist of bib from symbol BIB-ALIST.
 Can be used to build both the bib entry and org entry."
   (let* ((key (ref-man--build-bib-key-from-parsed-org-bibtex bib-alist))
-         (author (cons "author" (ref-man--trim-whitespace (cdr (assoc :author bib-alist)))))
-         (title (cons "title" (ref-man--trim-whitespace (cdr (assoc :title bib-alist)))))
-         (year (cons "year" (ref-man--trim-whitespace (cdr (assoc :year bib-alist)))))
+         (author (cons "author" (ref-man--trim-and-unquote (cdr (assoc :author bib-alist)))))
+         (title (cons "title" (ref-man--trim-and-unquote (cdr (assoc :title bib-alist)))))
+         (year (cons "year" (ref-man--trim-and-unquote (cdr (assoc :year bib-alist)))))
          (doi (cons "doi" (cdr (assoc :doi bib-alist))))
          (volume (cons "volume"  (cdr (assoc :volume bib-alist))))
          (number (cons "number"  (cdr (assoc :number bib-alist))))
@@ -503,7 +504,7 @@ bibtex key with \"na_\"."
          (url (cons "url" (cadr (assoc "ee" key-str))))
          (venue (cons "venue" (cadr (assoc "venue" key-str)))))
     (list key (-filter 'cdr (list author title year doi volume number pages url venue)))))
-(make-obsolete 'ref-man--build-bib-assoc nil "")
+(make-obsolete 'ref-man--build-bib-assoc nil "ref-man 0.3.0")
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END Bib entry utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -599,7 +600,7 @@ for the buffer."
     (insert "Refs")
     (org-insert-heading-after-current)
     (org-demote-subtree)
-    (goto-char (point-max))
+    (end-of-line)
     (message "[ref-man] Fetching references from DBLP")
     ;; TODO: Maybe set buffer read only until fetched?
     (ref-man--dblp-fetch-python refs-list org-buf)
@@ -760,6 +761,7 @@ all results."
                    all)))))
 
 ;; NOTE: Changed add-to-list to push
+;; TODO: Change to 
 (defun ref-man--generate-key-str-from-science-parse ()
   "Generate a string alist from Science Parse data.
 Science Parse data is a hashtable, which is cleaned and the alist
@@ -778,7 +780,7 @@ returned."
          (when (gethash "venue" ref-man--science-parse-data)
            (push (cons "venue" (list (gethash "venue" ref-man--science-parse-data))) key-str))
         key-str))
-(make-obsolete 'ref-man--generate-key-str-from-science-parse nil "")
+(make-obsolete 'ref-man--generate-key-str-from-science-parse nil "ref-man 0.3.0")
 
 (defun ref-man--generate-buffer-and-fetch-if-required (refs-list)
   "Generate the Org buffer with publication details and references.
@@ -890,7 +892,8 @@ a reference, it's inserted as is prefixed with \"na_\"."
            (pages (cons "pages" (when tmp-pages
                                   (replace-in-string
                                    (replace-in-string (format "%s" tmp-pages) "-" "--") " " ""))))
-           (year (cons "year" (format "%s" (gethash "year" hash))))
+           (year (cons "year" (when (gethash "year" hash) (format "%s" (gethash "year" hash)))))
+           (month (cons "month" (when (gethash "month" hash) (format "%s" (gethash "month" hash)))))
            (venue (cons "venue" (when (gethash "venue" hash)
                                   (replace-in-string (gethash "venue" hash) ",$" ""))))
            ;; (key (mapconcat (lambda (x) (replace-in-string (downcase x) " " ""))
@@ -901,7 +904,7 @@ a reference, it's inserted as is prefixed with \"na_\"."
            ;;                       (if (gethash "year" hash) (format "%s" (gethash "year" hash)) "_")
            ;;                       (car (split-string (gethash "title" hash) " " t))) ""))
            (key (ref-man--build-bib-key-from-plist (list :title title :year year :author author)))
-           (entry (list key (-filter 'cdr (list author title year venue volume number pages)))))
+           (entry (list key (-filter 'cdr (list author title year month venue volume number pages)))))
       entry)))
 
 (defun ref-man--org-bibtex-write-ref-NA-from-keyhash (key-hash)
@@ -1177,37 +1180,49 @@ FILENAME where the suffix .bib is replaced with .org."
            entries nil 'bibtex)))
     (message (format "[ref-man] File %s does not exist" filename))))
 
-(defun ref-man-org-bibtex-read-from-headline ()
+(defun ref-man-org-bibtex-kill-headline-as-bibtex ()
+  "Parse the headline at point, convert to a bib entry and append to `kill-ring'.
+Only for interactive use.  Same as
+`ref-man-org-bibtex-read-from-headline' except it returns nothing
+and kills the entry as bibtex."
+  (ref-man-org-bibtex-read-from-headline t))
+
+(defun ref-man-org-bibtex-read-from-headline (&optional kill)
   "Parse the headline at point and convert to a bib entry.
-The entry is appended to the kill ring."
+The entry is appended to `ref-man-bibtex-save-ring'.  When
+optional KILL is non-nill, the entry is also added to `kill-ring'
+with `kill-new'."
   (interactive)
   (if (eq major-mode 'org-mode)
-    (let* ((props (org-entry-properties))
-           (bib-str (list
-                     (cons "type"  (concat "@" (cdr (assoc "BTYPE" props))))
-                     (cons "key"  (cdr (assoc "CUSTOM_ID" props)))
-                     (cons "title"  (cdr (assoc "TITLE" props)))
-                     (cons "author"  (cdr (assoc "AUTHOR" props)))
-                     (cons "venue"  (cdr (assoc "VENUE" props)))
-                     (cons "booktitle"  (cdr (assoc "BOOKTITLE" props)))
-                     (cons "volume"  (cdr (assoc "VOLUME" props)))
-                     (cons "number"  (cdr (assoc "NUMBER" props)))
-                     (cons "year"  (cdr (assoc "YEAR" props)))
-                     (cons "pages"  (cdr (assoc "PAGES" props)))
-                     (cons "doi"  (cdr (assoc "DOI" props)))
-                     (cons "url"  (cdr (assoc "URL" props)))
-                     (cons "publisher"  (cdr (assoc "PUBLISHER" props)))
-                     (cons "organization"  (cdr (assoc "ORGANIZATION" props)))))
-           (header (concat (cdr (assoc "type" bib-str)) "{" (cdr (assoc "key" bib-str)) ",\n"))
-           (bib-str (delq (assoc "type" bib-str) bib-str))
-           (bib-str (delq (assoc "key" bib-str) bib-str))
-           (bib-str (concat header
-                            (mapconcat (lambda (x)
-                                         (if (cdr x) (concat "  " (car x) "={" (cdr x) "},\n")))
-                                       bib-str "") "}\n")))
-      (if (called-interactively-p 'any)
-          (kill-new bib-str) bib-str))
-    (message "[ref-man] Not org mode")))
+      (let* ((props (org-entry-properties))
+             (bib-str (list
+                       (cons "type"  (concat "@" (cdr (assoc "BTYPE" props))))
+                       (cons "key"  (cdr (assoc "CUSTOM_ID" props)))
+                       (cons "title"  (cdr (assoc "TITLE" props)))
+                       (cons "author"  (cdr (assoc "AUTHOR" props)))
+                       (cons "venue"  (cdr (assoc "VENUE" props)))
+                       (cons "booktitle"  (cdr (assoc "BOOKTITLE" props)))
+                       (cons "volume"  (cdr (assoc "VOLUME" props)))
+                       (cons "number"  (cdr (assoc "NUMBER" props)))
+                       (cons "month"  (cdr (assoc "MONTH" props)))
+                       (cons "year"  (cdr (assoc "YEAR" props)))
+                       (cons "pages"  (cdr (assoc "PAGES" props)))
+                       (cons "doi"  (cdr (assoc "DOI" props)))
+                       (cons "url"  (cdr (assoc "URL" props)))
+                       (cons "publisher"  (cdr (assoc "PUBLISHER" props)))
+                       (cons "organization"  (cdr (assoc "ORGANIZATION" props)))))
+             (header (concat (cdr (assoc "type" bib-str)) "{" (cdr (assoc "key" bib-str)) ",\n"))
+             (bib-str (delq (assoc "type" bib-str) bib-str))
+             (bib-str (delq (assoc "key" bib-str) bib-str))
+             (bib-str (concat header
+                              (mapconcat (lambda (x)
+                                           (if (cdr x) (concat "  " (car x) "={" (cdr x) "},\n")))
+                                         bib-str "") "}\n")))
+        (when kill
+          (kill-new bib-str))
+        (push bib-str ref-man-bibtex-save-ring)
+        bib-str)
+    (message "[ref-man] Not org mode") nil))
 
 ;; TODO: prefix arg should insert to temp-file in interactive mode
 (defun ref-man-org-bibtex-kill-or-insert-headline-as-bib-to-file (&optional file)
@@ -1234,7 +1249,9 @@ buffer."
       (message "Inserted entry to kill ring"))))
 
 (defun ref-man-org-bibtex-yank-bib-to-property ()
-  "Parse the bibtex entry at point to as org properties."
+  "Yank the `current-kill', parse as bibtex entry and update properties.
+If some fields are present in both bibtex and property, they are
+overwritten.  Fields not present in bib entry are not deleted."
   (interactive)
   (let ((bib-assoc (with-temp-buffer
                      (yank)
@@ -1243,8 +1260,18 @@ buffer."
     (ref-man-org-bibtex-convert-bib-to-property
      bib-assoc (current-buffer) (point) t)))
 
-;; DONE: Remove Quotes around entries (if present)
-;;       `ref-man--trim-whitespace' optionally does that
+(defun ref-man-org-bibtex-dump-bib-to-property ()
+  "Export the last bibtex entry read and update property drawer.
+Like `ref-man-org-bibtex-yank-bib-to-property' but uses a
+separate variable `ref-man-bibtex-save-ring' instead of `kill-ring'."
+  (interactive)
+  (let ((bib-assoc (with-temp-buffer
+                     (insert (car ref-man-bibtex-save-ring))
+                     (goto-char (point-min))
+                     (bibtex-parse-entry))))
+    (ref-man-org-bibtex-convert-bib-to-property
+     bib-assoc (current-buffer) (point) t)))
+
 (defun ref-man-org-bibtex-convert-bib-to-property (bib-alist &optional buf buf-point no-edit-headline)
   "Convert an alist BIB-ALIST parsed by bibtex to an org property drawer.
 With optional BUF, the headling at (point) is updated.  When
@@ -1260,7 +1287,7 @@ the headline itself.  Default is to edit the headline also."
     (with-current-buffer buf
       (goto-char buf-point)
       (when (and (not no-edit-headline) (cdr (assoc "title" bib-alist)))
-        (org-edit-headline (ref-man--trim-whitespace
+        (org-edit-headline (ref-man--trim-and-unquote
                             (ref-man--fix-curly (cdr (assoc "title" bib-alist))))))
       (cl-loop for ent in entry
             do
@@ -1271,10 +1298,10 @@ the headline itself.  Default is to edit the headline also."
               (`("=key=" . ,_) nil)     ; Ignore =key=
               (`("timestamp" . ,_) nil)     ; Ignore timestamp
               (`("author" . ,_) (org-set-property "AUTHOR" (ref-man--replace-non-ascii
-                                                            (ref-man--trim-whitespace
-                                                             (ref-man--fix-curly (cdr ent)) t))))
+                                                            (ref-man--trim-and-unquote
+                                                             (ref-man--fix-curly (cdr ent))))))
               (`(,_ . ,_) (org-set-property (upcase (car ent)) (ref-man--replace-non-ascii
-                                                                (ref-man--trim-whitespace
+                                                                (ref-man--trim-and-unquote
                                                                  (ref-man--fix-curly (cdr ent))))))))
        ;; Put key generated by own rules
       (org-set-property "CUSTOM_ID" (ref-man-parse-bib-property-key)))))
@@ -1344,7 +1371,7 @@ When called from `ref-man-start-python-process', DATA-DIR is
                                                        ref-man-proxy-port))
                                           (and ref-man-pdf-proxy-port
                                                (format "--proxy-port=%s" ref-man-pdf-proxy-port))
-                                          "-v"))))
+                                          "--verbosity=debug"))))
       (apply #'start-process "ref-man-python-server" "*ref-man-python-server*"
              "python3" (path-join ref-man-home-dir "server.py") args))))
 
@@ -1444,7 +1471,7 @@ consolidating.  It also maintains a local datastore."
        (funcall backend 'url query)
        (ref-man--biblio-callback results-buffer backend))
       results-buffer)))
-(make-obsolete 'ref-man-org-search-heading-on-crossref-with-biblio nil "")
+(make-obsolete 'ref-man-org-search-heading-on-crossref-with-biblio nil "ref-man 0.3.0")
 
 (defun ref-man--biblio-callback (results-buffer backend)
   "Generate a search results callback for RESULTS-BUFFER.
@@ -1620,14 +1647,26 @@ author, title and venue information given as strings."
         (when (and ref-man--org-gscholar-launch-buffer ref-man--org-gscholar-launch-point)
           (goto-char ref-man--org-gscholar-launch-point))))))
 
+(defun ref-man--insert-org-pdf-url-property (url)
+  "Insert FILE as property to an org drawer.
+Confirm in case the property PDF_FILE exists."
+  (let ((props (org-entry-properties)))
+    (if (and props (cdr (assoc "PDF_URL" props)))
+        (if (y-or-n-p "PDF_URL already exists.  Replace? ")
+            (org-set-property "PDF_URL" url)
+          (message "[ref-man] Not overwriting PDF_URL."))
+      (org-set-property "PDF_url" url))))
+
 (defun ref-man--insert-org-pdf-file-property (file)
   "Insert FILE as property to an org drawer.
 Confirm in case the property PDF_FILE exists."
   (let ((props (org-entry-properties))
         (file-entry (concat "[[" file "]]")))
     (if (and props (cdr (assoc "PDF_FILE" props)))
-        (if (y-or-n-p "Entry already exists.  Replace? ")
-            (org-set-property "PDF_FILE" file-entry))
+        (if (y-or-n-p (format "PDF_FILE %s already exists in props.  Replace? "
+                              (f-filename file)))
+            (org-set-property "PDF_FILE" file-entry)
+          (message "[ref-man] Not overwriting PDF_FILE."))
       (org-set-property "PDF_FILE" file-entry))))
 
 (defun ref-man--eww-pdf-download-callback-store-new (status url args)
@@ -1638,7 +1677,8 @@ is meant to operate in batch mode."
   (unless (plist-get status :error)
     (let ((file (ref-man-files-filename-from-url url))
           (buf (and args (plist-get args :buffer)))
-          (pt (and args (plist-get args :point)))
+          ;; NOTE: Not used
+          ;; (pt (and args (plist-get args :point)))
           (heading (and args (plist-get args :heading))))
         (goto-char (point-min))
         (re-search-forward "\r?\n\r?\n")
@@ -1648,6 +1688,9 @@ is meant to operate in batch mode."
             (with-current-buffer buf
               (save-excursion
                 (org-link-search heading)
+                (when ref-man-update-pdf-url-when-download
+                  (ref-man--insert-org-pdf-url-property
+                   (ref-man-url-maybe-unproxy url)))
                 (ref-man--insert-org-pdf-file-property file)))
             (with-current-buffer ref-man--org-gscholar-launch-buffer
               (save-excursion
@@ -1666,6 +1709,9 @@ is meant to operate in batch mode."
         (re-search-forward "\r?\n\r?\n")
         (write-region (point) (point-max) file)
         (message "[ref-man] Saved %s" file)
+        (when pt
+          ;; NOTE: Does nothing
+          )
         (let* ((elem (-first (lambda (x) (string= (plist-get x :url) url)) ref-man--subtree-list))
                (repl (plist-put elem :file file)))
           (setq ref-man--subtree-list (-replace-first elem repl ref-man--subtree-list)))
@@ -1682,9 +1728,9 @@ is meant to operate in batch mode."
 Examine buffer for certain characters % and { as a heuristic."
   (with-current-buffer buf
     (goto-char (point-min))
-    (re-search-forward "\r?\n\r?\n")
-    (let* ((char (re-search-forward "[^\r?\n\r?\n]"))
-           (char (char-after (- (point) 1))))
+    (forward-paragraph)
+    (skip-chars-forward " \t\r\n")
+    (let ((char (char-after (point))))
       (cond ((eq 37 char) 'pdf)
             ((eq 123 char) 'json)
             (t char)))))
@@ -2270,7 +2316,9 @@ current headline.  Default is to insert a subheading."
       ;;                   (with-current-buffer org-buf (point)))))
       ((org-data (ref-man--get-org-buf-and-point))
        (org-buf (plist-get org-data :org-buf))
-       (org-point (plist-get org-data :org-point)))
+       ;; NOTE: Not used
+       ;; (org-point (plist-get org-data :org-point))
+       )
     (with-current-buffer org-buf
       (ref-man-org-insert-link-as-headline org-buf
                                            (plist-get args :link)
@@ -2314,7 +2362,8 @@ subtree will be updated later."
       (let ((file (ref-man-files-check-pdf-file-exists url t))
           (url (ref-man-url-maybe-proxy url))
           (buf (and args (plist-get args :buffer)))
-          (pt (and args (plist-get args :point)))
+          ;; NOTE: Not used
+          ;; (pt (and args (plist-get args :point)))
           (heading (and args (plist-get args :heading))))
       (cond ((and file (with-current-buffer buf (eq major-mode 'org-mode)))
              (message "[ref-man] File already existed.")
@@ -2639,7 +2688,8 @@ property drawer as the URL property."
            (url-prop (cdr (assoc "URL" props))))
       ;; Remove the url args. Would be useless to keep
       (when (and url-prop (string-match-p "?.*" url-prop)
-                 (not (string-match-p "openreview.net" url-prop)))
+                 (not (string-match-p "openreview.net" url-prop))
+                 (not (string-match-p "portal.acm.org" url-prop)))
         (org-entry-put (point) "URL" (car (split-string url-prop "?"))))
       (unless url-prop
         (let* ((link (ref-man--get-first-link-from-org-heading))

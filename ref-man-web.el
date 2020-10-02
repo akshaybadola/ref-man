@@ -62,7 +62,7 @@
 (defvar ref-man--gscholar-launch-buffer-list
   nil
   "List of org buffers from where launched.")
-(make-obsolete-variable 'ref-man--gscholar-launch-buffer-list nil "")
+(make-obsolete-variable 'ref-man--gscholar-launch-buffer-list nil "ref-man 0.3.0")
 
 (declare-function ref-man-files-check-pdf-file-exists "ref-man-files")
 (declare-function ref-man-org-import-link "ref-man-core")
@@ -194,7 +194,7 @@ and extract to it.  Else it defaults to
     (if (string-match-p "scholar\\.google\\.com" url)
         (ref-man-eww-get-bibtex-from-scholar org-buf)
       (eww-add-bookmark))))
-(make-obsolete 'ref-man-eww-keypress-b nil "")
+(make-obsolete 'ref-man-eww-keypress-b nil "ref-man 0.3.0")
 
 ;; TODO: Fix this thing. Previous pdf link of gscholar may not be the link
 ;;       corresponding to that document. As in the previous link may be an html
@@ -511,13 +511,13 @@ If the input doesn't look like a URL or a domain name."
 (defvar ref-man--egal--url-text-start)
 (defvar ref-man--egal--url-text-end)
 (defvar ref-man--eww-buffer-endpoint)
-(make-obsolete-variable 'ref-man--egal--save-point nil "")
-(make-obsolete-variable 'ref-man--eww-buffer-links nil "")
-(make-obsolete-variable 'ref-man--egal--prev-url nil "")
-(make-obsolete-variable 'ref-man--egal--current-url nil "")
-(make-obsolete-variable 'ref-man--egal--url-text-start nil "")
-(make-obsolete-variable 'ref-man--egal--url-text-end nil "")
-(make-obsolete-variable 'ref-man--eww-buffer-endpoint nil "")
+(make-obsolete-variable 'ref-man--egal--save-point nil "ref-man 0.3.0")
+(make-obsolete-variable 'ref-man--eww-buffer-links nil "ref-man 0.3.0")
+(make-obsolete-variable 'ref-man--egal--prev-url nil "ref-man 0.3.0")
+(make-obsolete-variable 'ref-man--egal--current-url nil "ref-man 0.3.0")
+(make-obsolete-variable 'ref-man--egal--url-text-start nil "ref-man 0.3.0")
+(make-obsolete-variable 'ref-man--egal--url-text-end nil "ref-man 0.3.0")
+(make-obsolete-variable 'ref-man--eww-buffer-endpoint nil "ref-man 0.3.0")
 (defun ref-man-web-get-all-links (&optional buf frombegin before-point substring)
   "Get all links from an `shr' buffer BUF.
 If BUF is nil it defaults to *eww*.  A non-nil FROMBEGIN gets all
