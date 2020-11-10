@@ -1650,12 +1650,15 @@ author, title and venue information given as strings."
 (defun ref-man--insert-org-pdf-url-property (url)
   "Insert FILE as property to an org drawer.
 Confirm in case the property PDF_FILE exists."
-  (let ((props (org-entry-properties)))
-    (if (and props (cdr (assoc "PDF_URL" props)))
-        (if (y-or-n-p "PDF_URL already exists.  Replace? ")
-            (org-set-property "PDF_URL" url)
-          (message "[ref-man] Not overwriting PDF_URL."))
-      (org-set-property "PDF_url" url))))
+  (org-set-property "PDF_URL" url)
+  ;; NOTE: Maybe asking for this is too much
+  ;; (let ((props (org-entry-properties)))
+  ;;   (if (and props (cdr (assoc "PDF_URL" props)))
+  ;;       (if (y-or-n-p "PDF_URL already exists.  Replace? ")
+  ;;           (org-set-property "PDF_URL" url)
+  ;;         (message "[ref-man] Not overwriting PDF_URL."))
+  ;;     (org-set-property "PDF_URL" url)))
+  )
 
 (defun ref-man--insert-org-pdf-file-property (file)
   "Insert FILE as property to an org drawer.
@@ -1679,23 +1682,30 @@ is meant to operate in batch mode."
           (buf (and args (plist-get args :buffer)))
           ;; NOTE: Not used
           ;; (pt (and args (plist-get args :point)))
+          (buf-type (ref-man--check-response-buffer (current-buffer)))a
           (heading (and args (plist-get args :heading))))
-        (goto-char (point-min))
-        (re-search-forward "\r?\n\r?\n")
-        (write-region (point) (point-max) file)
-        (message "[ref-man] Saved %s" file)
-        (if buf
-            (with-current-buffer buf
-              (save-excursion
-                (org-link-search heading)
-                (when ref-man-update-pdf-url-when-download
-                  (ref-man--insert-org-pdf-url-property
-                   (ref-man-url-maybe-unproxy url)))
-                (ref-man--insert-org-pdf-file-property file)))
-            (with-current-buffer ref-man--org-gscholar-launch-buffer
-              (save-excursion
-                (goto-char ref-man--org-gscholar-launch-point)
-                (ref-man--insert-org-pdf-file-property file)))))))
+      (cond ((eq buf-type 'html)
+             (message (format "[ref-man] Got html buffer for url %s. Not saving file" url)))
+            ((eq buf-type 'pdf)
+             (write-region (point) (point-max) file)
+             (message "[ref-man] Saved %s" file)))
+      (if buf
+          (with-current-buffer buf
+            (save-excursion
+              (org-link-search heading)
+              (when ref-man-update-pdf-url-when-download
+                (ref-man--insert-org-pdf-url-property
+                 (ref-man-url-maybe-unproxy url)))
+              (when (eq buf-type 'pdf)
+                (ref-man--insert-org-pdf-file-property file))))
+        (with-current-buffer ref-man--org-gscholar-launch-buffer
+          (save-excursion
+            (goto-char ref-man--org-gscholar-launch-point)
+            (when ref-man-update-pdf-url-when-download
+                (ref-man--insert-org-pdf-url-property
+                 (ref-man-url-maybe-unproxy url)))
+            (when (eq buf-type 'pdf)
+              (ref-man--insert-org-pdf-file-property file))))))))
 
 ;; CHECK: Not sure if the two functions below should be here
 (defun ref-man--eww-pdf-download-callback-store (status url pt)
@@ -1733,6 +1743,7 @@ Examine buffer for certain characters % and { as a heuristic."
     (let ((char (char-after (point))))
       (cond ((eq 37 char) 'pdf)
             ((eq 123 char) 'json)
+            ((eq 60 char) 'html)
             (t char)))))
 
 (defun ref-man--handle-json-response (json-data &optional storep)
@@ -2689,7 +2700,7 @@ property drawer as the URL property."
       ;; Remove the url args. Would be useless to keep
       (when (and url-prop (string-match-p "?.*" url-prop)
                  (not (string-match-p "openreview.net" url-prop))
-                 (not (string-match-p "portal.acm.org" url-prop)))
+                 (not (string-match-p "acm.org" url-prop)))
         (org-entry-put (point) "URL" (car (split-string url-prop "?"))))
       (unless url-prop
         (let* ((link (ref-man--get-first-link-from-org-heading))

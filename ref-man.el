@@ -55,9 +55,13 @@ See URL `https://github.com/allenai/science-parse' for details"
 
 (require 'ref-man-core)
 (require 'ref-man-chrome)
+(require 'ref-man-remote)
 
 (unless (ref-man--python-process-running-p)
   (ref-man-start-python-process))
+
+(ref-man-remote-init-public-links-cache)
+(ref-man-remote-update-links-cache)
 
 (defun ref-man-science-parse-server-running (&optional show-msg)
   "Check if the Science Parse server running.

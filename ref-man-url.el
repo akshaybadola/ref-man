@@ -390,6 +390,31 @@ links."
 ;;     (let ((buf (url-retrieve-synchronously url t)))
 ;;       (ref-man--get-pdf-link-from-openreview-url-helper url buf))))
 
+(defun ref-man-url-domain (url)
+  "Get the domain name with protocol for URL."
+  (string-join
+   (-take (1+ (-find-index (lambda (x) (string-match-p "\\." x))
+                           (split-string url "/")))
+          (split-string url "/")) "/"))
+
+(defun ref-man-url-get-absolute-path (url link)
+  "Get absolute path for a LINK and parent URL."
+  (let ((dom (ref-man-url-domain url))
+        (lsplits (split-string link "/"))
+        (usplits (split-string url "/")))
+    (cond ((string-match-p "^http:\\|^https:" link)
+           link)
+          ((or (equal (car lsplits) ".")
+               (string-match-p "[a-zA-Z0-9]+" (car lsplits)))
+           (url-join url link))
+          ((string-prefix-p "/" link)
+           (url-join dom link))
+          (t (let ((count (-count (lambda (x) (equal x "..")) lsplits)))
+               (when (string-suffix-p "/" url)
+                 (setq count (+ 1 count)))
+               (string-join (-concat (-take (- (length usplits) count) usplits)
+                                     (-drop count lsplits)) "/"))))))
+
 ;; NOTE: This is equivalent to run-hook-with-args-until-success
 (defun ref-man-url-get-pdf-link-helper (site url buf &optional status)
   "Helper function to get pdf link from URL given type of SITE.
@@ -406,13 +431,13 @@ plist which contains the http status."
            (ref-man-url-get-pdf-link-helper site url buf)))
         ((eq site 'neurips)
          (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-           (cond ((string-match-p "^[http|https]" link) link)
+           (cond ((string-match-p "^http:\\|^https:" link) link)
                  ((string-match-p "^/paper/" link)
                   (url-join (string-join (-take 3 (split-string url "/")) "/") link))
                  (t nil))))
         ((eq site 'mlr)
          (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-           (when (string-match-p "^[http|https]" link) link)))
+           (when (string-match-p "^http:\\|^https:" link) link)))
         ((eq site 'aaai)
          (let* ((buf (if (string-match-p "This page requires frames."
                                          (with-current-buffer buf (buffer-string)))
@@ -430,7 +455,7 @@ plist which contains the http status."
              (url-join "https://dl.acm.org/" link))))
         ((eq site 'cvf)
          (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-           (cond ((string-match-p "^[http|https]" link) link)
+           (cond ((string-match-p "^http:\\|^https:" link) link)
                  ((string-match-p "\\(\\.\\./\\)+\\(content.*\\)" link)
                   (url-join (string-join (-take 3 (split-string url "/")) "/")
                             (replace-regexp-in-string "\\(\\.\\./\\)+\\(content.*\\)" "/\\2" link)))
@@ -441,7 +466,7 @@ plist which contains the http status."
         ;; CHECK: Not sure if this is correct
         ((eq site 'cvf-old)
          (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-           (cond ((string-match-p "^[http|https]" link) link)
+           (cond ((string-match-p "^http:\\|^https:" link) link)
                  ((string-match-p "^../../content_.*" link)
                   (url-join (string-join (-take 4 (split-string url "/")) "/")
                             (string-join (-drop 2 (split-string link "/")) "/")))
@@ -451,7 +476,10 @@ plist which contains the http status."
            (if (string-match-p "^[http|https]" link)
                link
              (url-join "https://openreview.net" link))))
-        (t nil)))
+        (t (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
+             (if (string-match-p "^http:\\|^https:" link)
+                 link
+               (ref-man-url-get-absolute-path url link))))))
 
 ;; (defun ref-man-url-get-pdf-link (site url &optional callback cbargs)
 ;;   "Helper function to get a pdf link from URL and website SITE.
@@ -485,7 +513,7 @@ ARGS is for compatibility and not used."
   "Helper function to determine site from URL."
   (cond ((string-match-p "arxiv.org" url) 'arxiv)
       ((string-match-p "aclanthology.info\\|aclweb.org" url) 'acl)
-      ((and (string-match-p "doi.org")
+      ((and (string-match-p "doi.org" url)
             (string-match-p "cvpr" (-last-item (split-string url "/" t))))
        'doi-cvpr)
       ((string-match-p "doi.org" url) 'doi)

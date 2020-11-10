@@ -238,8 +238,8 @@ class Server:
                 else:
                     self.logger.info(f"Proxy seems reachable but wrong status_code {response.status_code}")
             except requests.exceptions.Timeout:
-                self.logger.error("Proxy not reachable")
-                sys.exit(1)
+                self.logger.error("Proxy not reachable. Will not proxy")
+                proxies = None
         self.proxies = proxies
         self.everything_proxies = everything_proxies
         self.init_routes()
@@ -301,7 +301,9 @@ class Server:
                     return json.dumps("NO URL GIVEN or BAD URL")
                 self.logger.debug(f"Fetching {url} with proxies {self.proxies}")
                 response = requests.get(url, proxies=self.proxies)
-                if response.url != url:
+                if url.startswith("http:") and response.url.startswith("https:"):
+                    return Response(response.content)
+                elif response.url != url:
                     return json.dumps({"redirect": response.url,
                                        "content": response.content.decode('utf-8')})
                 else:

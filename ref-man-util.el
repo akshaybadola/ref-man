@@ -1,3 +1,35 @@
+;;; ref-man-util.el --- Utility variables and functions for `ref-man'. ;;; -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2018,2019,2020
+;; Akshay Badola
+
+;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
+;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
+;; Time-stamp:	<Wednesday 24 June 2020 09:16:15 AM IST>
+;; Keywords:	pdfs, references, bibtex, org, eww
+
+;; This file is *NOT* part of GNU Emacs.
+
+;; This program is free software; you can redistribute it and/or modify it
+;; under the terms of the GNU General Public License as published by the Free
+;; Software Foundation; either version 3, or (at your option) any later
+;; version.
+
+;; This program is distributed in the hope that it will be useful, but WITHOUT
+;; ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+;; FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+;; more details.
+
+;; You should have received a copy of the GNU General Public License along with
+;; GNU Emacs; see the file COPYING.  If not, write to the Free Software
+;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
+;;; Commentary:
+;;
+;; A bunch of utility functions and some common variables for `ref-man'.
+
+;;; Code:
+
 (require 'bibtex)
 
 (defconst ref-man-stop-words
@@ -246,12 +278,12 @@ replacements are a union of both above alists."
   "Add advice to save headings and paths before calling `org-open-at-point'.
 Used to insert ORG_FILE back into the file in case an org buffer
 is saved in `ref-man-org-store-dir' from `ref-man-get-references'."
-  (if arg
+  (if (or (and (integerp arg) (< 0 arg)) arg)
       (advice-add #'org-open-at-point :before #'ref-man-save-heading-before-open-advice)
     (advice-remove #'org-open-at-point #'ref-man-save-heading-before-open-advice)))
 
 (defvar ref-man-headings-before-pdf-open nil
-  "Saved org headings and paths when a pdf file was opened from org.")
+  "Saved org headings and paths when a pdf file was opened from an org buffer.")
 (defun ref-man-save-heading-before-open-advice (&optional arg)
   "Save org heading and file path if a pdf file is opened from PDF_FILE property.
 This function is used as advice to `org-open-at-point' and
@@ -285,3 +317,5 @@ the link are added to `ref-man-headings-before-pdf-open'."
       (add-to-list 'ref-man-headings-before-pdf-open (list :heading heading :path path)))))
 
 (provide 'ref-man-util)
+
+;;; ref-man-util.el ends here

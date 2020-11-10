@@ -607,3 +607,5 @@ URL above it."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (provide 'ref-man-web)
+
+;;; ref-man-web.el ends here
