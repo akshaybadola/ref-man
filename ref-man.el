@@ -35,6 +35,16 @@
 ;; TODO: Should make ref-man minor mode
 ;; TODO: Have to set debug levels. The info is way too much
 
+(defcustom ref-man-sp-forward-remote-port nil
+  "Whether to forward port from a remote ssh server."
+  :type 'string
+  :group 'ref-man)
+
+(defcustom ref-man-science-parse-remote-host "localhost"
+  "Hostname or address where the science parse server is running."
+  :type 'string
+  :group 'ref-man)
+
 (defcustom ref-man-science-parse-server-port 8080
   "Server port on which to communicate with science parse server."
   :type 'integer
@@ -63,7 +73,26 @@ See URL `https://github.com/allenai/science-parse' for details"
 (ref-man-remote-init-public-links-cache)
 (ref-man-remote-update-links-cache)
 
-(defun ref-man-science-parse-server-running (&optional show-msg)
+(defun ref-man-science-parse-server-running-p (&optional show-msg)
+  (let ((port ref-man-science-parse-server-port))
+    (if (string-match-p "Usage"
+                        (shell-command-to-string (format "curl -s localhost:%d" port)))
+        (progn (when show-msg
+                 (message "[ref-man] Science Parse server is running"))
+               t)
+      (message "[ref-man] ERROR! Check connections")
+      nil)))
+
+(defun ref-man-science-parse-try-forward-remote-ssh-port (&optional show-msg)
+  (let ((host ref-man-sp-forward-remote-port)
+        (port ref-man-science-parse-server-port))
+    (unless (and (string-empty-p host)
+                 (string-match-p host (shell-command-to-string  "ps -ef | grep ssh")))
+      (async-start-process "science-parse" "ssh" nil "-N" "-L"
+                           (format  "%d:localhost:%d" port port) host)
+      (ref-man-science-parse-server-running-p t))))
+
+(defun ref-man-science-parse-local-server-running-p (&optional show-msg)
   "Check if the Science Parse server running.
 Return 'external if server is running but outside Emacs and
 'internal if running inside Emacs,  nil otherwise."
@@ -76,7 +105,7 @@ Return 'external if server is running but outside Emacs and
                'internal)
               (t nil)))
         (startup nil))
-    (when proc
+    (when (proc)
       (if (string-match-p "Usage"
                           (shell-command-to-string
                            (format "curl -s localhost:%d" ref-man-science-parse-server-port)))
@@ -90,9 +119,9 @@ Return 'external if server is running but outside Emacs and
   (interactive)
   (signal-process (get-buffer "*science-parse*") 15))
 
-(defun ref-man-try-start-science-parse-server ()
+(defun ref-man-try-start-local-science-parse-server ()
   "Try to start the Science Parse server."
-  (let* ((status (ref-man-science-parse-server-running))
+  (let* ((status (ref-man-science-parse-local-server-running-p))
          (java (shell-command-to-string "which java"))
          (has-java (not (string-match-p "no java" java))))
     (if status status
@@ -110,8 +139,6 @@ Return 'external if server is running but outside Emacs and
                 (message "[ref-man] Not starting Science Parse Server"))
             (message "[ref-man] Science Parse Jar File not given"))
         (message "[ref-man] java not found")))))
-
-(ref-man-try-start-science-parse-server)
 
 (provide 'ref-man)
 
