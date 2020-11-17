@@ -126,6 +126,11 @@
   :type 'integer
   :group 'ref-man)
 
+(defcustom ref-man-python-process-use-venv nil
+  "Whether to initialize and use a virtualenv for the python process."
+  :type 'boolean
+  :group 'ref-man)
+
 (defcustom ref-man-python-data-dir (expand-file-name "~/.ref-man/data/")
   "Server port on which to communicate with python server."
   :type 'directory
@@ -1347,7 +1352,18 @@ buffer and sanitize the entry at point."
 ;; START python process stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; TODO: Use venv
-;;
+(defun ref-man-python-process-setup-venv ()
+  (when ref-man-python-process-use-venv
+    (let ((env (path-join ref-man-home-dir "env")))
+      (unless (and (f-exists? env) (f-exists? (path-join env "bin" "python")))
+        (shell-command (format "python3 -m virtualenv -p python3.7 %s" env)
+                             "*ref-man-cmd*" "*ref-man-cmd*")
+        (async-shell-command (concat "source "
+                               (path-join env "bin" "activate")
+                               "; pip install -r " (path-join ref-man-home-dir "requirements.txt"))
+                             "*ref-man-cmd*" "*ref-man-cmd*")))))
+
+
 ;; TODO: Requests to python server should be dynamic according to whether I want
 ;;       to use proxy or not at that point
 (defun ref-man--python-process-helper (data-dir port)
@@ -1363,7 +1379,9 @@ When called from `ref-man-start-python-process', DATA-DIR is
       (message (format "[ref-man] Starting python process on port: %s"
                        ref-man-python-server-port))
     ;; TODO: Should be an option to python server to proxy some requests
-    (let ((args (-filter #'identity (list (format "--data-dir=%s" data-dir)
+    (let* ((env (and ref-man-python-process-use-venv
+                     (path-join ref-man-home-dir "env")))
+           (args (-filter #'identity (list (format "--data-dir=%s" data-dir)
                                           (format "--port=%s" port)
                                           (and ref-man-proxy-port "--proxy-everything")
                                           (and ref-man-proxy-port
@@ -1371,9 +1389,23 @@ When called from `ref-man-start-python-process', DATA-DIR is
                                                        ref-man-proxy-port))
                                           (and ref-man-pdf-proxy-port
                                                (format "--proxy-port=%s" ref-man-pdf-proxy-port))
-                                          "--verbosity=debug"))))
+                                          "--verbosity=debug")))
+           (process-environment (if env
+                                    (with-temp-buffer
+                                      (call-process "bash" nil t nil "-c"
+                                                    (concat "source " (path-join env "bin" "activate") "; env"))
+                                      (goto-char (point-min))
+                                      (let ((temp nil))
+                                        (while (not (eobp))
+                                          (setq temp
+                                                (cons (buffer-substring (point) (line-end-position))
+                                                      temp))
+                                          (forward-line 1))
+                                        temp))
+                                  process-environment))
+           (python (ref-man--trim-whitespace (shell-command-to-string "which python"))))
       (apply #'start-process "ref-man-python-server" "*ref-man-python-server*"
-             "python3" (path-join ref-man-home-dir "server.py") args))))
+             python (path-join ref-man-home-dir "server.py") args))))
 
 (defun ref-man-stop-python-server ()
   "Stop the python server by sending a shutdown command.

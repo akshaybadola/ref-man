@@ -90,7 +90,7 @@ See URL `https://github.com/allenai/science-parse' for details"
                  (string-match-p host (shell-command-to-string  "ps -ef | grep ssh")))
       (async-start-process "science-parse" "ssh" nil "-N" "-L"
                            (format  "%d:localhost:%d" port port) host)
-      (ref-man-science-parse-server-running-p t))))
+      (ref-man-science-parse-server-running-p show-msg))))
 
 (defun ref-man-science-parse-local-server-running-p (&optional show-msg)
   "Check if the Science Parse server running.
@@ -103,9 +103,8 @@ Return 'external if server is running but outside Emacs and
                'external)
               ((and java-proc buf-proc)
                'internal)
-              (t nil)))
-        (startup nil))
-    (when (proc)
+              (t nil))))
+    (when proc
       (if (string-match-p "Usage"
                           (shell-command-to-string
                            (format "curl -s localhost:%d" ref-man-science-parse-server-port)))
@@ -132,10 +131,8 @@ Return 'external if server is running but outside Emacs and
                     (unless (string-match-p "science-parse" (shell-command-to-string  "ps -ef | grep java"))
                       (start-process "science-parse" "*science-parse*"
                                      "java" "-Xmx6g" "-jar" ref-man-science-parse-jar-file)
-                      ;; (async-start-process "science-parse"
-                      ;;                      "java" nil "-Xmx6g" "-jar" ref-man-science-parse-jar-file)
                       (message "[ref-man] Trying to start server. This may take some time"))
-                    (ref-man-science-parse-server-running t))
+                    (ref-man-science-parse-server-running-p t))
                 (message "[ref-man] Not starting Science Parse Server"))
             (message "[ref-man] Science Parse Jar File not given"))
         (message "[ref-man] java not found")))))
