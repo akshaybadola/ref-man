@@ -64,8 +64,9 @@ Maps files from `ref-man-documents-dir' to
 
 (defvar ref-man-python-server-port)     ; from `ref-man-core'
 
-(defun ref-man-remote-init-public-links-cache ()
+(defun ref-man-remote-load-public-links-cache ()
   "Load the existing cache from disk if defined."
+  (interactive)
   (unless (or (string-empty-p ref-man-public-links-cache-file)
               (string-empty-p ref-man-remote-documents-dir))
     (setq ref-man-public-links-cache (make-hash-table :test 'equal))
@@ -114,28 +115,15 @@ disk."
           (re-search-forward "\r?\n\r?\n")
           (message (buffer-substring-no-properties (point) (point-max))))
         ;; (setq ref-man-remote-cache-update-check-timer
-        ;;       (run-at-time 5 60 #'ref-man-check-cache-updated))
+        ;;       (run-at-time 5 60 #'ref-man-remote-check-cache-updated))
         ))))
 
 (defun ref-man-remote-cancel-cache-update-timers ()
   "Cancel the timers which call `ref-man-check-cache-updated'."
-  (setq timer-list (-remove (lambda (x) (eq (timer--function x) 'ref-man-check-cache-updated))
+  (setq timer-list (-remove (lambda (x)
+                              (eq (timer--function x)
+                                  'ref-man-remote-check-cache-updated))
          timer-list)))
-
-;; TODO: Maybe run at a timer
-(defun ref-man-remote-mu4e-update-files-and-links ()
-  "Sync local documents dir with remote.
-Copy files from `ref-man-documents-dir' to remote specified with
-`ref-man-remote-documents-dir' and then generate public links to
-the remote files and update the local cache."
-  (interactive)
-  (unless (or (string-empty-p ref-man-public-links-cache-file)
-              (string-empty-p ref-man-remote-documents-dir))
-    ;; TODO: Check if rclone copy is already running to remote dir
-    ;;       Also it would be better to use `start-process'
-    (async-shell-command (format "rclone --no-update-modtime -v copy %s %s" ref-man-documents-dir
-                                 ref-man-remote-documents-dir))
-    (ref-man-remote-update-links-cache)))
 
 (provide 'ref-man-remote)
 

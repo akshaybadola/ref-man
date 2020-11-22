@@ -70,7 +70,7 @@ See URL `https://github.com/allenai/science-parse' for details"
 (unless (ref-man--python-process-running-p)
   (ref-man-start-python-process))
 
-(ref-man-remote-init-public-links-cache)
+(ref-man-remote-load-public-links-cache)
 (ref-man-remote-update-links-cache)
 
 (defun ref-man-science-parse-server-running-p (&optional show-msg)

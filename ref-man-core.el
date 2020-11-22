@@ -1714,7 +1714,7 @@ is meant to operate in batch mode."
           (buf (and args (plist-get args :buffer)))
           ;; NOTE: Not used
           ;; (pt (and args (plist-get args :point)))
-          (buf-type (ref-man--check-response-buffer (current-buffer)))a
+          (buf-type (ref-man--check-response-buffer (current-buffer)))
           (heading (and args (plist-get args :heading))))
       (cond ((eq buf-type 'html)
              (message (format "[ref-man] Got html buffer for url %s. Not saving file" url)))

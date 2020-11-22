@@ -104,16 +104,51 @@ def check_proxy(proxies, flag):
 
 
 def update_links_cache_helper(local_dir, remote_dir, cache_file, ev,
-                              success_ev, logger):
+                              success_ev, success_with_errors_ev, logger):
+    def try_get_link(remote_path):
+        try:
+            p = Popen(f"rclone -v link {remote_path}", shell=True, stdout=PIPE, stderr=PIPE)
+            out, err = p.communicate(timeout=10)
+            if err and "error 403" in err.decode("utf-8").lower():
+                status = False
+                link = "not_present"
+            else:
+                link = out.decode("utf-8").replace("\n", "")
+                status = True
+        except TimeoutExpired:
+            logger.warning(f"Timeout while getting link for file {f}")
+            link = "timeout"
+            status = False
+        return status, link
+
+    def copy_file(local_path):
+        try:
+            p = Popen(f"rclone --no-update-modtime -v copy {local_path} {remote_dir}", shell=True,
+                      stdout=PIPE, stderr=PIPE)
+            out, err = p.communicate(timeout=10)
+            err = err.decode("utf-8").lower()
+            if err and ("copied" in err or "transferred" in err):
+                logger.debug(f"Copied file {local_path} to remote")
+                status = True
+            else:
+                status = False
+        except TimeoutExpired:
+            logger.warning(f"Timeout while copying for file {local_path}")
+            status = False
+        return status
+
     if not ev.is_set():
         ev.set()
     if success_ev.is_set():
         success_ev.clear()
+    if success_with_errors_ev.is_set():
+        success_with_errors_ev.clear()
     logger.info(f"Updating local cache {cache_file}")
     init_cache_size = None
     try:
         local_files = [os.path.join(local_dir, f) for f in os.listdir(local_dir)
                        if not f.startswith(".")]
+        warnings = []
         with open(cache_file) as f:
             cache = [x for x in f.read().split("\n") if len(x)]
             cached_files = [x.rsplit(";")[0] for x in cache]
@@ -124,30 +159,34 @@ def update_links_cache_helper(local_dir, remote_dir, cache_file, ev,
                 break
             try:
                 start = time.time()
-                path = os.path.join(remote_dir, os.path.basename(f))
-                if " " in path:
-                    path = f'"{path}"'
-                p = Popen(f"rclone -v link {path}", shell=True, stdout=PIPE, stderr=PIPE)
-                out, err = p.communicate(timeout=10)
+                remote_path = os.path.join(remote_dir, os.path.basename(f))
+                if " " in remote_path:
+                    remote_path = f'"{remote_path}"'
+                status, link = try_get_link(remote_path)
+                if not status:
+                    if link == "not_present":
+                        logger.warning(f"File {f} does not exist on remote. Copying")
+                        status = copy_file(f)
+                        if status:
+                            status, link = try_get_link(remote_path)
                 duration = time.time() - start
-                if err and "error 403" in err.decode("utf-8").lower():
-                    logger.warning(f"File {f} does not exist on remote. Copying")
-                    p = Popen(f"rclone -v copy f {path}", shell=True, stdout=PIPE, stderr=PIPE)
-                    out, err = p.communicate(timeout=10)
-                elif err:
-                    logger.error(f"Could not get link for {f}. {err.decode('utf-8')}.")
+                if not status:
+                    warnings.append(f"{f}")
+                    logger.warning(f"Error occurred for file {f} {link}")
                 else:
-                    link = out.decode("utf-8").replace("\n", "")
                     logger.debug(f"got link {link} for file {f} in {duration} seconds")
                     cache.append(f"{f};{link}")
-            except TimeoutExpired:
-                logger.warning(f"Timeout for file {f}")
+            except Exception as e:
+                logger.warning(f"Error occured for file {f} {e}")
         logger.info(f"Writing {len(cache) - init_cache_size} links to {cache_file}")
         shutil.copyfile(cache_file, cache_file + ".bak")
         with open(cache_file, "w") as cf:
             cf.write("\n".join(cache))
         ev.clear()
-        success_ev.set()
+        if warnings:
+            success_with_errors_ev.set()
+        else:
+            success_ev.set()
     except Exception as e:
         ev.clear()
         logger.error(f"Error {e} while updating cache")
@@ -190,7 +229,8 @@ class Server:
         self.ss_cache = load_ss_cache(self.data_dir)
         self.update_cache_run = False
         self.updating_cache_event = Event()
-        self.updated_success_event = Event()
+        self.update_success_event = Event()
+        self.update_success_with_errors_event = Event()
 
         # TODO: Maybe start up the proxy from here
         # TODO: Maybe ssh_socks proxy server should also be entirely in python
@@ -335,7 +375,9 @@ class Server:
                 self.update_cache_thread = Thread(target=update_links_cache_helper,
                                                   args=[local_dir, remote_dir, cache_file,
                                                         self.updating_cache_event,
-                                                        self.updated_success_event, self.logger])
+                                                        self.update_success_event,
+                                                        self.update_success_with_errors_event,
+                                                        self.logger])
                 self.update_cache_thread.start()
                 return f"Updating cache for {len(files)} files"
             else:
@@ -355,9 +397,9 @@ class Server:
                 return "Update cache was never called"
             elif self.updating_cache_event.is_set():
                 return "Still updating cache"
-            elif self.updated_success_event.is_set():
+            elif self.update_success_event.is_set():
                 return "Updated cache for all files"
-            else:
+            elif self.update_success_with_errors_event.is_set():
                 return "Updated cache with errors."
 
         @app.route("/get_cvpr_url", methods=["GET"])
