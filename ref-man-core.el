@@ -1713,7 +1713,7 @@ is meant to operate in batch mode."
     (let ((file (ref-man-files-filename-from-url url))
           (buf (and args (plist-get args :buffer)))
           ;; NOTE: Not used
-          ;; (pt (and args (plist-get args :point)))
+          (pt (and args (plist-get args :point)))
           (buf-type (ref-man--check-response-buffer (current-buffer)))
           (heading (and args (plist-get args :heading))))
       (cond ((eq buf-type 'html)
@@ -1723,13 +1723,21 @@ is meant to operate in batch mode."
              (message "[ref-man] Saved %s" file)))
       (if buf
           (with-current-buffer buf
-            (save-excursion
-              (org-link-search heading)
-              (when ref-man-update-pdf-url-when-download
-                (ref-man--insert-org-pdf-url-property
-                 (ref-man-url-maybe-unproxy url)))
-              (when (eq buf-type 'pdf)
-                (ref-man--insert-org-pdf-file-property file))))
+            (cond ((string-empty-p (string-trim (replace-regexp-in-string "\*" "" heading)))
+                   (goto-char pt)
+                   (when ref-man-update-pdf-url-when-download
+                       (ref-man--insert-org-pdf-url-property
+                        (ref-man-url-maybe-unproxy url)))
+                     (when (eq buf-type 'pdf)
+                       (ref-man--insert-org-pdf-file-property file)))
+                  (t
+                   (save-excursion
+                     (org-link-search heading)
+                     (when ref-man-update-pdf-url-when-download
+                       (ref-man--insert-org-pdf-url-property
+                        (ref-man-url-maybe-unproxy url)))
+                     (when (eq buf-type 'pdf)
+                       (ref-man--insert-org-pdf-file-property file))))))
         (with-current-buffer ref-man--org-gscholar-launch-buffer
           (save-excursion
             (goto-char ref-man--org-gscholar-launch-point)
@@ -2342,11 +2350,9 @@ ARGS are a plist constitute the data for the link.
 
 :link LINK -- the uri of the link
 
-:link-text LINK-TEXT -- the text of the link, inserted as
-title/heading
+:link-text LINK-TEXT -- the text of the link, inserted as title/heading
 
-:metadata METADATA -- From Google Scholar, it's the line immediately after the
-title.
+:metadata METADATA -- From Google Scholar, it's the line immediately after the title.
 
 Optional non-nil argument CURRENT specifies whether to update the
 current headline.  Default is to insert a subheading."
@@ -2381,21 +2387,6 @@ current headline.  Default is to insert a subheading."
         (url-retrieve url callback (list url point))
       (url-retrieve url callback (list url)))))
 
-;; (defun ref-man--fetch-from-pdf-url-copy-file (url storep)
-;;   (let ((file (ref-man-files-check-pdf-file-exists url t)))
-;;     (if file
-;;         (if storep
-;;             (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) file))
-;;           (ref-man--insert-org-pdf-file-property file))
-;;       ;; CHECK: Have to find a better way than to store (point) maybe
-;;       (if ref-man-get-pdfs-with-proxy
-;;           (with-proxy (if storep
-;;               (ref-man--pdf-copy-file url nil nil (point))
-;;             (ref-man--pdf-copy-file url)))
-;;         (if storep
-;;             (ref-man--pdf-copy-file url nil nil (point))
-;;           (ref-man--pdf-copy-file url))))))
-
 (defun ref-man--fetch-from-pdf-url-new (url &optional args)
   "Fetch pdf file if possible, from URL.
 Optional argument STOREP is for batch updates.  Store the
@@ -2405,16 +2396,18 @@ subtree will be updated later."
       (let ((file (ref-man-files-check-pdf-file-exists url t))
           (url (ref-man-url-maybe-proxy url))
           (buf (and args (plist-get args :buffer)))
-          ;; NOTE: Not used
-          ;; (pt (and args (plist-get args :point)))
+          (pt (and args (plist-get args :point)))
           (heading (and args (plist-get args :heading))))
       (cond ((and file (with-current-buffer buf (eq major-mode 'org-mode)))
              (message "[ref-man] File already existed.")
              (if buf
                  (with-current-buffer buf
-                   (save-excursion
-                     (org-link-search heading)
-                     (ref-man--insert-org-pdf-file-property file)))
+                   (cond ((string-empty-p (string-trim (replace-regexp-in-string "\*" "" heading)))
+                          (goto-char pt)
+                          (ref-man--insert-org-pdf-file-property file))
+                         (t (save-excursion
+                              (org-link-search heading)
+                              (ref-man--insert-org-pdf-file-property file)))))
                (with-current-buffer ref-man--org-gscholar-launch-buffer
                  (save-excursion
                    (goto-char ref-man--org-gscholar-launch-point)
@@ -2455,28 +2448,8 @@ subtree will be updated later."
           ((and (not file) storep)
            (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback-store url (point)))
           ((and (not file) (not storep))
-           (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback url))))
-  ;; NOTE: Earlier implementations
-  ;; (if (ref-man-files-check-pdf-file-exists url t)
-  ;;     (let ((file (ref-man-files-check-pdf-file-exists url)))
-  ;;       (if storep
-  ;;           ;; CHECK: Have to find a better way than to store (point) maybe
-  ;;           (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) file))
-  ;;         (ref-man--insert-org-pdf-file-property file)))
-  ;;   (if storep
-  ;;       (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback-store url (point))
-  ;;     (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback url)))
-
-  ;; (cond ((ref-man-files-check-pdf-file-exists url)
-  ;;        (let ((file (ref-man-files-check-pdf-file-exists url)))
-  ;;          (if storep
-  ;;              (setq ref-man--subtree-list (plist-put ref-man--subtree-list (point) file))
-  ;;            (ref-man--insert-org-pdf-file-property file))))
-  ;;       ((not (ref-man-files-check-pdf-file-exists
-  ;;              (if storep
-  ;;                  (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback-store url (point))
-  ;;                (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback url))))))
-)
+           (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback url)))))
+(make-obsolete 'ref-man--fetch-from-pdf-url 'ref-man--fetch-from-pdf-url-new "ref-man 0.3.0")
 
 (defun ref-man--update-subtree-list (url status)
   (push (list :url url :point (point)

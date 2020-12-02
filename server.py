@@ -332,22 +332,25 @@ class Server:
                 query = args.pop("q")
                 return semantic_scholar_search(query, **args)
 
-        if self.proxies:
-            @app.route("/fetch_proxy")
-            def fetch_proxy():
-                if "url" in request.args and request.args["url"]:
-                    url = request.args["url"]
-                else:
-                    return json.dumps("NO URL GIVEN or BAD URL")
-                self.logger.debug(f"Fetching {url} with proxies {self.proxies}")
+        @app.route("/fetch_proxy")
+        def fetch_proxy():
+            if "url" in request.args and request.args["url"]:
+                url = request.args["url"]
+            else:
+                return json.dumps("NO URL GIVEN or BAD URL")
+            self.logger.debug(f"Fetching {url} with proxies {self.proxies}")
+            if self.proxies:
                 response = requests.get(url, proxies=self.proxies)
-                if url.startswith("http:") and response.url.startswith("https:"):
-                    return Response(response.content)
-                elif response.url != url:
-                    return json.dumps({"redirect": response.url,
-                                       "content": response.content.decode('utf-8')})
-                else:
-                    return Response(response.content)
+            else:
+                self.logger.warn(f"Proxy dead. Fetching without proxy")
+                response = requests.get(url)
+            if url.startswith("http:") and response.url.startswith("https:"):
+                return Response(response.content)
+            elif response.url != url:
+                return json.dumps({"redirect": response.url,
+                                   "content": response.content.decode('utf-8')})
+            else:
+                return Response(response.content)
 
         @app.route("/update_links_cache")
         def update_links_cache():
