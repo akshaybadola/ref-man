@@ -40,7 +40,13 @@ def dict_to_bibtex(bib_dict, json_out=False):
         return bib
 
 
-def arxiv_get(arxiv_id):
+def arxiv_get(arxiv_id: str) -> str:
+    """Fetch details of article with arxiv_id from arxiv api.
+
+    Args:
+        arxiv_id: The Arxiv ID of the article
+
+    """
     response = requests.get(f"http://export.arxiv.org/api/query?id_list=" + arxiv_id)
     soup = BeautifulSoup(response.content, features="lxml")
     entry = soup.find("entry")

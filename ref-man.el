@@ -67,11 +67,12 @@ See URL `https://github.com/allenai/science-parse' for details"
 (require 'ref-man-chrome)
 (require 'ref-man-remote)
 
-(unless (ref-man--python-process-running-p)
-  (ref-man-start-python-process))
+(unless (ref-man-python-process-running)
+  (ref-man-start-python-server))
 
 (ref-man-remote-load-public-links-cache)
-(ref-man-remote-update-links-cache)
+;; FIXME: This throws an error if python-server is not running
+;; (ref-man-remote-update-links-cache)
 
 (defun ref-man-science-parse-server-running-p (&optional show-msg)
   (let ((port ref-man-science-parse-server-port))

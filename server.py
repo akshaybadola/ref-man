@@ -12,11 +12,11 @@ from flask import Flask, request, Response
 from werkzeug import serving
 from subprocess import Popen, PIPE, TimeoutExpired
 
-# NOTE: Soup stuff
 import re
 import operator
 from bs4 import BeautifulSoup
 
+from const import default_headers
 from arxiv import arxiv_get, arxiv_fetch, arxiv_helper
 from dblp import dblp_helper
 from semantic_scholar import load_ss_cache, semantic_scholar_search, semantic_scholar_paper_details
@@ -280,6 +280,9 @@ class Server:
             except requests.exceptions.Timeout:
                 self.logger.error("Proxy not reachable. Will not proxy")
                 proxies = None
+            except requests.exceptions.ProxyError:
+                self.logger.error("Proxy not reachable. Will not proxy")
+                proxies = None
         self.proxies = proxies
         self.everything_proxies = everything_proxies
         self.init_routes()
@@ -332,18 +335,65 @@ class Server:
                 query = args.pop("q")
                 return semantic_scholar_search(query, **args)
 
+        @app.route("/url_info", methods=["GET"])
+        def url_info():
+            """Fetch info about a given url based on certain rules."""
+            if "url" in request.args and request.args["url"]:
+                url = request.args["url"]
+            else:
+                return json.dumps("NO URL GIVEN or BAD URL")
+            response = requests.get(url, headers=default_headers)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.content)
+                title = soup.find("title").text
+                if re.match("https{0,1}://arxiv.org.*", url):
+                    title = soup.find(None, attrs={"class": "title"}).text.split(":")[1]
+                    authors = soup.find(None, attrs={"class": "authors"}).text.split(":")[1]
+                    abstract = soup.find(None, attrs={"class": "abstract"}).text.split(":")[1]
+                    date = soup.find("div", attrs={"class": "dateline"}).text.lower()
+                    pdf_url = url.replace("/abs/", "/pdf/")
+                    if "last revised" in date:
+                        date = date.split("last revised")[1].split("(")[0]
+                    elif "submitted" in date:
+                        date = date.split("submitted")[1].split("(")[0]
+                    else:
+                        date = None
+                else:
+                    authors = None
+                    abstract = None
+                    date = None
+                    pdf_url = None
+                return json.dumps({"title": title and title.strip(),
+                                   "authors": authors and authors.strip(),
+                                   "date": date and date.strip(),
+                                   "abstract": abstract and abstract.strip(),
+                                   "pdf_url": pdf_url and pdf_url.strip()})
+            else:
+                return json.dumps({"error": "error", "code": response.status_code})
+
         @app.route("/fetch_proxy")
         def fetch_proxy():
+            """Fetch URL with :attr:`self.proxies` if :attr:`self.proxies` is not `None`.
+            """
             if "url" in request.args and request.args["url"]:
                 url = request.args["url"]
             else:
                 return json.dumps("NO URL GIVEN or BAD URL")
             self.logger.debug(f"Fetching {url} with proxies {self.proxies}")
             if self.proxies:
-                response = requests.get(url, proxies=self.proxies)
+                try:
+                    response = requests.get(url, headers=default_headers, proxies=self.proxies)
+                except requests.exceptions.Timeout:
+                    self.logger.error("Proxy not reachable. Fetching without proxy")
+                    self.proxies = None
+                    response = requests.get(url, headers=default_headers)
+                except requests.exceptions.ProxyError:
+                    self.logger.error("Proxy not reachable. Fetching without proxy")
+                    self.proxies = None
+                    response = requests.get(url, headers=default_headers)
             else:
                 self.logger.warn(f"Proxy dead. Fetching without proxy")
-                response = requests.get(url)
+                response = requests.get(url, headers=default_headers)
             if url.startswith("http:") and response.url.startswith("https:"):
                 return Response(response.content)
             elif response.url != url:

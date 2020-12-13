@@ -86,7 +86,8 @@
   "Check if we're on a Google Scholar page."
   (and (eq major-mode 'eww-mode)
        (string-match-p "scholar\\.google\\.com" (plist-get eww-data :url))))
-
+(defalias 'ref-man-web-gscholar-buffer-p 'ref-man-web-on-gscholar-page-p
+  "Check if we're on a Google Scholar page.")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END utility functions ;;
@@ -133,20 +134,17 @@
       (eww-next-url))))
 
 ;; CHECK: import link to org-buffer doesn't attach the pdf file automatically
-;;       if it's already downloaded.
-;;       Same should be there for import first and download later.
-;;       However, link to the article and link to pdf may not be the same in general
+;;        if it's already downloaded.
+;;        Same should be there for import first and download later.
+;;        However, link to the article and link to pdf may not be the same in general
 ;; FIXME: This should be integrated with *-chrome functions
 (defun ref-man-eww-keypress-i ()
-  "Import the Google Scholar entry at point if on Google Scholar.
+  "Import the link at point to an org buffer.
 Default action for key press i otherwise."
   (interactive)
-  (let ((url (with-current-buffer (get-buffer "*eww*") (plist-get eww-data :url))))
-    (if (string-match-p "scholar\\.google\\.com" url) ; Only imports from scholar for now
-        (ref-man-org-import-link
-         (ref-man-web-extract-import-link-data (current-buffer))
-         current-prefix-arg)
-      (eww-view-source))))
+  (ref-man-web-extract-import-link-data (current-buffer)
+                                        (-rpartial #'ref-man-org-import-link
+                                                   current-prefix-arg)))
 
 ;; ;; FIXME: Should go back to URL
 ;; (defun ref-man-eww-keypress-i ()
@@ -242,7 +240,7 @@ or on Google Scholar page, then then call
                    (ref-man-web-get-all-links buf t nil nil)))) ; (from eww buffer) from-begin
     (nth (+ (-elem-index pdf-url all-urls) 1) all-urls)))
 
-(defun ref-man-web-get-import-link-data (buf link)
+(defun ref-man-web-get-gscholar-link-data (buf link)
   "Extract LINK, its text and corresponding metadata from an eww buffer BUF."
   (save-excursion
     (setq ref-man--eww-import-link link)
@@ -266,7 +264,7 @@ or on Google Scholar page, then then call
                                  (point-at-bol) (point-at-eol))))
                (link-text (replace-regexp-in-string "\n" " "
                            (buffer-substring-no-properties link-text-begin link-text-end))))
-            (list :link-text link-text :metadata metadata))))))
+            (list `(title . ,link-text) `(metadata . ,metadata)))))))
 
 (defun ref-man--check-bibtex-string (buf-string)
   "Check BUF-STRING status from Google Scholar bibtex buffer."
@@ -401,20 +399,30 @@ next one."
           (backward-char 1))
         (get-text-property (point) 'shr-url)))))
 
+(defun ref-man-web-get-link-info (status url callback)
+  "Parse json of current page and call CALLBACK.
+URL was the fetched URL and STATUS is `url-retrieve' status."
+  (goto-char (point-min))
+  (forward-paragraph)
+  (funcall callback (cons `(link . ,url)
+                          (mapcar (lambda (x) (and (identity (cdr x)) x)) (json-read)))))
+
 ;; TODO: Currently no TODO attribute is set on the org entry and no
 ;;       timestamp is marked. Maybe option for that.
 ;; TODO: Allow import to specified location in a specified org file also
 ;;       e.g. research/reading/misc.
-(defun ref-man-web-extract-import-link-data (buf)
+(defun ref-man-web-extract-import-link-data (buf callback)
   "Before call should check the buffer as it can't be called if
 buffer is not gscholar"
   (interactive)
   (save-excursion
-    (let* ((link (ref-man-eww--gscholar-get-previous-non-google-link buf))
-           (args (ref-man-web-get-import-link-data buf link)))
-      ;; :link link :link link-text :metadata metadata
-      (-concat (list :link link) args))))
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    (let ((link (ref-man-eww--gscholar-get-previous-non-google-link buf)))
+      (cond ((ref-man-web-on-gscholar-page-p)
+             (cons `(link . ,link) (ref-man-web-get-gscholar-link-data buf link)))
+            (t (prog1 'async
+                 (url-retrieve (format "http://localhost:9999/url_info?url=%s" link)
+                               #'ref-man-web-get-link-info (list link callback))))))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END eww utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

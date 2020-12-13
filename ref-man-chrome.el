@@ -43,6 +43,8 @@
 (require 'cl-lib)
 (require 'eww)
 (require 'org)
+(require 'dash)
+(require 'dash-functional)
 (require 'subr-x)
 (require 'url-http)
 (require 'websocket)
@@ -440,9 +442,11 @@ else update the heading at point.
 The default buffer is `ref-man--org-gscholar-launch-buffer' if
 it's non-nil, else `ref-man-org-links-file-path'."
   (cond ((eq extract 'link)
-         (ref-man-org-import-link
-          (ref-man-web-extract-import-link-data (current-buffer)) (eq update 'current)))
-        ((eq extract 'everything)
+         (ref-man-web-extract-import-link-data (current-buffer)
+                                               (-rpartial #'ref-man-org-import-link
+                                                          (eq update 'current))))
+        ;; TODO: extract everything requires a bunch of async calls
+        ((and (eq extract 'everything) (ref-man-web-gscholar-buffer-p))
          (ref-man-chrome-import-everything (current-buffer) nil (eq update 'current)))
         (t (debug))))
 

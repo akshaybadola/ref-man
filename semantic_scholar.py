@@ -1,3 +1,4 @@
+from typing import List, Dict, Any
 import os
 import json
 import requests
@@ -7,6 +8,16 @@ assoc = [(x, i) for i, x in enumerate(["acl", "arxiv", "corpus", "doi"])]
 
 
 def load_ss_cache(data_dir):
+    """Load the ss_cache metadata from the disk.
+
+    The cache is indexed as a file in `metadata` and the file data itself is
+    named as the Semantic Scholar `corpusId` for the paper. We load metadata on
+    startup and fetch the rest as needed.
+
+    Args:
+        data_dir: Directory where the cache is located
+
+    """
     with open(os.path.join(data_dir, "metadata")) as f:
         _cache = [*filter(None, f.read().split("\n"))]
     ss_cache = {"acl": {}, "doi": {}, "arxiv": {}, "corpus": {}}
@@ -23,7 +34,19 @@ def load_ss_cache(data_dir):
     return ss_cache
 
 
+# FIXME: Why's there a separate acl_id here?
 def save_data(data, data_dir, ss_cache, acl_id):
+    """Save Semantic Scholar cache to disk.
+
+    We read and write data for individual papers instead of one big json object.
+
+    Args:
+        data: data for the paper
+        data_dir: Directory where the cache is located
+        ss_cache: The Semantic Scholar cache
+        acl_id: ACL Id for the paper
+
+    """
     with open(os.path.join(data_dir, data["paperId"]), "w") as f:
         json.dump(data, f)
     c = [acl_id if acl_id else "",
@@ -43,7 +66,22 @@ def save_data(data, data_dir, ss_cache, acl_id):
     print("Updated metadata")
 
 
-def semantic_scholar_paper_details(id_type, id, data_dir, ss_cache, force):
+def semantic_scholar_paper_details(id_type: str, id: str, data_dir: str,
+                                   ss_cache: Dict[str, Dict[str, Any]], force: bool):
+    """Get semantic scholar paper details
+
+    The Semantic Scholar cache is checked first and if it's a miss then the
+    details are fetched from the server.
+
+    Args:
+        id_type: type of the paper identifier one of
+                 `['ss', 'doi', 'mag', 'arxiv', 'acl', 'pubmed', 'corpus']`
+        id: paper identifier
+        data_dir: Directory where the cache is loacaded
+        ss_cache: The Semantic Scholar cache
+        force: Force fetch from Semantic Scholar server, ignoring cache
+
+    """
     urls = {"ss": f"https://api.semanticscholar.org/v1/paper/{id}",
             "doi": f"https://api.semanticscholar.org/v1/paper/{id}",
             "mag": f"https://api.semanticscholar.org/v1/paper/MAG:{id}",
@@ -58,9 +96,9 @@ def semantic_scholar_paper_details(id_type, id, data_dir, ss_cache, force):
             print(f"Fetching from disk for {id_type}, {id}")
             with open(os.path.join(data_dir, id)) as f:
                 return json.load(f)
-        elif id_type in {"doi", "acl", "arxiv", "corpus"}\
-             and id in ss_cache[id_type] and ss_cache[id_type][id]\
-             and not force:
+        elif (id_type in {"doi", "acl", "arxiv", "corpus"}
+              and id in ss_cache[id_type] and ss_cache[id_type][id]
+              and not force):
             print(f"Fetching from cache for {id_type}, {id}")
             with open(os.path.join(data_dir, ss_cache[id_type][id])) as f:
                 return json.load(f)
@@ -82,8 +120,9 @@ def semantic_scholar_paper_details(id_type, id, data_dir, ss_cache, force):
                 return json.dumps(None)
 
 
-def semantic_scholar_search(query, title_only=False, authors=[], cs_only=True,
-                            pub_types=[], has_github=False, year_filter=None):
+def semantic_scholar_search(query: str, title_only: bool = False, authors: List[str] = [],
+                            cs_only: bool = True, pub_types=[], has_github: bool = False,
+                            year_filter: bool = None):
     """Perform a search on semantic scholar and return the results in JSON format
     By default the search is performed in Computer Science subjects
 

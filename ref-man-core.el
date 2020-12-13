@@ -192,6 +192,7 @@ go through this http proxy at localhost, specified by this port."
 (defvar ref-man--document-title nil)
 (defvar ref-man--current-pdf-file-name nil)
 (defvar ref-man--biblio-callback-buf nil)
+(defvar ref-man-external-python-process-pid nil)
 
 (defvar shr-map
   (let ((map (make-sparse-keymap)))
@@ -1363,7 +1364,6 @@ buffer and sanitize the entry at point."
                                "; pip install -r " (path-join ref-man-home-dir "requirements.txt"))
                              "*ref-man-cmd*" "*ref-man-cmd*")))))
 
-
 ;; TODO: Requests to python server should be dynamic according to whether I want
 ;;       to use proxy or not at that point
 (defun ref-man--python-process-helper (data-dir port)
@@ -1371,14 +1371,13 @@ buffer and sanitize the entry at point."
 DATA-DIR is the server data directory.  PORT is the port to which
 the server binds.
 
-When called from `ref-man-start-python-process', DATA-DIR is
-`ref-man-python-data-dir' and the port
+When called from `ref-man-start-python-server', DATA-DIR is set
+to `ref-man-python-data-dir' and the port
 `ref-man-python-server-port'."
   ;; NOTE: Hack so that process isn't returned
   (prog1
       (message (format "[ref-man] Starting python process on port: %s"
                        ref-man-python-server-port))
-    ;; TODO: Should be an option to python server to proxy some requests
     (let* ((env (and ref-man-python-process-use-venv
                      (path-join ref-man-home-dir "env")))
            (args (-filter #'identity (list (format "--data-dir=%s" data-dir)
@@ -1404,6 +1403,7 @@ When called from `ref-man-start-python-process', DATA-DIR is
                                         temp))
                                   process-environment))
            (python (ref-man--trim-whitespace (shell-command-to-string "which python"))))
+      ;; (message "Python process args are %s" args)
       (apply #'start-process "ref-man-python-server" "*ref-man-python-server*"
              python (path-join ref-man-home-dir "server.py") args))))
 
@@ -1418,31 +1418,16 @@ This is sent via http and lets the server exit gracefully."
       (re-search-forward "\r?\n\r?\n")
       (message (buffer-substring-no-properties (point) (point-max))))))
 
-(defun ref-man-kill-python-process ()
-  "Kill the python server process by sending SIGKILL."
-  (interactive)
+(defun ref-man--kill-internal-python-process ()
+  "Kill the internal python process process by sending SIGKILL."
   (signal-process (get-buffer "*ref-man-python-server*") 15))
 
-(defun ref-man--python-process-running-p ()
-  "Check if python server is already running.
-Set the port to the port being used by the server if it exists."
-  ;; FIXME: This checks for strings and they may not match in case the python
-  ;;        process is running outside of emacs
-  (let ((python-strings
-         (split-string (shell-command-to-string "ps -ef | grep python | grep server") "\n")))
-    ;; CHECK: What does the loop even do? I check only the version from server
-    ;;        in any case.
-    ;;
-    ;;        Well I do set the `ref-man-python-server-port'. I'm not sure I should
-    ;;        do that here.
-    (cl-loop for x in python-strings
-          do
-          (when (and (string-match-p "port" x) (string-match-p "data-dir" x))
-            (setq ref-man-python-server-port
-                  (string-to-number
-                   (cadr (split-string
-                          (car (split-string
-                                (substring x (string-match "port" x)))) "=")))))))
+(defun ref-man--kill-external-python-process ()
+  "Kill the external python process process by sending SIGKILL."
+  (signal-process ref-man-external-python-process-pid 15))
+
+(defun ref-man-python-server-reachable-p ()
+  "Check if python server is reachable."
   (condition-case nil
       (let ((buf (url-retrieve-synchronously
                   (format "http://localhost:%s/version" ref-man-python-server-port) t)))
@@ -1451,19 +1436,59 @@ Set the port to the port being used by the server if it exists."
                           (with-current-buffer buf (buffer-string)))))
     (error nil)))
 
-(defun ref-man-start-python-process ()
-  "Start the python process, unless already running.
+(defun ref-man-python-process-running ()
+  "Check if python server is running.
+Returns 'external or 'internal according to where the process is
+running if it's running else nil."
+  (cond ((get-buffer-process "*ref-man-python-server*")
+         (setq ref-man-external-python-process-pid nil)
+         'internal)
+        ((ref-man-external-python-process-p)
+         'external)
+        (t nil)))
 
-If the process buffer is not found in Emacs it's killed and
-restarted.
-
-See accompanying `server.py' for details.  The API and methods are
-still evolving but as of now it supports DBLP and ArXiv.  The
-process if started opens a local port and can fetch data in
-multiple threads from supported APIs before preprocessing and
-consolidating.  It also maintains a local datastore."
+(defun ref-man-python-server-running ()
+  "Check if python server is already running."
   (interactive)
-  (if (ref-man--python-process-running-p)
+  (let ((python-process (ref-man-python-process-running)))
+    (when python-process
+      (if (ref-man-python-server-reachable-p)
+          python-process
+        (if (eq python-process 'internal)
+            'internal-error 'external-error)))))
+
+(defun ref-man-external-python-process-p ()
+  "Check for `server.py' python processes outside emacs.
+In case a process is found, `ref-man-python-server-port' is set
+to the port of that process and
+`ref-man-external-python-process-pid' is set to its pid."
+  (let ((python-strings
+         (split-string (shell-command-to-string "ps -ef | grep python | grep server") "\n")))
+    (cl-loop for x in python-strings
+             do
+             (when (and (string-match-p "port" x) (string-match-p "data-dir" x))
+               (setq ref-man-python-server-port
+                     (string-to-number
+                      (cadr (split-string
+                             (car (split-string
+                                   (substring x (string-match "port" x)))) "="))))
+               (setq ref-man-external-python-process-pid (string-to-number (nth 1 (split-string x))))
+               (cl-return t)))))
+
+(defun ref-man-start-python-server ()
+  "Start the python server, unless already running.
+
+The server can be running outside emacs also in which case
+`ref-man-python-server-port' is set to port.
+
+See accompanying `server.py' for the server details.  The API and
+methods are still evolving but as of now it supports DBLP and
+ArXiv.  The process if started opens a local port and can fetch
+data in multiple threads from supported APIs before preprocessing
+and consolidating.  It also maintains a local datastore."
+  (interactive)
+  ;; FIXME: for 'internal-error and 'external-error
+  (if (ref-man-python-server-running)
       (message (format "Found existing process running on port: %s"
                        ref-man-python-server-port))
     (message "No existing python process found")
@@ -1472,13 +1497,18 @@ consolidating.  It also maintains a local datastore."
       (setq ref-man-python-server-port port)
       (ref-man--python-process-helper data-dir port))))
 
-;; FIXME: It throws error when process is running outside emacs
-(defun ref-man-restart-python-process ()
-  "Restart the python process."
+(defun ref-man-restart-python-server ()
+  "Restart the python server."
   (interactive)
-  (when (ref-man--python-process-running-p)
-    (ref-man-kill-python-process))
-  (ref-man-start-python-process))
+  (cond ((or (eq 'internal (ref-man-python-server-running))
+             (eq 'external (ref-man-python-server-running)))
+         (ref-man-stop-python-server))
+        ((eq 'internal-error (ref-man-python-server-running))
+         (ref-man--kill-internal-python-process))
+        ((eq 'external-error (ref-man-python-server-running))
+         (ref-man--kill-external-python-process)))
+  ;; FIXME: This runs before server shuts down
+  (ref-man-start-python-server))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END python process stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1641,7 +1671,7 @@ optional argument.RAW is non-nil, return raw-link."
                   link)))))
       (message "[ref-man] Not in org-mode") nil)))
 
-(defun ref-man-org-insert-link-as-headline (org-buf link link-text metadata current)
+(defun ref-man-org-insert-link-as-headline (org-buf link title metadata current)
   "Insert LINK as org headline to ORG-BUF.
 LINK-TEXT is as given in the html buffer.  METADATA would be
 author, title and venue information given as strings."
@@ -1661,17 +1691,25 @@ author, title and venue information given as strings."
                (org-insert-heading-respect-content)
                (org-do-demote)))
             (t nil))
-      (org-edit-headline link-text)
+      (org-edit-headline title)
       (end-of-line)
       (let ((pblock (org-get-property-block)))
         (when pblock
           (goto-char (cdr pblock))
           (end-of-line)))
       (newline-and-indent)
-      (insert (concat "- " metadata))
-      (org-insert-item)
-      (insert (concat "[[" link "][link]]"))
-      (message (concat "[ref-man] " "Imported entry " link-text " into buffer " (buffer-name org-buf)))
+      (insert (concat "- [[" link "][link]]"))
+      (if (stringp metadata)
+          (progn (newline-and-indent)
+                 (org-insert-item)
+                 (insert (concat "- " metadata)))
+        (seq-do (lambda (x)
+                  (newline-and-indent)
+                  (org-insert-item)
+                  (insert (capitalize (symbol-name (car x))) ": " (replace-regexp-in-string "\n" " " (cdr x)))
+                  (fill-paragraph))
+                metadata))
+      (message (concat "[ref-man] " (format "Imported entry \"%s\" into buffer <%s>" title (buffer-name org-buf))))
       ;; restore ref-man--org-gscholar-launch-point but return point
       (prog1 (list :buffer (current-buffer)
                    :heading (substring-no-properties (org-get-heading))
@@ -2367,13 +2405,16 @@ current headline.  Default is to insert a subheading."
        (org-buf (plist-get org-data :org-buf))
        ;; NOTE: Not used
        ;; (org-point (plist-get org-data :org-point))
-       )
+       (link (cdass 'link args))
+       (title (cdass 'title args))
+       (metadata (cdass 'metadata args))
+       (authors (cdass 'authors args))
+       (date (cdass 'date args))
+       (abstract (cdass 'abstract args)))
+    (unless metadata
+      (setq metadata (-filter 'cdr `((authors . ,authors) (date . ,date) (abstract . ,abstract)))))
     (with-current-buffer org-buf
-      (ref-man-org-insert-link-as-headline org-buf
-                                           (plist-get args :link)
-                                           (plist-get args :link-text)
-                                           (plist-get args :metadata)
-                                           current))))
+      (ref-man-org-insert-link-as-headline org-buf link title metadata current))))
 
 (defun ref-man--download-pdf-redirect-new (callback url &optional args)
   (message (concat "[ref-man] Fetching PDF from " url))
