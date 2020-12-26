@@ -1,13 +1,15 @@
+from typing import Dict, List
 import json
 import requests
+from queue import Queue
 from functools import partial
 from bs4 import BeautifulSoup
 
-from q_helper import q_helper
+from .q_helper import q_helper
 
 
 # TODO: There should be a cache of entries
-def dict_to_bibtex(bib_dict, json_out=False):
+def dict_to_bibtex(bib_dict: Dict[str, str], json_out: bool = False):
     temp = bib_dict.copy()
     if "author" in temp:
         k = "author"
@@ -47,7 +49,7 @@ def arxiv_get(arxiv_id: str) -> str:
         arxiv_id: The Arxiv ID of the article
 
     """
-    response = requests.get(f"http://export.arxiv.org/api/query?id_list=" + arxiv_id)
+    response = requests.get("http://export.arxiv.org/api/query?id_list={arxiv_id}")
     soup = BeautifulSoup(response.content, features="lxml")
     entry = soup.find("entry")
     abstract = entry.find("summary").text
@@ -63,7 +65,8 @@ def arxiv_get(arxiv_id: str) -> str:
         return json.dumps("ERROR RETRIEVING")
 
 
-def _arxiv_success(query, response, content):
+def _arxiv_success(query: str, response: requests.Response,
+                   content: Dict[str, Dict]):
     soup = BeautifulSoup(response.content, features="lxml")
     entry = soup.find("entry")
     abstract = entry.find("summary").text
@@ -77,19 +80,22 @@ def _arxiv_success(query, response, content):
     content[query] = dict_to_bibtex(bib_dict)
 
 
-def _arxiv_no_result(query, response, content):
+def _arxiv_no_result(query: str, response: requests.Response,
+                     content: Dict[str, List[str]]):
     content[query] = ["NO_RESULT"]
 
 
-def _arxiv_error(query, response, content):
+def _arxiv_error(query: str, response: requests.Response,
+                 content: Dict[str, List[str]]):
     content[query] = ["ERROR"]
 
 
-def arxiv_fetch(arxiv_id, q, ret_type="json", verbose=False):
+def arxiv_fetch(arxiv_id: str, q: Queue, ret_type: str = "json",
+                verbose: bool = False):
     if verbose:
         print(f"Fetching for arxiv_id {arxiv_id}\n")
     if ret_type == "json":
-        response = requests.get(f"http://export.arxiv.org/api/query?id_list=" + arxiv_id)
+        response = requests.get("http://export.arxiv.org/api/query?id_list={arxiv_id}")
         q.put((arxiv_id, response))
     else:
         q.put((arxiv_id, "INVALID"))

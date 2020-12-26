@@ -1,6 +1,7 @@
 import json
 import requests
-from q_helper import QHelper
+
+from .q_helper import QHelper
 
 
 class _DBLPHelper:

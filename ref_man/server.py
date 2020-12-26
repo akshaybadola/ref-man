@@ -6,7 +6,6 @@ import time
 import shutil
 import logging
 import requests
-import argparse
 from queue import Queue
 from threading import Thread, Event
 import flask
@@ -18,10 +17,10 @@ import re
 import operator
 from bs4 import BeautifulSoup
 
-from const import default_headers
-from arxiv import arxiv_get, arxiv_fetch, arxiv_helper
-from dblp import dblp_helper
-from semantic_scholar import load_ss_cache, semantic_scholar_search, semantic_scholar_paper_details
+from .const import default_headers, __version__
+from .arxiv import arxiv_get, arxiv_fetch, arxiv_helper
+from .dblp import dblp_helper
+from .semantic_scholar import load_ss_cache, semantic_scholar_search, semantic_scholar_paper_details
 
 
 def get_stream_logger(name="default",
@@ -126,7 +125,7 @@ def post_json_wrapper(request: flask.Request, fetch_func: Callable, helper: Call
     logger.info(f"Fetching {len(data)} queries from {host}")
     verbosity = True
     j = 0
-    content = {}
+    content: Dict[str, str] = {}
     while True:
         _data = data[(batch_size * j): (batch_size * (j + 1))].copy()
         for k, v in content.items():
@@ -134,7 +133,7 @@ def post_json_wrapper(request: flask.Request, fetch_func: Callable, helper: Call
                 _data.append(k)
         if not _data:
             break
-        q = Queue()
+        q: Queue = Queue()
         threads = []
         for d in _data:
             # FIXME: This should also send the logger instance
@@ -258,7 +257,31 @@ def update_links_cache_helper(local_dir, remote_dir, cache_file, ev,
 
 
 class Server:
+    """*ref-man* server for network requests.
+
+    We use a separate python process for efficient (and sometimes parallel)
+    fetching of network requests.
+
+    FIXME: Should be keyword args instead
+    Args:
+        args: :class:`types.SimpleNamespace` obtained from :class:`argparse.ArgumentParser`
+
+    host: host on which to bind
+    port: port on which to bind
+    batch_size: Number of parallel requests to send in case parallel requests is
+                implemented for that method
+    data_dir: Directory where the Semantic Scholar Cache is stored.
+              See :func:`load_ss_cache`
+    proxy_port: Port for the proxy server. Used by `fetch_proxy`, usually for PDFs.
+    proxy_everything: Whether to fetch all requests via proxy.
+    proxy_everything_port: Port for the proxy server on which everything is proxied.
+                           Used by supported methods.
+    verbosity: Verbosity control
+    threaded: Start the flask server in threaded mode. Defaults to `True`.
+
+    """
     def __init__(self, args):
+        self.host = "127.0.0.1"
         self.port = args.port
         self.batch_size = args.batch_size
         self.data_dir = args.data_dir
@@ -362,7 +385,7 @@ class Server:
                 return arxiv_get(id)
             else:
                 result = post_json_wrapper(request, arxiv_fetch, arxiv_helper,
-                                           args.batch_size, "Arxiv", self.logger)
+                                           self.batch_size, "Arxiv", self.logger)
                 return json.dumps(result)
 
         @app.route("/semantic_scholar", methods=["GET", "POST"])
@@ -380,7 +403,7 @@ class Server:
                     force = True
                 else:
                     force = False
-                data = semantic_scholar_paper_details(id_type, id, args.data_dir,
+                data = semantic_scholar_paper_details(id_type, id, self.data_dir,
                                                       self.ss_cache, force)
                 return data
             else:
@@ -412,7 +435,7 @@ class Server:
             else:
                 return json.dumps("NO URL or URLs GIVEN")
             if urls is not None:
-                return parallel_fetch(urls, fetch_url_info, args.batch_size)
+                return parallel_fetch(urls, fetch_url_info, self.batch_size)
             elif url is not None:
                 return json.dumps(fetch_url_info(url))
             else:
@@ -446,7 +469,7 @@ class Server:
                     self.proxies = None
                     response = requests.get(url, headers=default_headers)
             else:
-                self.logger.warn(f"Proxy dead. Fetching without proxy")
+                self.logger.warn("Proxy dead. Fetching without proxy")
                 response = requests.get(url, headers=default_headers)
             if url.startswith("http:") and response.url.startswith("https:"):
                 return Response(response.content)
@@ -562,18 +585,19 @@ class Server:
 
         @app.route("/version", methods=["GET"])
         def version():
-            return "ref-man python server 0.2.0"
+            return f"ref-man python server {__version__}"
 
         # TODO: rest of helpers should also support proxy
         # CHECK: Why are the interfaces to _dblp_helper and arxiv_helper different?
         #        Ideally there should be a single specification
         _proxy = self.everything_proxies if self.proxy_everything else None
         dblp_fetch, _dblp_helper = dblp_helper(_proxy, True)
+
         @app.route("/dblp", methods=["POST"])
         def dblp():
             """Fetch from DBLP"""
             result = post_json_wrapper(request, dblp_fetch, _dblp_helper,
-                                       args.batch_size, "DBLP", self.logger)
+                                       self.batch_size, "DBLP", self.logger)
             return result
 
         @app.route("/shutdown")
@@ -587,29 +611,4 @@ class Server:
 
     def run(self):
         "Run the server"
-        serving.run_simple("127.0.0.1", self.port, app, threaded=self.threaded)
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--no-threaded", dest="threaded", action="store_false",
-                        help="Whether flask server should be threaded or not")
-    parser.add_argument("--port", "-p", type=int, default=9999,
-                        help="Port to bind to the python server")
-    parser.add_argument("--proxy-port", dest="proxy_port", type=int, default=0,
-                        help="HTTP proxy server port for method 'fetch_proxy'")
-    parser.add_argument("--proxy-everything", dest="proxy_everything", action="store_true",
-                        help="Should we proxy all requests?")
-    parser.add_argument("--proxy-everything-port", dest="proxy_everything_port",
-                        type=int, default=0,
-                        help="HTTP proxy server port if proxy_everything is given")
-    parser.add_argument("--data-dir", "-d", dest="data_dir", type=str,
-                        default=os.path.expanduser("~"),
-                        help="Semantic Scholar cache directory")
-    parser.add_argument("--batch-size", "-b", dest="batch_size", type=int, default=16,
-                        help="Simultaneous connections to DBLP")
-    parser.add_argument("--verbosity", "-v", type=str, default="info",
-                        help="Verbosity level. One of [error, info, debug]")
-    args = parser.parse_args()
-    server = Server(args)
-    server.run()
+        serving.run_simple(self.host, self.port, app, threaded=self.threaded)

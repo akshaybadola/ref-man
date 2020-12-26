@@ -1353,16 +1353,18 @@ buffer and sanitize the entry at point."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START python process stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; TODO: Use venv
-(defun ref-man-python-process-setup-venv ()
+
+;; TODO: Always use venv and setup
+;;
+;; TODO: Check python3 version > 3.6.5
+(defun ref-man-python-process-setup ()
   (when ref-man-python-process-use-venv
     (let ((env (path-join ref-man-home-dir "env")))
-      (unless (and (f-exists? env) (f-exists? (path-join env "bin" "python")))
-        (shell-command (format "python3 -m virtualenv -p python3.7 %s" env)
-                             "*ref-man-cmd*" "*ref-man-cmd*")
-        (async-shell-command (concat "source "
-                               (path-join env "bin" "activate")
-                               "; pip install -r " (path-join ref-man-home-dir "requirements.txt"))
+      (unless (and (f-exists? env) (f-exists? (path-join env "bin" "python3")))
+        (shell-command (format "python3 -m virtualenv -p python3 %s" env)
+                       "*ref-man-cmd*" "*ref-man-cmd*")
+        (async-shell-command (concat "source " (path-join env "bin" "activate") " && "
+                                     (format "cd %s && pip install ." ref-man-home-dir))
                              "*ref-man-cmd*" "*ref-man-cmd*")))))
 
 ;; TODO: Requests to python server should be dynamic according to whether I want
@@ -1406,7 +1408,7 @@ to `ref-man-python-data-dir' and the port
            (python (ref-man--trim-whitespace (shell-command-to-string "which python"))))
       ;; (message "Python process args are %s" args)
       (apply #'start-process "ref-man-python-server" "*ref-man-python-server*"
-             python (path-join ref-man-home-dir "server.py") args))))
+             python (path-join ref-man-home-dir "main.py") args))))
 
 (defun ref-man-stop-python-server ()
   "Stop the python server by sending a shutdown command.
