@@ -262,6 +262,47 @@ from A to B."
                                               content t)))
     content))
 
+(defun rer-man-delete-blank-lines-in-region (&optional beg end no-trailing-newline)
+  "Delete all empty lines in region.
+Region is either the active region or optional points BEG and
+END.
+
+This function is aliased from URL `https://github.com/akshaybadola/emacs-util'."
+  (interactive)
+  (when current-prefix-arg
+    (setq no-trailing-newline t))
+  (save-restriction
+    (when (and (called-interactively-p 'any) (region-active-p))
+      (setq beg (region-beginning)
+            end (region-end)))
+    (when (and beg end (< beg end))
+      (narrow-to-region beg end)
+      (delete-trailing-whitespace)
+      (goto-char (point-min))
+      (while (re-search-forward "^[ ]+\n" nil t)
+        (replace-match ""))
+      (goto-char (point-min))
+      (when (looking-at "\n")
+        (delete-char 1))
+      (while (re-search-forward "\r?\n+\n" nil t)
+        (replace-match "\n"))
+      (goto-char (point-max))
+      (when (and no-trailing-newline (looking-back "\n" 1))
+        (re-search-backward "\r?\n+\n" nil t)
+        (replace-match "")))))
+
+(defun ref-man-delete-blank-lines-in-buffer (&optional buf no-trailing-newline)
+  "Delete all empty lines in the entire buffer BUF.
+When optional BUF is not given, defaults to current buffer.
+
+This function is aliased from URL `https://github.com/akshaybadola/emacs-util'."
+  (interactive)
+  (unless buf
+    (setq buf (current-buffer)))
+  (when current-prefix-arg
+    (setq no-trailing-newline t))
+  (with-current-buffer buf
+    (ref-man-delete-blank-lines-in-region (point-min) (point-max) no-trailing-newline)))
 
 (defun ref-man--replace-non-ascii (str)
   "Replace non-ascii characters in STR with escape codes.

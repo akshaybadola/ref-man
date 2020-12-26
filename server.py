@@ -1,3 +1,4 @@
+from typing import Callable, List, Dict, Union
 import os
 import sys
 import json
@@ -8,6 +9,7 @@ import requests
 import argparse
 from queue import Queue
 from threading import Thread, Event
+import flask
 from flask import Flask, request, Response
 from werkzeug import serving
 from subprocess import Popen, PIPE, TimeoutExpired
@@ -43,14 +45,75 @@ def get_stream_logger(name="default",
 app = Flask(__name__)
 
 
-def post_json_wrapper(request, fetch_func, helper, batch_size, logger):
+def fetch_url_info(url, headers, q=None):
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        soup = BeautifulSoup(response.content)
+        title = soup.find("title").text
+        if re.match("https{0,1}://arxiv.org.*", url):
+            title = soup.find(None, attrs={"class": "title"}).text.split(":")[1]
+            authors = soup.find(None, attrs={"class": "authors"}).text.split(":")[1]
+            abstract = soup.find(None, attrs={"class": "abstract"}).text.split(":")[1]
+            date = soup.find("div", attrs={"class": "dateline"}).text.lower()
+            pdf_url = url.replace("/abs/", "/pdf/")
+            if "last revised" in date:
+                date = date.split("last revised")[1].split("(")[0]
+            elif "submitted" in date:
+                date = date.split("submitted")[1].split("(")[0]
+            else:
+                date = None
+        else:
+            authors = None
+            abstract = None
+            date = None
+            pdf_url = None
+        retval = {"title": title and title.strip(),
+                  "authors": authors and authors.strip(),
+                  "date": date and date.strip(),
+                  "abstract": abstract and abstract.strip(),
+                  "pdf_url": pdf_url and pdf_url.strip()}
+    else:
+        retval = {"error": "error", "code": response.status_code}
+    if q is not None:
+        q.put((url, retval))
+    else:
+        return retval
+
+
+def parallel_fetch(urls, fetch_func, batch_size):
+    def helper(q):
+        responses = {}
+        while not q.empty():
+            url, retval = q.get()
+            responses[url] = retval
+        return responses
+    j = 0
+    content = {}
+    while True:
+        _urls = urls[(batch_size * j): (batch_size * (j + 1))].copy()
+        if not _urls:
+            break
+        q = Queue()
+        threads = []
+        for url in _urls:
+            threads.append(Thread(target=fetch_func, args=[url, q]))
+            threads[-1].start()
+        for t in threads:
+            t.join()
+        content.update(helper(q))
+        j += 1
+
+
+def post_json_wrapper(request: flask.Request, fetch_func: Callable, helper: Callable,
+                      batch_size: int, host: str, logger: logging.Logger):
     """Helper function to parallelize the requests and gather them.
 
-    :param request: `request` is of type `Flask.request`
-    :param fetch_func: :class:`function``fetch_func` fetches the request from the server
-    :param helper: :class:`function` checks and collates the results
-    :param batch_size: :class:`int` Number of simultaneous fetch requests
-    :param verbosity: verbosity level
+    Args:
+        request: An instance :class:`~Flask.Request`
+        fetch_func: :func:`fetch_func` fetches the request from the server
+        helper: :func:`helper` validates and collates the results
+        batch_size: Number of simultaneous fetch requests
+        verbosity: verbosity level
 
     """
     if not isinstance(request.json, str):
@@ -60,7 +123,7 @@ def post_json_wrapper(request, fetch_func, helper, batch_size, logger):
             data = json.loads(request.json)
         except Exception:
             return json.dumps("BAD REQUEST")
-    logger.info(f"Fetching {len(data)} queries from dblp")
+    logger.info(f"Fetching {len(data)} queries from {host}")
     verbosity = True
     j = 0
     content = {}
@@ -74,6 +137,7 @@ def post_json_wrapper(request, fetch_func, helper, batch_size, logger):
         q = Queue()
         threads = []
         for d in _data:
+            # FIXME: This should also send the logger instance
             threads.append(Thread(target=fetch_func, args=[d, q],
                                   kwargs={"verbosity": verbosity}))
             threads[-1].start()
@@ -298,7 +362,7 @@ class Server:
                 return arxiv_get(id)
             else:
                 result = post_json_wrapper(request, arxiv_fetch, arxiv_helper,
-                                           args.batch_size, self.verbosity)
+                                           args.batch_size, "Arxiv", self.logger)
                 return json.dumps(result)
 
         @app.route("/semantic_scholar", methods=["GET", "POST"])
@@ -316,8 +380,9 @@ class Server:
                     force = True
                 else:
                     force = False
-                return semantic_scholar_paper_details(id_type, id, args.data_dir,
+                data = semantic_scholar_paper_details(id_type, id, args.data_dir,
                                                       self.ss_cache, force)
+                return data
             else:
                 return json.dumps("METHOD NOT IMPLEMENTED")
 
@@ -337,39 +402,21 @@ class Server:
 
         @app.route("/url_info", methods=["GET"])
         def url_info():
-            """Fetch info about a given url based on certain rules."""
+            """Fetch info about a given url or urls based on certain rules."""
             if "url" in request.args and request.args["url"]:
                 url = request.args["url"]
+                urls = None
+            elif "urls" in request.args and request.args["urls"]:
+                urls = request.args["urls"].split(",")
+                url = None
             else:
-                return json.dumps("NO URL GIVEN or BAD URL")
-            response = requests.get(url, headers=default_headers)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.content)
-                title = soup.find("title").text
-                if re.match("https{0,1}://arxiv.org.*", url):
-                    title = soup.find(None, attrs={"class": "title"}).text.split(":")[1]
-                    authors = soup.find(None, attrs={"class": "authors"}).text.split(":")[1]
-                    abstract = soup.find(None, attrs={"class": "abstract"}).text.split(":")[1]
-                    date = soup.find("div", attrs={"class": "dateline"}).text.lower()
-                    pdf_url = url.replace("/abs/", "/pdf/")
-                    if "last revised" in date:
-                        date = date.split("last revised")[1].split("(")[0]
-                    elif "submitted" in date:
-                        date = date.split("submitted")[1].split("(")[0]
-                    else:
-                        date = None
-                else:
-                    authors = None
-                    abstract = None
-                    date = None
-                    pdf_url = None
-                return json.dumps({"title": title and title.strip(),
-                                   "authors": authors and authors.strip(),
-                                   "date": date and date.strip(),
-                                   "abstract": abstract and abstract.strip(),
-                                   "pdf_url": pdf_url and pdf_url.strip()})
+                return json.dumps("NO URL or URLs GIVEN")
+            if urls is not None:
+                return parallel_fetch(urls, fetch_url_info, args.batch_size)
+            elif url is not None:
+                return json.dumps(fetch_url_info(url))
             else:
-                return json.dumps({"error": "error", "code": response.status_code})
+                return json.dumps("NO URL or URLs GIVEN")
 
         @app.route("/fetch_proxy")
         def fetch_proxy():
@@ -379,6 +426,13 @@ class Server:
                 url = request.args["url"]
             else:
                 return json.dumps("NO URL GIVEN or BAD URL")
+            # DEBUG code
+            # if url == "https://arxiv.org/pdf/2006.01912":
+            #     with os.path.expanduser("~/pdf_file.pdf", "rb") as f:
+            #         pdf_data = f.read()
+            #     response = make_response(pdf_data)
+            #     response.headers["Content-Type"] = "application/pdf"
+            #     return response
             self.logger.debug(f"Fetching {url} with proxies {self.proxies}")
             if self.proxies:
                 try:
@@ -397,8 +451,15 @@ class Server:
             if url.startswith("http:") and response.url.startswith("https:"):
                 return Response(response.content)
             elif response.url != url:
-                return json.dumps({"redirect": response.url,
-                                   "content": response.content.decode('utf-8')})
+                if response.headers["Content-Type"] in\
+                   {"application/pdf", "application/octet-stream"}:
+                    return Response(response.content)
+                elif response.headers["Content-Type"].startswith("text"):
+                    return json.dumps({"redirect": response.url,
+                                       "content": response.content.decode("utf-8")})
+                else:
+                    return json.dumps({"redirect": response.url,
+                                       "content": "Error, unknown content from redirect"})
             else:
                 return Response(response.content)
 
@@ -424,15 +485,18 @@ class Server:
                     cache = [x for x in f.read().split("\n") if len(x)]
                     cached_files = [x.rsplit(";")[0] for x in cache]
                 files = set(local_files) - set(cached_files)
-                self.updating_cache_event.set()
-                self.update_cache_thread = Thread(target=update_links_cache_helper,
-                                                  args=[local_dir, remote_dir, cache_file,
-                                                        self.updating_cache_event,
-                                                        self.update_success_event,
-                                                        self.update_success_with_errors_event,
-                                                        self.logger])
-                self.update_cache_thread.start()
-                return f"Updating cache for {len(files)} files"
+                if files:
+                    self.updating_cache_event.set()
+                    self.update_cache_thread = Thread(target=update_links_cache_helper,
+                                                      args=[local_dir, remote_dir, cache_file,
+                                                            self.updating_cache_event,
+                                                            self.update_success_event,
+                                                            self.update_success_with_errors_event,
+                                                            self.logger])
+                    self.update_cache_thread.start()
+                    return f"Updating cache for {len(files)} files"
+                else:
+                    return "Nothing to update"
             else:
                 return f"Insufficient arguments {local_dir}, {remote_dir}, {cache_file}"
 
@@ -502,16 +566,14 @@ class Server:
 
         # TODO: rest of helpers should also support proxy
         # CHECK: Why are the interfaces to _dblp_helper and arxiv_helper different?
-        #        Ideally there should be a specification
-        # _dblp_helper = partial(q_helper, _dblp_success, _dblp_no_result,
-        #                        _dblp_error)
-        # _dblp_helper = QHelper(_dblp_success, _dblp_no_result, _dblp_error)
+        #        Ideally there should be a single specification
         _proxy = self.everything_proxies if self.proxy_everything else None
         dblp_fetch, _dblp_helper = dblp_helper(_proxy, True)
         @app.route("/dblp", methods=["POST"])
         def dblp():
+            """Fetch from DBLP"""
             result = post_json_wrapper(request, dblp_fetch, _dblp_helper,
-                                       args.batch_size, self.verbosity)
+                                       args.batch_size, "DBLP", self.logger)
             return result
 
         @app.route("/shutdown")

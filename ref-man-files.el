@@ -24,6 +24,8 @@ Returns path concatenated with `ref-man-documents-dir'."
                                       (cdr (url-path-and-query
                                             (url-generic-parse-url url))) "="))
                               "." "pdf"))
+                     ((or (string-match-p "arxiv.org/abs/" url) (string-match-p "arxiv.org/pdf/" url))
+                      (concat (f-base (car (url-path-and-query obj))) ".pdf"))
                      ((string-match-p "springer.com" url)
                       (concat (string-join (last (split-string url "/") 2) "-") ".pdf"))
                      ((string-match-p "aaai.org" url)
@@ -34,7 +36,7 @@ Returns path concatenated with `ref-man-documents-dir'."
                         (concat "acm_" (car (split-string (nth 1 (split-string url "?id=")) "&")) ".pdf")))
                      (t (when (string-match-p "\\.pdf$" (car (url-path-and-query obj)))
                               (car (url-path-and-query obj))))))
-         (file (and path (path-join ref-man-documents-dir (file-name-nondirectory path)))))
+         (file (and path (path-join ref-man-documents-dir (f-filename path)))))
     file))
 
 (defun ref-man-files-dirs-non-hidden (path recurse)

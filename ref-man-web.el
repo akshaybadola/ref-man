@@ -78,14 +78,19 @@
 (defvar ref-man--org-gscholar-launch-buffer)
 (defvar ref-man--org-gscholar-launch-point)
 
+;; Defined in `ref-man'
+(defvar ref-man-use-chrome-for-search)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun ref-man-web-on-gscholar-page-p ()
   "Check if we're on a Google Scholar page."
-  (and (eq major-mode 'eww-mode)
-       (string-match-p "scholar\\.google\\.com" (plist-get eww-data :url))))
+  (cond ((eq major-mode 'ref-man-chrome-mode)
+         (string-match-p "scholar\\.google\\.com" ref-man-chrome--page-url))
+        ((derived-mode-p 'eww-mode)
+         (string-match-p "scholar\\.google\\.com" (plist-get eww-data :url)))
+        (t nil)))
 (defalias 'ref-man-web-gscholar-buffer-p 'ref-man-web-on-gscholar-page-p
   "Check if we're on a Google Scholar page.")
 
@@ -418,7 +423,7 @@ buffer is not gscholar"
   (save-excursion
     (let ((link (ref-man-eww--gscholar-get-previous-non-google-link buf)))
       (cond ((ref-man-web-on-gscholar-page-p)
-             (cons `(link . ,link) (ref-man-web-get-gscholar-link-data buf link)))
+             (funcall callback (cons `(link . ,link) (ref-man-web-get-gscholar-link-data buf link))))
             (t (prog1 'async
                  (url-retrieve (format "http://localhost:9999/url_info?url=%s" link)
                                #'ref-man-web-get-link-info (list link callback))))))))
@@ -430,6 +435,33 @@ buffer is not gscholar"
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START eww callable functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; TODO: Move the url regex functions here. See `ref-man-chrome-gscholar'
+(defun ref-man-web-search (url)
+  "Search on Google Scholar according to mode.
+Uses `ref-man-get-title-according-to-mode' which is used to
+extract the query string from compatible modes.
+
+With a `\\[universal-argument]', read query string directly from user
+regarding regardless of mode."
+  (when (and ref-man-use-chrome-for-search
+             (not (ref-man-chrome--initialized-p)))
+    (ref-man-chrome-init))
+  (let ((query (ref-man-get-title-according-to-mode current-prefix-arg)))
+    (if (string-empty-p query)
+        (message "[ref-man-chrome] Empty query string")
+      (setq query (replace-regexp-in-string ":\\|/" " " query))
+      (message (format "[ref-man%s] Fetching %s"
+                       (if ref-man-use-chrome-for-search "-chrome" "") query))
+      ;; TODO: switch to eww or chrome
+      (if ref-man-use-chrome-for-search
+          (ref-man-chrome--set-location-fetch-html
+           (concat "https://scholar.google.com/scholar?q="
+                   (replace-regexp-in-string " " "+" query)))
+        (ref-man-web-gscholar
+         (concat "https://scholar.google.com/scholar?q="
+                 (replace-regexp-in-string " " "+" query)))))))
+
+
 ;; NOTE: This is the big function
 ;; If eww is called from any other place, set the
 ;; ref-man--org-gscholar-launch-buffer and
@@ -534,7 +566,7 @@ beginning of the search to current point otherwise till `eob'.
 Use optional regexp SUBSTRING to filter the urls."
   (interactive)
   (save-excursion
-    (let ((buf (if buf buf (get-buffer "*eww*"))))
+    (let ((buf (or buf (get-buffer "*eww*"))))
       (with-current-buffer buf            ; should be an shr buffer; usually *eww*
         (setq ref-man--egal--save-point (point))
         (if before-point (setq ref-man--eww-buffer-endpoint (point))

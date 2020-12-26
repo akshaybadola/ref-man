@@ -193,7 +193,9 @@ localhost specified by this port."
        (erase-buffer)
        (shr-insert-document
         (with-current-buffer ,buf
-          (libxml-parse-html-region (point-min) (point-max))))
+          (goto-char (point-min))
+          (forward-paragraph)
+          (libxml-parse-html-region (point) (point-max))))
        (goto-char (point-min))
        ,@body)))
 
@@ -207,6 +209,8 @@ Useful when you want the buffer to persist afterwards."
        (erase-buffer)
        (shr-insert-document
         (with-current-buffer ,buf
+          (goto-char (point-min))
+          (forward-paragraph)
           (libxml-parse-html-region (point-min) (point-max))))
        (goto-char (point-min))
        ,@body)))
@@ -241,154 +245,6 @@ links."
   (with-temp-shr-buffer buf
                         (-last-item (ref-man-web-get-all-links
                                      (current-buffer) nil nil))))
-
-;; TODO: Get suplementary material also
-;;
-;; TODO: All these functions are almost identical and can be better described
-;;       with a macro or an indirection.
-;; (defun ref-man--get-pdf-link-from-neurips-url-helper (url buf)
-;;   (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-;;     (cond ((string-match-p "^[http|https]" link) link)
-;;           ((string-match-p "^/paper/" link)
-;;            (concat (string-join (-take 3 (split-string url "/")) "/") link))
-;;           (t nil))))
-
-;; (defun ref-man--get-pdf-link-from-neurips-url (url &optional callback cbargs)
-;;   (if callback
-;;       (url-retrieve url (lambda (status url)
-;;                           (if (plist-get status :error)
-;;                               (message (format "[ref-man] Error occured while fetching %s" url))
-;;                             (let* ((link (ref-man--get-pdf-link-from-neurips-url-helper url (current-buffer))))
-;;                               (funcall callback link cbargs))))
-;;                     (list url))
-;;     (let ((buf (url-retrieve-synchronously url t)))
-;;       (ref-man--get-pdf-link-from-neurips-url-helper url buf))))
-
-;; (defun ref-man--get-pdf-link-from-mlr-url-helper (url buf)
-;;   (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-;;     (when (string-match-p "^[http|https]" link) link)))
-
-;; (defun ref-man--get-pdf-link-from-mlr-url (url &optional callback cbargs)
-;;   (if callback
-;;       (url-retrieve url (lambda (status url)
-;;                           (if (plist-get status :error)
-;;                               (message (format "[ref-man] Error occured while fetching %s" url))
-;;                             (let* ((link (ref-man--get-pdf-link-from-mlr-url-helper url (current-buffer))))
-;;                               (funcall callback link cbargs))))
-;;                     (list url))
-;;     (let ((buf (url-retrieve-synchronously url t)))
-;;       (ref-man--get-pdf-link-from-mlr-url-helper url buf))))
-
-;; (defun ref-man--get-pdf-link-from-aaai-url-helper (url buf)
-;;   (let* ((buf (if (string-match-p "This page requires frames."
-;;                                   (with-current-buffer buf (buffer-string)))
-;;                   (url-retrieve-synchronously (ref-man-url-get-last-link-from-html-buffer buf) t)
-;;                 buf)))
-;;     (ref-man-url-get-last-link-from-html-buffer buf)))
-
-;; (defun ref-man--get-pdf-link-from-aaai-url (url &optional callback cbargs)
-;;   (if callback
-;;       (url-retrieve url (lambda (status url)
-;;                           (if (plist-get status :error)
-;;                               (message (format "[ref-man] Error occured while fetching %s" url))
-;;                             (let* ((link (ref-man--get-pdf-link-from-aaai-url-helper url (current-buffer))))
-;;                               (funcall callback link cbargs))))
-;;                     (list url))
-;;     (let ((buf (url-retrieve-synchronously url t)))
-;;       (ref-man--get-pdf-link-from-aaai-url-helper url buf)))
-;;   ;; (let* ((url (if (string-prefix-p "http://" url)
-;;   ;;                 (replace-in-string url "http://" "https://") url))
-;;   ;;        (buf (url-retrieve-synchronously url t))
-;;   ;;        (buf (if (string-match-p "This page requires frames."
-;;   ;;                                 (with-current-buffer buf (buffer-string)))
-;;   ;;                 (url-retrieve-synchronously (ref-man-url-get-last-link-from-html-buffer buf) t) buf))
-;;   ;;        (link (ref-man-url-get-last-link-from-html-buffer buf)))
-;;   ;;   (replace-in-string link "view" "download"))
-;;   )
-
-;; (defun ref-man--get-pdf-link-from-acm-url (url)
-;;   (let* ((buf (url-retrieve-synchronously url t))
-;;          (link (with-temp-shr-buffer
-;;                 buf
-;;                 (or (car (ref-man-web-get-all-links (current-buffer) nil nil "gateway"))
-;;                     (car (ref-man-web-get-all-links (current-buffer) nil nil "doi/pdf"))))))
-;;     (if (string-prefix-p "https://dl.acm.org/" link)
-;;         link
-;;       (concat "https://dl.acm.org/" (string-remove-prefix "/" link))))
-;;   ;; (let* ((buf (url-retrieve-synchronously url t))
-;;   ;;        (temp-buf (get-buffer-create " *temp-buf*"))
-;;   ;;        (link (with-current-buffer temp-buf
-;;   ;;                (erase-buffer)
-;;   ;;                (shr-insert-document
-;;   ;;                 (with-current-buffer buf
-;;   ;;                   (libxml-parse-html-region (point-min) (point-max))))
-;;   ;;                (goto-char (point-min))
-;;   ;;                (or (car (ref-man-web-get-all-links (current-buffer) nil nil "gateway"))
-;;   ;;                    (car (ref-man-web-get-all-links (current-buffer) nil nil "doi/pdf"))))))
-;;   ;;   (if (string-prefix-p "https://dl.acm.org/" link)
-;;   ;;       link
-;;   ;;     (concat "https://dl.acm.org/" (string-remove-prefix "/" link))))
-;;   )
-
-;; (defun ref-man--get-pdf-link-from-ss-url (url)
-;;   (let* ((buf (url-retrieve-synchronously url t))
-;;          (link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-;;     (when (string-match-p "^[http|https]" link) link)))
-
-;; (defun ref-man--get-pdf-link-from-cvf-url-helper (url buf)
-;;   (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-;;     (cond ((string-match-p "^[http|https]" link) link)
-;;           ((string-match-p "\\(\\.\\./\\)+\\(content.*\\)" link)
-;;            (concat (string-join (-take 3 (split-string url "/")) "/")
-;;                    "/"
-;;                    (replace-regexp-in-string "\\(\\.\\./\\)+\\(content.*\\)" "/\\2" link)))
-;;           ((string-match-p "^../../content_.*" link)
-;;            (concat (string-join (-take 3 (split-string url "/")) "/") "/"
-;;                    (string-join (-drop 2 (split-string link "/")) "/")))
-;;           (t nil))))
-
-;; (defun ref-man--get-pdf-link-from-cvf-url (url &optional callback cbargs)
-;;   (if callback
-;;       (url-retrieve url (lambda (status url)
-;;                           (if (plist-get status :error)
-;;                               (message (format "[ref-man] Error occured while fetching %s" url))
-;;                             (let* ((link (ref-man--get-pdf-link-from-cvf-url-helper url (current-buffer))))
-;;                               (funcall callback link cbargs))))
-;;                     (list url))
-;;     (let ((buf (url-retrieve-synchronously url t)))
-;;       (ref-man--get-pdf-link-from-cvf-url-helper url buf))))
-
-;; (defun ref-man--get-pdf-link-from-cvf-old-url-helper (url buf)
-;;   (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-;;     (cond ((string-match-p "^[http|https]" link) link)
-;;           ((string-match-p "^../../content_.*" link)
-;;            (concat (string-join (-take 4 (split-string url "/")) "/") "/"
-;;                    (string-join (-drop 2 (split-string link "/")) "/")))
-;;           (t nil))))
-
-;; (defun ref-man--get-pdf-link-from-cvf-old-url (url &optional callback cbargs)
-;;   (if callback
-;;       (url-retrieve url (lambda (status url)
-;;                           (if (plist-get status :error)
-;;                               (message (format "[ref-man] Error occured while fetching %s" url))
-;;                             (let* ((link (ref-man--get-pdf-link-from-cvf-old-url-helper url (current-buffer))))
-;;                               (funcall callback link cbargs)))))
-;;     (let ((buf (url-retrieve-synchronously url t)))
-;;       (ref-man--get-pdf-link-from-cvf-old-url-helper url buf))))
-
-;; (defun ref-man--get-pdf-link-from-openreview-url-helper (url buf)
-;;   (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-;;     (when (string-match-p "^[http|https]" link) link)))
-
-;; (defun ref-man--get-pdf-link-from-openreview-url (url &optionial callback cbargs)
-;;   (if callback
-;;       (url-retrieve url (lambda (status url)
-;;                           (if (plist-get status :error)
-;;                               (message (format "[ref-man] Error occured while fetching %s" url))
-;;                             (let* ((link (ref-man--get-pdf-link-from-openreview-url-helper url (current-buffer))))
-;;                               (funcall callback link cbargs)))))
-;;     (let ((buf (url-retrieve-synchronously url t)))
-;;       (ref-man--get-pdf-link-from-openreview-url-helper url buf))))
 
 (defun ref-man-url-domain (url)
   "Get the domain name with protocol for URL."
@@ -431,13 +287,14 @@ plist which contains the http status."
            (ref-man-url-get-pdf-link-helper site url buf)))
         ((eq site 'neurips)
          (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-           (cond ((string-match-p "^http:\\|^https:" link) link)
-                 ((string-match-p "^/paper/" link)
-                  (url-join (string-join (-take 3 (split-string url "/")) "/") link))
-                 (t nil))))
+           (when link
+             (cond ((string-match-p "^http:\\|^https:" link) link)
+                   ((string-match-p "^/paper/" link)
+                    (url-join (string-join (-take 3 (split-string url "/")) "/") link))
+                   (t nil)))))
         ((eq site 'mlr)
          (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-           (when (string-match-p "^http:\\|^https:" link) link)))
+           (when (and link (string-match-p "^http:\\|^https:" link)) link)))
         ((eq site 'aaai)
          (let* ((buf (if (string-match-p "This page requires frames."
                                          (with-current-buffer buf (buffer-string)))
@@ -450,36 +307,41 @@ plist which contains the http status."
                       buf
                       (or (car (ref-man-web-get-all-links (current-buffer) nil nil "gateway"))
                           (car (ref-man-web-get-all-links (current-buffer) nil nil "doi/pdf"))))))
-           (if (string-prefix-p "https://dl.acm.org/" link)
-               link
-             (url-join "https://dl.acm.org/" link))))
+           (when link
+             (if (string-prefix-p "https://dl.acm.org/" link)
+                 link
+               (url-join "https://dl.acm.org/" link)))))
         ((eq site 'cvf)
          (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-           (cond ((string-match-p "^http:\\|^https:" link) link)
-                 ((string-match-p "\\(\\.\\./\\)+\\(content.*\\)" link)
-                  (url-join (string-join (-take 3 (split-string url "/")) "/")
-                            (replace-regexp-in-string "\\(\\.\\./\\)+\\(content.*\\)" "/\\2" link)))
-                 ((string-match-p "^../../content_.*" link)
-                  (url-join (string-join (-take 3 (split-string url "/")) "/")
-                            (string-join (-drop 2 (split-string link "/")) "/")))
-                 (t nil))))
+           (when link
+             (cond ((string-match-p "^http:\\|^https:" link) link)
+                   ((string-match-p "\\(\\.\\./\\)+\\(content.*\\)" link)
+                    (url-join (string-join (-take 3 (split-string url "/")) "/")
+                              (replace-regexp-in-string "\\(\\.\\./\\)+\\(content.*\\)" "/\\2" link)))
+                   ((string-match-p "^../../content_.*" link)
+                    (url-join (string-join (-take 3 (split-string url "/")) "/")
+                              (string-join (-drop 2 (split-string link "/")) "/")))
+                   (t nil)))))
         ;; CHECK: Not sure if this is correct
         ((eq site 'cvf-old)
          (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-           (cond ((string-match-p "^http:\\|^https:" link) link)
-                 ((string-match-p "^../../content_.*" link)
-                  (url-join (string-join (-take 4 (split-string url "/")) "/")
-                            (string-join (-drop 2 (split-string link "/")) "/")))
-                 (t nil))))
+           (when link
+             (cond ((string-match-p "^http:\\|^https:" link) link)
+                   ((string-match-p "^../../content_.*" link)
+                    (url-join (string-join (-take 4 (split-string url "/")) "/")
+                              (string-join (-drop 2 (split-string link "/")) "/")))
+                   (t nil)))))
         ((eq site 'openreview)
          (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-           (if (string-match-p "^[http|https]" link)
-               link
-             (url-join "https://openreview.net" link))))
-        (t (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-             (if (string-match-p "^http:\\|^https:" link)
+           (when link
+             (if (string-match-p "^[http|https]" link)
                  link
-               (ref-man-url-get-absolute-path url link))))))
+               (url-join "https://openreview.net" link)))))
+        (t (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
+             (when link
+               (if (string-match-p "^http:\\|^https:" link)
+                   link
+                 (ref-man-url-get-absolute-path url link)))))))
 
 ;; (defun ref-man-url-get-pdf-link (site url &optional callback cbargs)
 ;;   "Helper function to get a pdf link from URL and website SITE.
@@ -567,7 +429,7 @@ with PDF link and CBARGS."
     (cond ((string-match-p "doi.org" url)
            (ref-man-url-get-bibtex-link-from-doi url))
           ((string-match-p "arxiv.org" url)
-           (ref-man--get-bibtex-link-from-arxiv url))
+           (ref-man-url-get-bibtex-link-from-arxiv url))
           ((string-match-p "aclweb.org" url)
            (concat (replace-regexp-in-string "/$" "" url) ".bib"))
           ((string-match-p "aclanthology.info" url)
@@ -598,19 +460,19 @@ with PDF link and CBARGS."
     (goto-char (point-min))))
 (make-obsolete 'ref-man--shr-render-buffer-quiet 'with-temp-shr-buffer "ref-man 0.3.0")
 
-(defun ref-man--get-bibtex-link-from-arxiv (url)
+(defun ref-man-url-get-bibtex-link-from-arxiv (url)
   "Extract bibtex if it exists from an arxiv URL."
   (interactive)
   (save-excursion
     (let ((buf (url-retrieve-synchronously url)))
-      (ref-man--shr-render-buffer-quiet buf "* temp-shr-buffer*")
-      (with-current-buffer (get-buffer "* temp-shr-buffer*")
-        (let* ((match (search-forward "bibtex" nil t))
-               (bib-url (when match
-                          (backward-char)
-                          (car (eww-links-at-point)))))
-          (when bib-url
-            (replace-regexp-in-string "/bibtex/" "/bib2/" (concat bib-url ".bib"))))))))
+      (with-temp-shr-buffer
+       buf
+       (let* ((match (search-forward "bibtex" nil t))
+              (bib-url (when match
+                         (backward-char)
+                         (car (eww-links-at-point)))))
+         (when bib-url
+           (replace-regexp-in-string "/bibtex/" "/bib2/" (concat bib-url ".bib"))))))))
 
 (defun ref-man-url-get-supplementary-url-according-to-source (url)
   "Try and get url for supplementary material for given URL."
@@ -669,14 +531,13 @@ match for TITLE's first three words will be returned."
   ;; If link is cvpr or iccv, then find the cvf link and go to that site
   (message "[ref-man] Not Implemented yet") nil)
 
-;; FIXME: This could be `let' I think
-(defvar ref-man--ieee-parse)
+;; (defvar ref-man--ieee-parse)
 (defun ref-man--parse-ieee-page (url)
   "Extract some information from an IEEE URL."
   (let* ((buf (url-retrieve-synchronously url t))
          (ieee-xml-parse (with-current-buffer buf
-                           (libxml-parse-html-region (point-min) (point-max)))))
-    (setq ref-man--ieee-parse nil)
+                           (libxml-parse-html-region (point-min) (point-max))))
+         ref-man--ieee-parse)
     (seq-do
      (lambda (x) (when (string-match-p "global.document.metadata" x)
                    (setq ref-man--ieee-parse

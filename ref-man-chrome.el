@@ -203,7 +203,7 @@ sockets are opened and verified.")
 (declare-function ref-man-org-import-link "ref-man-core")
 (declare-function ref-man-import-pdf-url-to-org-buffer "ref-man-core")
 (declare-function ref-man-eww-download-pdf "ref-man-core")
-(declare-function ref-man-eww--gscholar-get-previous-pdf-link "ref-man-core")
+(declare-function ref-man-web-get-previous-pdf-link "ref-man-web")
 (declare-function ref-man-eww--gscholar-get-previous-non-google-link "ref-man-core")
 (declare-function ref-man-get-title-according-to-mode "ref-man-core")
 (declare-function find-open-port "ref-man-core")
@@ -456,14 +456,18 @@ Web buffer WEB-BUF is an `shr' buffer.  Optional ORG-BUF
 specifies the org buffer to insert the data.  If UPDATE is
 non-nil then update the current entry in the org buffer ORG-BUF
 instead of inserting a subheading."
-  (let* ((insert-data (ref-man-org-import-link ; also extract file link
-                       (ref-man-web-extract-import-link-data web-buf) update))
-         (org-buf (plist-get insert-data :buffer))
-         (heading (plist-get insert-data :heading))
-         (pt (plist-get insert-data :point)))
-    (ref-man-chrome-extract-bibtex-from-scholar org-buf nil pt) ; extract bibtex to properties
-    (ref-man-import-pdf-url-to-org-buffer ; also extract pdf url
-     (ref-man-eww--gscholar-get-previous-pdf-link web-buf) nil org-buf pt)))
+  (let ((func (-rpartial #'ref-man-org-import-link update)))
+    (ref-man-web-extract-import-link-data
+     web-buf
+     (lambda (args)
+       (let* ((insert-data (funcall func args))
+              (org-buf (plist-get insert-data :buffer))
+              (heading (plist-get insert-data :heading))
+              (pt (plist-get insert-data :point)))
+         ;; TODO: Should be a generic bibtex function, extract-bibtex-from-neurips
+         (ref-man-chrome-extract-bibtex-from-scholar org-buf nil pt) ; extract bibtex to properties
+         (ref-man-import-pdf-url-to-org-buffer ; also extract pdf url BUT NOT the pdf file
+          (ref-man-web-get-previous-pdf-link web-buf) nil org-buf pt))))))
 
 (defun ref-man-chrome-view-source ()
   "View the source of current *chrome* buffer."
@@ -549,7 +553,7 @@ With optional VIEW, view the pdf also."
         )
     (if (eq major-mode 'ref-man-chrome-mode)
         (ref-man-eww-download-pdf
-         (ref-man-eww--gscholar-get-previous-pdf-link (current-buffer)) view)
+         (ref-man-web-get-previous-pdf-link (current-buffer)) view)
       (message "[ref-man-chrome] Not ref-man-chrome mode"))))
 
 (defun ref-man-chrome-view/download-pdf ()
@@ -633,7 +637,7 @@ Optional argument DONT-SAVE does not add the URL to the history."
     (setq ref-man-chrome-history-position 0)))
 
 ;; FIXME: these should be moved from here into some config
-(global-set-key (kbd "C-c e c") 'ref-man-chrome-gscholar)
+;; (global-set-key (kbd "C-c e c") 'ref-man-chrome-gscholar)
 (defun ref-man-chrome-gscholar (url)
   "Fetch google scholar URL.  Mostly derived from `eww' and `eww--dwim-expand-url'."
   (interactive
@@ -677,6 +681,7 @@ Optional argument DONT-SAVE does not add the URL to the history."
                                (replace-regexp-in-string " " "+" url)))))))
   (unless (string-empty-p url)
     (ref-man-chrome--set-location-fetch-html url)))
+(make-obsolete-variable 'ref-man-chrome-gscholar 'ref-man-web-search "ref-man 0.3.2")
 
 (defun ref-man-chrome-current-gscholar-query-with-range (range)
   "Set the year RANGE for current Google Scholar page.
@@ -724,27 +729,29 @@ regarding regardless of mode."
       (ref-man-chrome--set-location-fetch-html
        (concat "https://scholar.google.com/scholar?q="
                (replace-regexp-in-string " " "+" query))))))
+(make-obsolete 'ref-man-chrome-search-on-gscholar
+               'ref-man-search-web "")
 
-(defun ref-man-chrome-search-heading-on-gscholar ()
-  "Search for the current org heading in google scholar in *chrome*.
-Stores the buffer and the position from where it was called."
-  (interactive)
-  (unless ref-man-chrome--initialized-p
-    (ref-man-chrome-init))
-  (if (eq major-mode 'org-mode)
-      (progn
-        (setq ref-man--org-gscholar-launch-point (point)) ; CHECK: must be at heading?
-        (setq ref-man--org-gscholar-launch-buffer (current-buffer))
-        (save-excursion
-          (let ((query-string (replace-regexp-in-string ":\\|/" " "
-                                                        (substring-no-properties (org-get-heading t t)))))
-            (message (concat "[ref-man-chrome] Fetching " query-string))
-            (ref-man-chrome--set-location-fetch-html
-             (concat "https://scholar.google.com/scholar?q="
-                     (replace-regexp-in-string " " "+" query-string))))))
-    (message "[ref-man-chrome] Not in org-mode")))
-(make-obsolete 'ref-man-chrome-search-heading-on-gscholar
-               'ref-man-chrome-search-on-gscholar "")
+;; (defun ref-man-chrome-search-heading-on-gscholar ()
+;;   "Search for the current org heading in google scholar in *chrome*.
+;; Stores the buffer and the position from where it was called."
+;;   (interactive)
+;;   (unless ref-man-chrome--initialized-p
+;;     (ref-man-chrome-init))
+;;   (if (eq major-mode 'org-mode)
+;;       (progn
+;;         (setq ref-man--org-gscholar-launch-point (point)) ; CHECK: must be at heading?
+;;         (setq ref-man--org-gscholar-launch-buffer (current-buffer))
+;;         (save-excursion
+;;           (let ((query-string (replace-regexp-in-string ":\\|/" " "
+;;                                                         (substring-no-properties (org-get-heading t t)))))
+;;             (message (concat "[ref-man-chrome] Fetching " query-string))
+;;             (ref-man-chrome--set-location-fetch-html
+;;              (concat "https://scholar.google.com/scholar?q="
+;;                      (replace-regexp-in-string " " "+" query-string))))))
+;;     (message "[ref-man-chrome] Not in org-mode")))
+;; (make-obsolete 'ref-man-chrome-search-heading-on-gscholar
+;;                'ref-man-chrome-search-on-gscholar "")
 ;; END ref-man-chrome commands
 
 (defun ref-man-chrome-links-at-point ()
@@ -1254,7 +1261,7 @@ NO-TITLE means do not wait for the title to load.  Helps in
 fetching data for some pages."
   (if no-pop
       (progn
-        ;; CHECK: Why's `ref-man-chrome--fetch-no-pop' required?
+        ;; NOTE: use `ref-man-chrome--fetch-no-pop' to fetch in background.
         (setq ref-man-chrome--fetch-no-pop t))
     (setq ref-man-chrome--fetch-no-pop nil))
   (setq ref-man-chrome--page-source nil)
@@ -1350,7 +1357,11 @@ Optional TAB-ID specifies the chromium tab, default is 0.
 
 With non-nil NO-POP, don't pop to *chrome* buffer.  With non-nill
 NO-RENDER, don't render to *chrome* buffer.  Used for direct page
-parsing"
+parsing.
+
+The buffer is opened in `ref-man-chrome-mode' and this is the
+function responsible for making sure everything is setup
+correctly."
   (setq ref-man-chrome--tab-id (if tab-id tab-id 0))
   (let ((call-str (format "location.href = \"%s\"" url)))
     (setq ref-man-chrome--fetched-sentinel t)

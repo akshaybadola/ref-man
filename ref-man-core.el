@@ -979,8 +979,8 @@ after current."
     (org-edit-headline (cdass 'title entry))
     ;; NOTE: insert heading only when not updating current heading
     (when (assoc 'abstract entry)
-      (ref-man-org-insert-abstract (cdass 'abstract entry))
-      (insert "\n"))
+      (ref-man-org-insert-abstract (cdass 'abstract entry)))
+    (insert "\n")
     (let ((author-str (mapconcat (lambda (x)
                                    (cdass 'name x))
                                  (cdass 'authors entry) ", ")))
@@ -997,9 +997,10 @@ after current."
                                        (ref-man--replace-non-ascii
                                         (ref-man--fix-curly
                                          (ref-man--build-bib-author author-str))))))
-                  ((eq (car ent) 'isInfluential)
-                   (when (eq (cdr ent) 't)
-                     (org-set-tags ":influential:"))
+                  ((and (eq (car ent) 'isInfluential)
+                        (eq (cdr ent) 't))
+                   (outline-back-to-heading)
+                   (org-set-tags ":influential:")
                    ;; (when (string-match-p "true" (downcase (format "%s" (cdr ent))))
                    ;;   (org-set-tags ":influential:"))
                    )
@@ -1636,45 +1637,16 @@ then read it from minibuffer."
 ;; TODO: Make this async for large buffers
 ;;       Or perhaps cache the results
 ;; Not really hidden
-(defun ref-man-get-links-of-type-from-org-buffer (buf type &optional notype narrow)
-  "Retrieves all links of given TYPE from buffer BUF.
-TYPE can be `file', `http' etc.  When NARROW is non-nil, then
-narrow to subtree.  A non-nil NOTYPE indicates not to concat `type'
-before the link"
-  (with-current-buffer buf
-    (if (eq major-mode 'org-mode)
-        (save-restriction
-          (when narrow (org-narrow-to-subtree))
-          (org-element-map (org-element-parse-buffer) 'link
-            (lambda (link)
-              (when (string= (org-element-property :type link) type)
-                (if notype
-                    (org-element-property :path link)
-                  (concat type ":" (org-element-property :path link)))))))
-      (message "[ref-man] Not in org-mode") nil)))
-
-(defun ref-man-get-links-with-condition-from-org-buffer (buf condition &optional narrow raw)
-  "Get all links from buffer BUF which satisfy a predicate CONDITON.
-Like `ref-man-get-links-of-type-from-org-buffer' but instead of a
-url type a boolean function CONDITION is used to filter the
-results.  With optional non-nil NARROW, narrow to subtree.  If
-optional argument.RAW is non-nil, return raw-link."
-  (with-current-buffer buf
-    (if (eq major-mode 'org-mode)
-        (save-restriction
-          (when narrow (org-narrow-to-subtree))
-          (org-element-map (org-element-parse-buffer) 'link
-            (lambda (link)
-              (when (funcall condition link)
-                (if raw
-                    (org-element-property :raw-link link)
-                  link)))))
-      (message "[ref-man] Not in org-mode") nil)))
 
 (defun ref-man-org-insert-link-as-headline (org-buf link title metadata current)
   "Insert LINK as org headline to ORG-BUF.
-LINK-TEXT is as given in the html buffer.  METADATA would be
-author, title and venue information given as strings."
+LINK-TEXT is as given in the html buffer.  METADATA can be either
+a string or an alist of author, title and venue strings.  If
+CURRENT is non-nil, update current heading, otherwise insert a
+new heading.
+
+The function returns a plist with keys :buffer :heading :point
+which can be used to further add data to the org heading."
   (save-excursion
     (with-current-buffer org-buf
       (cond ((f-equal? (buffer-file-name org-buf)
@@ -1702,7 +1674,7 @@ author, title and venue information given as strings."
       (if (stringp metadata)
           (progn (newline-and-indent)
                  (org-insert-item)
-                 (insert (concat "- " metadata)))
+                 (insert metadata))
         (seq-do (lambda (x)
                   (newline-and-indent)
                   (org-insert-item)
@@ -1750,7 +1722,6 @@ is meant to operate in batch mode."
   (unless (plist-get status :error)
     (let ((file (ref-man-files-filename-from-url url))
           (buf (and args (plist-get args :buffer)))
-          ;; NOTE: Not used
           (pt (and args (plist-get args :point)))
           (buf-type (ref-man--check-response-buffer (current-buffer)))
           (heading (and args (plist-get args :heading))))
@@ -1764,10 +1735,10 @@ is meant to operate in batch mode."
             (cond ((string-empty-p (string-trim (replace-regexp-in-string "\*" "" heading)))
                    (goto-char pt)
                    (when ref-man-update-pdf-url-when-download
-                       (ref-man--insert-org-pdf-url-property
-                        (ref-man-url-maybe-unproxy url)))
-                     (when (eq buf-type 'pdf)
-                       (ref-man--insert-org-pdf-file-property file)))
+                     (ref-man--insert-org-pdf-url-property
+                      (ref-man-url-maybe-unproxy url)))
+                   (when (eq buf-type 'pdf)
+                     (ref-man--insert-org-pdf-file-property file)))
                   (t
                    (save-excursion
                      (org-link-search heading)
@@ -1780,8 +1751,8 @@ is meant to operate in batch mode."
           (save-excursion
             (goto-char ref-man--org-gscholar-launch-point)
             (when ref-man-update-pdf-url-when-download
-                (ref-man--insert-org-pdf-url-property
-                 (ref-man-url-maybe-unproxy url)))
+              (ref-man--insert-org-pdf-url-property
+               (ref-man-url-maybe-unproxy url)))
             (when (eq buf-type 'pdf)
               (ref-man--insert-org-pdf-file-property file))))))))
 
@@ -1894,7 +1865,86 @@ overwrite if it exists without confirmation."
       (message "[ref-man] Saved %s" file))
     (when view (find-file-other-window file))))
 
-(defun ref-man--get-number-of-http-links-from-org-buffer (&optional narrow)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; START org link functions ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defun ref-man-org-heading-level (&optional point)
+  "Get level of current heading."
+  (if (eq major-mode 'org-mode)
+      (save-restriction
+        (ref-man-org-narrow-to-heading-and-body)
+        (save-excursion
+          (when point
+            (goto-char point))
+          (let ((heading (car (with-current-buffer (current-buffer)
+                                (save-restriction
+                                  (org-narrow-to-subtree)
+                                  (org-element-map (org-element-parse-buffer 'headline) 'headline
+                                    (lambda (x) x)))))))
+            (org-element-property :level heading))))
+    (message "[ref-man] Not in org-mode")))
+
+(defun ref-man-org-get-links-with-conditions (buf conditions &optional narrow raw)
+  "Get all links from buffer BUF which satisfy CONDITONS.
+CONDITIONS is either a unary boolean function or list of unary
+boolean functions.  If a link is true for all CONDITIONS then add
+link to result.  If CONDITIONS is nil then all links are
+returned.
+
+With optional argument NARROW is nil search parse the entire
+buffer.  When non-nil narrow according to is value.  With value
+'subtree narrow to subtree.  With value 'heading then narrow
+according to `ref-man-org-narrow-to-heading-and-body'
+
+Links are returned as an `org-element-type'.  If optional
+argument RAW is non-nil, return the string value of the link
+instead."
+  (with-current-buffer buf
+    (if (eq major-mode 'org-mode)
+        (save-restriction
+          (pcase narrow
+            ('subtree (org-narrow-to-subtree))
+            ('heading (ref-man-org-narrow-to-heading-and-body))
+            ('nil)                      ; do nothing for nil
+            (_ (org-narrow-to-subtree)))
+          (org-element-map (org-element-parse-buffer) 'link
+            (lambda (link)
+              (cond ((functionp conditions)
+                     (when (funcall conditions link)
+                       (if raw
+                           (org-element-property :raw-link link)
+                         link)))
+                    ((listp conditions)
+                     (when (-all? #'identity (mapcar (lambda (pred) (funcall pred link)) conditions))
+                       (if raw
+                           (org-element-property :raw-link link)
+                         link)))
+                    (t link)))))
+      (message "[ref-man] Not in org-mode") nil)))
+
+(defun ref-man-org-get-links-of-type (buf link-re &optional narrow link-type)
+  "Retrieves all links whose `type' matches LINK-RE from buffer BUF.
+LINK-RE is the regexp to match against the link type.  For
+example `http' matches `http' and `https' etc., while `^http$'
+matches only `http'.
+
+Optional NARROW works the same as in `ref-man-org-get-links-with-conditions'.
+
+Optional LINK-TYPE specifies what to return.  When nil only the
+raw-link is returned. When it equals 'path then return only the
+path value. Helpful for `file' links sometimes.
+
+is non-nil only the link path is
+returned. "
+  (let ((preds (lambda (link) (string-match-p link-re (org-element-property :type link)))))
+    (pcase link-type
+      ('path (mapcar (lambda (link) (org-element-property :path link))
+                     (ref-man-org-get-links-with-conditions buf preds narrow)))
+      ((or 'text 'raw) (ref-man-org-get-links-with-conditions buf preds narrow t))
+      (_ (ref-man-org-get-links-with-conditions buf preds narrow)))))
+
+(defun ref-man-org-get-number-of-http-links-from-org-buffer (&optional narrow)
   "Get the total number of http links from org heading text.
 With optional NARROW, narrow to subtree."
   (save-restriction
@@ -1904,10 +1954,10 @@ With optional NARROW, narrow to subtree."
                 (when (string-match-p "[http|https]" (org-element-property :type link))
                   (org-element-property :raw-link link)))))))
 
-(defun ref-man--get-first-link-from-org-heading ()
+(defun ref-man-org-get-first-link-from-org-heading ()
   "Get first http link an from org heading text at point."
   (save-restriction
-    (ref-man--org-narrow-to-here)
+    (ref-man-org-narrow-to-heading-and-body)
     (car (org-element-map (org-element-parse-buffer) 'link
            (lambda (link)
              (when (string-match-p "^[http|https]" (org-element-property :type link))
@@ -1954,6 +2004,10 @@ Link is saved to URL property."
                 (org-set-property "URL" url)
                 (cl-return-from func t)))))))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; END org link functions ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defun ref-man--bib-buf-for-arxiv-api (url)
   "Fetch bibliography from an arxiv URL and return the buffer.
 This function uses arxiv api with python server as an intermediary."
@@ -1973,7 +2027,7 @@ This function uses arxiv api with python server as an intermediary."
 (defun ref-man--try-fetch-bib-buf-for-url (url)
   "Fetch bib buffer if possible for the given URL."
   (cond ((string-match-p "arxiv.org" url)
-         (let* ((link (ref-man--get-bibtex-link-from-arxiv url)))
+         (let* ((link (ref-man-url-get-bibtex-link-from-arxiv url)))
            (if link
                (url-retrieve-synchronously link)
              (ref-man--bib-buf-for-arxiv-api url))))
@@ -1983,30 +2037,34 @@ This function uses arxiv api with python server as an intermediary."
 
 (defun ref-man--ss-id ()
   "Get one of possible IDs to fetch from Semantic Scholar.
-Return a list of `id-type' and `id'."
+Return a cons of `id-type' and `id'.  Possible values for
+`id-type' are (\"ss\" \"doi\" \"arxiv\" \"acl\" \"mag\"
+\"pubmed\" \"corpus\").
+
+\"mag\" \"pubmed\" \"corpus\" aren't implemented yet."
   (ref-man--check-fix-url-property)
   (cond ((org-entry-get (point) "PAPERID")
-         (list "ss" (org-entry-get (point) "PAPERID")))
+         (cons 'ss (org-entry-get (point) "PAPERID")))
         ((org-entry-get (point) "DOI")
-         (list "doi" (org-entry-get (point) "DOI")))
+         (cons 'doi (org-entry-get (point) "DOI")))
         ((org-entry-get (point) "ARXIVID")
-         (list "arxiv" (org-entry-get (point) "ARXIVID")))
+         (cons 'arxiv (org-entry-get (point) "ARXIVID")))
         ((org-entry-get (point) "EPRINT")
-         (list "arxiv" (org-entry-get (point) "EPRINT")))
+         (cons 'arxiv (org-entry-get (point) "EPRINT")))
         ((org-entry-get (point) "URL")
          (let ((url (org-entry-get (point) "URL")))
            (when url
              (cond ((string-match-p "[http\\|https]://.*?doi" url)
-                    (list "doi" (string-join (last (split-string url "/") 2) "/")))
+                    (cons 'doi (string-join (last (split-string url "/") 2) "/")))
                    ((string-match-p "https://arxiv.org" url)
-                    (list "arxiv" (ref-man-url-to-arxiv-id url)))
+                    (cons 'arxiv (ref-man-url-to-arxiv-id url)))
                    ((string-match-p "aclweb.org\\|aclanthology.info" url)
-                    (list "acl"
+                    (cons 'acl
                           (replace-regexp-in-string
                            "\\.pdf$" ""
                            (car (last (split-string (string-remove-suffix "/" url) "/"))))))
                    ((string-match-p "semanticscholar.org" url)
-                    (cons "ss" (last (split-string (string-remove-suffix "/" url) "/"))))
+                    (cons 'ss (-last-item (split-string (string-remove-suffix "/" url) "/"))))
                    (t nil)))))
         (t nil)))
 
@@ -2212,13 +2270,16 @@ both update the entry and display the data."
           (outline-previous-heading))
         (let* ((idtype-id (ref-man--ss-id))
                (ss-data (when idtype-id
+                          (message "[ref-man] Fetching Semantic Scholar Data for %s id: %s"
+                                   (car idtype-id) (cdr idtype-id))
                           (with-current-buffer
                               (url-retrieve-synchronously
                                (format "http://localhost:%s/semantic_scholar?id_type=%s&id=%s%s"
                                        ref-man-python-server-port
                                        (car idtype-id)
-                                       (cadr idtype-id)
-                                       (if update-on-disk "&force" "")))
+                                       (cdr idtype-id)
+                                       (if update-on-disk "&force" ""))
+                               t)       ; silent
                             (goto-char (point-min))
                             (forward-paragraph)
                             (json-read)))))
@@ -2435,32 +2496,32 @@ filename in `ref-man--subtree-list' instead so that the whole
 subtree will be updated later."
   (if (and url (not (string-empty-p url)))
       (let ((file (ref-man-files-check-pdf-file-exists url t))
-          (url (ref-man-url-maybe-proxy url))
-          (buf (and args (plist-get args :buffer)))
-          (pt (and args (plist-get args :point)))
-          (heading (and args (plist-get args :heading))))
-      (cond ((and file (with-current-buffer buf (eq major-mode 'org-mode)))
-             (message "[ref-man] File already existed.")
-             (if buf
-                 (with-current-buffer buf
-                   (cond ((string-empty-p (string-trim (replace-regexp-in-string "\*" "" heading)))
-                          (goto-char pt)
-                          (ref-man--insert-org-pdf-file-property file))
-                         (t (save-excursion
-                              (org-link-search heading)
-                              (ref-man--insert-org-pdf-file-property file)))))
-               (with-current-buffer ref-man--org-gscholar-launch-buffer
-                 (save-excursion
+            (url (ref-man-url-maybe-proxy url))
+            (buf (and args (plist-get args :buffer)))
+            (pt (and args (plist-get args :point)))
+            (heading (and args (plist-get args :heading))))
+        (cond ((and file (with-current-buffer buf (eq major-mode 'org-mode)))
+               (message "[ref-man] File already existed.")
+               (if buf
+                   (with-current-buffer buf
+                     (cond ((string-empty-p (string-trim (replace-regexp-in-string "\*" "" heading)))
+                            (goto-char pt)
+                            (ref-man--insert-org-pdf-file-property file))
+                           (t (save-excursion
+                                (org-link-search heading)
+                                (ref-man--insert-org-pdf-file-property file)))))
+                 (with-current-buffer ref-man--org-gscholar-launch-buffer
+                   (save-excursion
+                     (goto-char ref-man--org-gscholar-launch-point)
+                     (ref-man--insert-org-pdf-file-property file)))))
+              ((and (not file) args)
+               (ref-man--download-pdf-redirect-new
+                #'ref-man--eww-pdf-download-callback-store-new url args))
+              ((and (not file) (not args))
+               (save-excursion
+                 (with-current-buffer ref-man--org-gscholar-launch-buffer
                    (goto-char ref-man--org-gscholar-launch-point)
-                   (ref-man--insert-org-pdf-file-property file)))))
-            ((and (not file) args)
-             (ref-man--download-pdf-redirect-new
-              #'ref-man--eww-pdf-download-callback-store-new url args))
-            ((and (not file) (not args))
-             (save-excursion
-               (with-current-buffer ref-man--org-gscholar-launch-buffer
-                 (goto-char ref-man--org-gscholar-launch-point)
-                 (ref-man--insert-org-pdf-file-property file))))))
+                   (ref-man--insert-org-pdf-file-property file))))))
     (message "[ref-man] Empty pdf url given")))
 
 (defun ref-man--fetch-from-pdf-url (url &optional storep)
@@ -2667,12 +2728,7 @@ RETRIEVE-TITLE has no effect at the moment."
 ;;        https://www.gnu.org/software/emacs/manual/html_node/elisp/Text-Properties.html#Text-Properties
 ;;        https://www.gnu.org/software/emacs/manual/html_node/elisp/Special-Properties.html#Special-Properties
 
-;; CHECK: Can this bet `let'?
-(defvar ref-man--subtree-num-entries)
 (defun ref-man-try-fetch-and-store-pdf-in-org-subtree-entries ()
-  "Fetches and stores pdfs for all entries in the subtree.
-Only traverses one level depth as of now."
-  ;; Need callback to update buffer when done and set/unset READONLY also
   (interactive)
   (message "[ref-man] Fetching PDFs in subtree. Wait for completion...")
   (setq ref-man--current-org-buffer (current-buffer))
@@ -2684,39 +2740,43 @@ Only traverses one level depth as of now."
     (while (not (eobp))
       (when (outline-next-heading)
         (cl-incf ref-man--subtree-num-entries)
-        (ref-man-try-fetch-and-store-pdf-in-org-entry t))))
-  ;; FIXME: This is not a good idea. Async is terrible usually
-  ;;
-  ;; NOTE: What I'm doing here is for each item in subtree, launching a separate
-  ;;       fetch process and putting each pdf retrieved corresponding to the
-  ;;       index of the entry. Update is done in the end, at once.
-  ;;
-  ;; This can be useful only if it doesn't block, which it will on a first go
+        (ref-man-try-fetch-and-store-pdf-in-org-entry t)))))
 
-  ;; (async-start
-  ;;  `(lambda ()
-  ;;     ,(async-inject-variables "ref-man--subtree-list\\|ref-man--subtree-num-entries")
-  ;;     (while (< (length ref-man--subtree-list) (* 2 ref-man--subtree-num-entries))
-  ;;       (sleep-for 2)))
-  ;;  (lambda (result)
-  ;;    (with-current-buffer ref-man--current-org-buffer
-  ;;      (message "Done")
-  ;;      (forward-line -1)
-  ;;      (outline-up-heading 1)
-  ;;      (org-show-all)
-  ;;      (widen)
-  ;;      (cl-loop for x from 0 below (/ (length ref-man--subtree-list) 2)
-  ;;            do (let ((point (nth (* 2 x) ref-man--subtree-list))
-  ;;                     (pdf-file (plist-get ref-man--subtree-list (nth (* 2 x) ref-man--subtree-list))))
-  ;;                 (outline-next-heading)
-  ;;                 (ref-man--insert-org-pdf-file-property pdf-file))))))
+(defun ref-man-convert-links-to-headings-in-subtree ()
+  "Convert all links in the body of the current heading to a heading.
+The links are assumed to be PDF/publication links and the
+properties are fetched as such.  Each link is then inserted one
+level deeper from the current heading as a new entry."
+  (interactive)
+  (message "[ref-man] Converting links to headings...")
+  (if (eq major-mode 'org-mode)
+      (let ((links (ref-man-org-get-links-of-type (current-buffer) "https" t)))
+        (save-restriction
+          (org-narrow-to-subtree)
+          (let ((level (ref-man-org-heading-level))
+                (offset 0))
+            (save-excursion
+              (seq-do (lambda (link) (let* ((beg (+ (org-element-property :begin link) offset))
+                                            (end (+ (org-element-property :end link) offset))
+                                            (text (org-element-property :raw-link link)))
+                                       (delete-region beg end)
+                                       (setq offset (+ offset (- beg end)))
+                                       (org-insert-heading-after-current)
+                                       (when (= level (ref-man-org-heading-level (point)))
+                                         (org-demote-subtree))
+                                       (insert text)
+                                       (forward-line)
+                                       (org-indent-line)
+                                       (insert text)))
+                      links)
+              (ref-man-delete-blank-lines-in-buffer)))
+          ))
+    (message "[ref-man] Not in org mode")))
 
-  )
-
-;; FIXME: I'm sure two thingies below can be let
-;; (defvar ref-man--point-min)
-;; (defvar ref-man--point-max)
-(defun ref-man--org-narrow-to-here ()
+(defun ref-man-org-narrow-to-heading-and-body ()
+  "Narrow to the current heading and the body.
+Unlike `org-narrow-to-subtree' any headings which are children of
+the current heading are excluded."
   (let (ref-man--point-min
         ref-man--point-max)
     (org-narrow-to-subtree)
@@ -2749,7 +2809,7 @@ property drawer as the URL property."
                  (not (string-match-p "acm.org" url-prop)))
         (org-entry-put (point) "URL" (car (split-string url-prop "?"))))
       (unless url-prop
-        (let* ((link (ref-man--get-first-link-from-org-heading))
+        (let* ((link (ref-man-org-get-first-link-from-org-heading))
                (url (org-element-property :raw-link link))
                (beg (org-element-property :begin link))
                (end (org-element-property :end link)))
@@ -2903,13 +2963,13 @@ property drawer as the URL property."
 ;;          (url (car (mapcar (lambda (x) (cadr x))
 ;;                            (-filter #'ref-man--org-property-is-url-p props))))
 ;;          (url (if url url (org-element-property :raw-link
-;;                                                 (ref-man--get-first-link-from-org-heading)))))
+;;                                                 (ref-man-org-get-first-link-from-org-heading)))))
 ;;     (when url
-;;       (cond ((= 1 (ref-man--get-number-of-http-links-from-org-buffer))
+;;       (cond ((= 1 (ref-man-org-get-number-of-http-links-from-org-buffer))
 ;;              (ref-man--move-only-link-to-org-property-drawer))
-;;             ((< 1 (ref-man--get-number-of-http-links-from-org-buffer))
+;;             ((< 1 (ref-man-org-get-number-of-http-links-from-org-buffer))
 ;;              (y-or-n-p "Move first link to property? ")
-;;              (let* ((link (ref-man--get-first-link-from-org-heading))
+;;              (let* ((link (ref-man-org-get-first-link-from-org-heading))
 ;;                     (link-str (org-element-property :raw-link link)))
 ;;                (delete-region (org-element-property :begin link)
 ;;                               (org-element-property :end link))
@@ -2947,6 +3007,8 @@ eww. Stores the buffer and the position from where it was called."
                                (substring-no-properties (org-get-heading t t)))))
             (ref-man-web-gscholar query-string))))
     (message "[ref-man] Not in org-mode") nil))
+(make-obsolete 'ref-man-org-search-heading-on-gscholar-with-eww
+               'ref-man-search-web "")
 ;; FIXME: This function may take up a lot of processing. Should implement some
 ;;        cache for it Can be called after downloading pdf from any website
 ;;

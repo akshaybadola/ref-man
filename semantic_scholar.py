@@ -26,15 +26,12 @@ def load_ss_cache(data_dir):
         for key, ind in assoc:
             if c[ind]:
                 ss_cache[key][c[ind]] = c[-1]
-        # ss_cache["acl"][c[0]] = c[-1]
-        # ss_cache["arxiv"][c[1]] = c[-1]
-        # ss_cache["corpus"][c[2]] = c[-1]
-        # ss_cache["doi"][c[3]] = c[-1]
     print(f"Loaded cache {ss_cache}")
     return ss_cache
 
 
-# FIXME: Why's there a separate acl_id here?
+# NOTE: There's a separate acl_id here, because SS allows query by acl_id but
+#       doesn't return it if it exists in the result.
 def save_data(data, data_dir, ss_cache, acl_id):
     """Save Semantic Scholar cache to disk.
 
@@ -66,7 +63,7 @@ def save_data(data, data_dir, ss_cache, acl_id):
     print("Updated metadata")
 
 
-def semantic_scholar_paper_details(id_type: str, id: str, data_dir: str,
+def semantic_scholar_paper_details(id_type: str, ID: str, data_dir: str,
                                    ss_cache: Dict[str, Dict[str, Any]], force: bool):
     """Get semantic scholar paper details
 
@@ -76,40 +73,40 @@ def semantic_scholar_paper_details(id_type: str, id: str, data_dir: str,
     Args:
         id_type: type of the paper identifier one of
                  `['ss', 'doi', 'mag', 'arxiv', 'acl', 'pubmed', 'corpus']`
-        id: paper identifier
+        ID: paper identifier
         data_dir: Directory where the cache is loacaded
         ss_cache: The Semantic Scholar cache
         force: Force fetch from Semantic Scholar server, ignoring cache
 
     """
-    urls = {"ss": f"https://api.semanticscholar.org/v1/paper/{id}",
-            "doi": f"https://api.semanticscholar.org/v1/paper/{id}",
-            "mag": f"https://api.semanticscholar.org/v1/paper/MAG:{id}",
-            "arxiv": f"https://api.semanticscholar.org/v1/paper/arXiv:{id}",
-            "acl": f"https://api.semanticscholar.org/v1/paper/ACL:{id}",
-            "pubmed": "https://api.semanticscholar.org/v1/paper/PMID:{id}",
-            "corpus": f"https://api.semanticscholar.org/v1/paper/CorpusID:{id}"}
+    urls = {"ss": f"https://api.semanticscholar.org/v1/paper/{ID}",
+            "doi": f"https://api.semanticscholar.org/v1/paper/{ID}",
+            "mag": f"https://api.semanticscholar.org/v1/paper/MAG:{ID}",
+            "arxiv": f"https://api.semanticscholar.org/v1/paper/arXiv:{ID}",
+            "acl": f"https://api.semanticscholar.org/v1/paper/ACL:{ID}",
+            "pubmed": "https://api.semanticscholar.org/v1/paper/PMID:{ID}",
+            "corpus": f"https://api.semanticscholar.org/v1/paper/CorpusID:{ID}"}
     if id_type not in urls:
         return json.dumps("INVALID ID TYPE")
     else:
-        if id_type == "ss" and not force:
-            print(f"Fetching from disk for {id_type}, {id}")
-            with open(os.path.join(data_dir, id)) as f:
+        if id_type == "ss" and not force and ID in os.listdir(data_dir):
+            print(f"Fetching from disk for {id_type}, {ID}")
+            with open(os.path.join(data_dir, ID)) as f:
                 return json.load(f)
         elif (id_type in {"doi", "acl", "arxiv", "corpus"}
-              and id in ss_cache[id_type] and ss_cache[id_type][id]
+              and ID in ss_cache[id_type] and ss_cache[id_type][ID]
               and not force):
-            print(f"Fetching from cache for {id_type}, {id}")
-            with open(os.path.join(data_dir, ss_cache[id_type][id])) as f:
+            print(f"Fetching from cache for {id_type}, {ID}")
+            with open(os.path.join(data_dir, ss_cache[id_type][ID])) as f:
                 return json.load(f)
         else:
             acl_id = ""
             if id_type == "acl":
-                acl_id = id
+                acl_id = ID
             if not force:
-                print(f"Data not in cache for {id_type}, {id}. Fetching")
+                print(f"Data not in cache for {id_type}, {ID}. Fetching")
             else:
-                print(f"Forced Fetching for {id_type}, {id}")
+                print(f"Forced Fetching for {id_type}, {ID}")
             url = urls[id_type] + "?include_unknown_references=true"
             response = requests.get(url)
             if response.status_code == 200:

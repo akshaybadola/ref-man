@@ -57,6 +57,11 @@ See URL `https://github.com/allenai/science-parse' for details"
   :type 'file
   :group 'ref-man)
 
+(defcustom ref-man-use-chrome-for-search nil
+  "Whether chromium should be used for searching instead of eww"
+  :type 'boolean
+  :group 'ref-man)
+
 (defconst ref-man-home-dir (file-name-directory load-file-name)
   "Home or install directory for `ref-man'.")
 
@@ -127,7 +132,7 @@ Return 'external if server is running but outside Emacs and
     (if status status
       (if has-java
           (if (and ref-man-science-parse-jar-file ref-man-science-parse-server-port)
-              (if (y-or-n-p "[ref-man] Science Parse Server not runing. Start it? ")
+              (if (y-or-n-p-with-timeout "[ref-man] Science Parse Server not runing. Start it? " 3 nil)
                   (progn
                     (unless (string-match-p "science-parse" (shell-command-to-string  "ps -ef | grep java"))
                       (start-process "science-parse" "*science-parse*"
