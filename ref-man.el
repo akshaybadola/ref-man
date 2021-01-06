@@ -126,6 +126,7 @@ Return 'external if server is running but outside Emacs and
 
 (defun ref-man-try-start-local-science-parse-server ()
   "Try to start the Science Parse server."
+  (interactive)
   (let* ((status (ref-man-science-parse-local-server-running-p))
          (java (shell-command-to-string "which java"))
          (has-java (not (string-match-p "no java" java))))
@@ -142,6 +143,8 @@ Return 'external if server is running but outside Emacs and
                 (message "[ref-man] Not starting Science Parse Server"))
             (message "[ref-man] Science Parse Jar File not given"))
         (message "[ref-man] java not found")))))
+(defalias 'ref-man-start-local-science-parse-server 'ref-man-try-start-local-science-parse-server)
+(defalias 'ref-man-try-start-science-parse-server 'ref-man-try-start-local-science-parse-server)
 
 (provide 'ref-man)
 

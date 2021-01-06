@@ -20,7 +20,7 @@ from bs4 import BeautifulSoup
 from .const import default_headers, __version__
 from .arxiv import arxiv_get, arxiv_fetch, arxiv_helper
 from .dblp import dblp_helper
-from .semantic_scholar import load_ss_cache, semantic_scholar_search, semantic_scholar_paper_details
+from .semantic_scholar import SemanticSearch, load_ss_cache, semantic_scholar_paper_details
 
 
 def get_stream_logger(name="default",
@@ -276,6 +276,11 @@ class Server:
     proxy_everything: Whether to fetch all requests via proxy.
     proxy_everything_port: Port for the proxy server on which everything is proxied.
                            Used by supported methods.
+    chrome_debugger_path: Path for the chrome debugger script.
+                          Used to validate the Semantic Scholar search api, as
+                          the params can change sometimes. If it's not given then
+                          default params are used and the user must update the params
+                          in case of an error.
     verbosity: Verbosity control
     threaded: Start the flask server in threaded mode. Defaults to `True`.
 
@@ -288,6 +293,7 @@ class Server:
         self.proxy_port = args.proxy_port
         self.proxy_everything = args.proxy_everything
         self.proxy_everything_port = args.proxy_everything_port
+        self.chrome_debugger_path = args.chrome_debugger_path
         self.verbosity = args.verbosity
         self.threaded = args.threaded
         self.update_cache_thread = None
@@ -372,6 +378,7 @@ class Server:
                 proxies = None
         self.proxies = proxies
         self.everything_proxies = everything_proxies
+        self.semantic_search = SemanticSearch(self.chrome_debugger_path)
         self.init_routes()
 
     def init_routes(self):
@@ -411,17 +418,18 @@ class Server:
 
         @app.route("/semantic_scholar_search", methods=["GET", "POST"])
         def ss_search():
-            if request.method == "GET":
-                if "q" in request.args and request.args["q"]:
-                    query = request.args["q"]
-                else:
-                    return json.dumps("NO QUERY GIVEN or EMPTY QUERY")
-                return semantic_scholar_search(query)
+            if "q" in request.args and request.args["q"]:
+                query = request.args["q"]
             else:
-                args = dict((k, False if v.lower() == "false" else v)
-                            for k, v in request.json.items())
-                query = args.pop("q")
-                return semantic_scholar_search(query, **args)
+                return json.dumps("NO QUERY GIVEN or EMPTY QUERY")
+            if request.method == "GET":
+                return self.semantic_search.semantic_scholar_search(query)
+            else:
+                if request.json:
+                    kwargs = request.json
+                else:
+                    kwargs = {}
+                return self.semantic_search.semantic_scholar_search(query, **kwargs)
 
         @app.route("/url_info", methods=["GET"])
         def url_info():

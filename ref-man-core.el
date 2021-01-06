@@ -143,6 +143,15 @@ go through this http proxy at localhost, specified by this port."
   :type 'integer
   :group 'ref-man)
 
+(defcustom ref-man-chrome-debug-script ""
+  "Path to the chrome debugger javascript file.
+The file contains code to get the Semantic Scholar Search
+params. As they can change, we need to update them once the
+server starts. Requires some kind of chrome(ium) to be installed
+on the system."
+  :type 'file
+  :group 'ref-man)
+
 (defvar ref-man-key-list
   '(authors title venue volume number pages year doi ee)
   "Only these keys from bibtex are retained (I think).")
@@ -192,7 +201,9 @@ go through this http proxy at localhost, specified by this port."
 (defvar ref-man--document-title nil)
 (defvar ref-man--current-pdf-file-name nil)
 (defvar ref-man--biblio-callback-buf nil)
+(defvar ref-man--subtree-num-entries nil)
 (defvar ref-man-external-python-process-pid nil)
+
 
 (defvar shr-map
   (let ((map (make-sparse-keymap)))
@@ -1391,6 +1402,8 @@ to `ref-man-python-data-dir' and the port
                                                        ref-man-proxy-port))
                                           (and ref-man-pdf-proxy-port
                                                (format "--proxy-port=%s" ref-man-pdf-proxy-port))
+                                          (format "--chrome-debugger-path=%s"
+                                                  ref-man-chrome-debug-script)
                                           "--verbosity=debug")))
            (process-environment (if env
                                     (with-temp-buffer
@@ -1452,7 +1465,6 @@ running if it's running else nil."
 
 (defun ref-man-python-server-running ()
   "Check if python server is already running."
-  (interactive)
   (let ((python-process (ref-man-python-process-running)))
     (when python-process
       (if (ref-man-python-server-reachable-p)
@@ -1651,8 +1663,9 @@ The function returns a plist with keys :buffer :heading :point
 which can be used to further add data to the org heading."
   (save-excursion
     (with-current-buffer org-buf
-      (cond ((f-equal? (buffer-file-name org-buf)
-                       ref-man-org-links-file-path)
+      (cond ((and (buffer-file-name org-buf) ; It's nil if temp file
+                  (f-equal? (buffer-file-name org-buf)
+                            ref-man-org-links-file-path))
              (org-mode)
              (org-datetree-find-date-create (org-date-to-gregorian (org-read-date t nil "now")))
              (goto-char (point-at-eol))
@@ -2161,7 +2174,18 @@ citations after that."
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START org commands ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;
-;;
+
+;; TODO: Send signal to flask server to update cache or maybe it'll be done next time it starts
+(defun ref-man-org-purge-entry ()
+  "Remove the given org entry and associated files from the disk."
+  (interactive)
+  (when (org-entry-get (point) "PDF_FILE")
+    (delete-file (replace-regexp-in-string "\\[\\[\\(.+?\\)\\]\\(\\[*.*\\]*\\)\\]" "\\1"
+                                           (org-entry-get (point) "PDF_FILE"))))
+  (when (org-entry-get (point) "PAPERID")
+    (delete-file (path-join ref-man-python-data-dir (org-entry-get (point) "PDF_FILE"))))
+    (org-copy-subtree 1 t))
+
 ;; TODO: Replace all property setters in this section with
 ;;       ref-man--insert-org-pdf-file-property
 ;; TODO: Fix redundancies in bib fetching and pdf fetching
@@ -2340,7 +2364,7 @@ both update the entry and display the data."
     (push `("VENUE". ,(cdass 'text (cdass 'venue result))) retval)
     (when (assoc 'pubDate result)
       (push `("MONTH" . ,(capitalize (cdass (string-to-number
-                                             (nth 2 (split-string
+                                             (nth 1 (split-string
                                                      (cdass 'pubDate result) "-")))
                                             ref-man--num-to-months)))
             retval))
@@ -2356,26 +2380,44 @@ both update the entry and display the data."
           retval)
     (push `("TITLE". ,(cdass 'text (cdass 'title result))) retval)
     (push '("TYPE" . "article") retval)
-    (-remove (lambda (x) (string-empty-p (cdr x))) retval)))
+    (-remove (lambda (x) (or (not (cdr x)) (string-empty-p (cdr x)))) retval)))
 
-;; TODO: prompt by default
-;;
+
+(defun ref-man-safe-update-org-prop (prop val &optional pt)
+  (when (and prop val)
+    (let ((test (or (not (org-entry-get (or pt (point)) prop))
+                    (and (org-entry-get (or pt (point)) prop)
+                         (y-or-n-p (format "Property %s exists. Update Anyway? " prop))))))
+      (when test
+        (org-entry-put (or pt (point)) prop val)))))
+
+
 (defun ref-man-search-semantic-scholar (search-string &optional insert-first &rest args)
   "Search Semantic Scholar for SEARCH-STRING.
-ARGS should valid json, e.g., {cs_only: true, has_github: false}
-corresponding to javascript semantics"
-  (interactive (list (let* ((ss (if (eq major-mode 'org-mode) (org-get-heading) ""))
+
+ARGS should be either alist which converts to valid json and or a
+json string itself.  The json object should correspond to
+Semantic Scholar Search api keywords, e.g.:
+\"{'fieldsOfStudy': ['computer-science'], 'yearFilter': {'max': 1995, 'min': 1990}}\"
+or, '((fieldsOfStudy . (computer-science)) (yearFilter (max . 1995) (min . 1990)))
+
+As of now, by default INSERT-FIRST is set to t later in the code as
+pagination of results isn't supported yet."
+  (interactive (list (let* ((ss (if (eq major-mode 'org-mode)
+                                    (substring-no-properties (org-get-heading)) ""))
                             (prompt (if (string-empty-p ss)
                                         "Search String: "
                                       (format "Search String (default %s): " ss))))
-                       (read-from-minibuffer prompt nil nil nil nil ss))))
+                       (read-from-minibuffer prompt ss nil nil nil ss))))
   (if (string-empty-p search-string)
       (message "Empty Search String")
     (let ((meh current-prefix-arg))
       (cond ((and meh (equal meh '(4)))   ; update only
              (setq insert-first t))
-            ))
-    ;; TODO: fetch page from python server, should use jinja or lisp template
+            )
+      )
+    ;; TODO: fetch page from python server and can select which entry to insert.
+    ;;       Should use jinja or lisp template
     (let* ((args (when args (string-join args "&")))
            (url (concat (format "http://localhost:%s/semantic_scholar_search?q=%s"
                                 ref-man-python-server-port search-string)
@@ -2386,13 +2428,40 @@ corresponding to javascript semantics"
                      (goto-char (point-min))
                      (forward-paragraph)
                      (json-read)))
-           (results (cdass 'results result)))
-      (if (> (length results) 0)
-          (if insert-first
-              (ref-man--update-props-from-assoc
-               (ref-man-parse-ss-search-result (aref results 0)))
-            results)
-        (message "[ref-man] No results from Semantic Scholar")))))
+           (results (if (eq (car result) 'error)
+                        (user-error (format "Error occurred %s" (a-get result 'error)))
+                      (cdass 'results result))))
+      (cond ((> (length results) 0)
+             (if insert-first
+                 (ref-man--update-props-from-assoc
+                  (ref-man-parse-ss-search-result (aref results 0)))
+               (let* ((j 1)
+                      (entries (mapcar (lambda (x)
+                                         (prog1 (format "%d: %s, %s" j
+                                                        (a-get (a-get x 'title) 'text)
+                                                        (mapconcat
+                                                         (lambda (y) (a-get (aref y 0) 'name))
+                                                         (a-get x 'authors) ", "))
+                                           (setq j (+ 1 j))))
+                                       results))
+                      (entry (ido-completing-read "Entry to insert: " entries))
+                      (idx (- (string-to-number (car (split-string entry ":" t))) 1)))
+                 (ref-man--update-props-from-assoc
+                  (ref-man-parse-ss-search-result (aref results idx))))))
+            ((a-get result 'matchedPresentations)
+             (let* ((j 1)
+                    (entries (mapcar (lambda (x)
+                                       (prog1 (format "%d: %s, %s" j
+                                                      (a-get x 'title)
+                                                      (string-join (a-get x 'authors) ", "))
+                                         (setq j (+ 1 j))))
+                                     (a-get result 'matchedPresentations)))
+                    (entry (ido-completing-read "Entry to insert: " entries))
+                    (id (a-get (aref (a-get result 'matchedPresentations)
+                                     (- (string-to-number (car (split-string entry ":" t))) 1))
+                               'id)))
+               (ref-man-safe-update-org-prop "PAPERID" id)))
+            (t (message "[ref-man] Nothing from Semantic Scholar"))))))
 
 (defun ref-man-import-pdf-url-to-org-buffer (&optional url web-buf org-buf pt)
 "Before call should check the buffer as it can't be called if
@@ -2738,11 +2807,11 @@ RETRIEVE-TITLE has no effect at the moment."
   (save-restriction
     (org-narrow-to-subtree)
     (org-content t)
-    (setq ref-man--subtree-num-entries 0)
-    (while (not (eobp))
-      (when (outline-next-heading)
-        (cl-incf ref-man--subtree-num-entries)
-        (ref-man-try-fetch-and-store-pdf-in-org-entry t)))))
+    (let ((ref-man--subtree-num-entries 0))
+      (while (not (eobp))
+        (when (outline-next-heading)
+          (cl-incf ref-man--subtree-num-entries)
+          (ref-man-try-fetch-and-store-pdf-in-org-entry t))))))
 
 (defun ref-man-convert-links-to-headings-in-subtree ()
   "Convert all links in the body of the current heading to a heading.

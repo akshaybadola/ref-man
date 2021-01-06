@@ -215,13 +215,15 @@ Useful when you want the buffer to persist afterwards."
        (goto-char (point-min))
        ,@body)))
 
-(defun ref-man-url-get-first-pdf-link-from-html-buffer (buf)
+(defun ref-man-url-get-first-pdf-link-from-html-buffer (buf &optional predicate)
   "Extract first pdf link from an html response buffer BUF.
 The buffer is first rendered with `shr' and then searched for
-links."
+links.  With optional PREDICATE, return first link from the
+output of `-filter' with predicate."
   (with-temp-shr-buffer buf
-                        (car (ref-man-web-get-all-links
-                              (current-buffer) t nil "pdf"))))
+                        (let ((predicate (or predicate #'identity)))
+                          (-first predicate (ref-man-web-get-all-links
+                                             (current-buffer) t nil "pdf")))))
 
 (defun ref-man-url-get-last-pdf-link-from-html-buffer (buf)
   "Extract last pdf link from an html response buffer BUF.
@@ -379,7 +381,7 @@ ARGS is for compatibility and not used."
             (string-match-p "cvpr" (-last-item (split-string url "/" t))))
        'doi-cvpr)
       ((string-match-p "doi.org" url) 'doi)
-      ((string-match-p "papers.nips.cc" url) 'neurips)
+      ((string-match-p "papers.nips.cc\\|proceedings.neurips.cc" url) 'neurips)
       ((string-match-p "mlr.press" url) 'mlr)
       ((string-match-p "openaccess.thecvf.com" url) 'cvf)
       ((string-match-p "cv-foundation.org" url) 'old-cvf)
@@ -435,7 +437,7 @@ with PDF link and CBARGS."
           ((string-match-p "aclanthology.info" url)
            (cons 'url (concat "https://www.aclweb.org/anthology/"
                               (upcase (car (last (split-string url "/")))) ".bib")))
-          ((string-match-p "papers.nips.cc" url)
+          ((string-match-p "papers.nips.cc\\|proceedings.neurips.cc" url)
            (ref-man-url-get-bibtex-link-from-nips-url url))
           ((string-match-p "openaccess.thecvf.com" url)
            (ref-man-url-get-bibtex-link-from-cvf-url url))
@@ -483,7 +485,7 @@ with PDF link and CBARGS."
            (ref-man-url-get-supplementary-url-from-arxiv url))
           ((string-match-p "aclweb.org" url)
            (ref-man-url-get-supplementary-url-from-acl url))
-          ((string-match-p "papers.nips.cc" url)
+          ((string-match-p "papers.nips.cc\\|proceedings.neurips.cc" url)
            (ref-man-url-get-supplementary-url-from-nips-url url))
           ((string-match-p "openaccess.thecvf.com" url)
            (ref-man-url-get-supplementary-url-from-cvf-url url))

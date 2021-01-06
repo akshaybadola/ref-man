@@ -1,7 +1,10 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union, Optional
 import os
 import json
 import requests
+from subprocess import Popen, PIPE
+import shlex
+import pathlib
 
 
 assoc = [(x, i) for i, x in enumerate(["acl", "arxiv", "corpus", "doi"])]
@@ -117,44 +120,91 @@ def semantic_scholar_paper_details(id_type: str, ID: str, data_dir: str,
                 return json.dumps(None)
 
 
-def semantic_scholar_search(query: str, title_only: bool = False, authors: List[str] = [],
-                            cs_only: bool = True, pub_types=[], has_github: bool = False,
-                            year_filter: bool = None):
-    """Perform a search on semantic scholar and return the results in JSON format
-    By default the search is performed in Computer Science subjects
+class SemanticSearch:
+    # Example params:
+    #
+    def __init__(self, debugger_path: Union[pathlib.Path, str]):
+        self.default_params = {'queryString': '',
+                               'page': 1,
+                               'pageSize': 10,
+                               'sort': 'relevance',
+                               'authors': [],
+                               'coAuthors': [],
+                               'venues': [],
+                               'yearFilter': None,
+                               'requireViewablePdf': False,
+                               'publicationTypes': [],
+                               'externalContentTypes': [],
+                               'fieldsOfStudy': [],
+                               'useFallbackRankerService': False,
+                               'useFallbackSearchCluster': False,
+                               'hydrateWithDdb': True,
+                               'includeTldrs': False,
+                               'performTitleMatch': True,
+                               'includeBadges': False}
+        if debugger_path:
+            print(f"Trying to update Semantic Scholar Search params")
+            p = Popen(shlex.split(f"node {debugger_path}"), stdout=PIPE, stderr=PIPE)
+            out, err = p.communicate()
+            try:
+                vals = json.loads(out)
+                if "request" in vals and 'postData' in vals['request']:
+                    if isinstance(vals['request']['postData'], dict):
+                        vals = vals['request']['postData']
+                    elif isinstance(vals['request']['postData'], str):
+                        vals = json.loads(vals['request']['postData'])
+                    else:
+                        raise Exception("Not sure what data was sent")
+                self.params = vals.copy()
+                values_to_update = {'performTitleMatch': True,
+                                    'includeBadges': False,
+                                    'includeTldrs': False,
+                                    'fieldsOfStudy': ['computer-science']}
+                for k, v in values_to_update.items():
+                    if k in self.params:
+                        self.params[k] = v
+                    else:
+                        print(f"Could not update param {k}")
+                print(f"Updated params {self.params}")
+            except Exception as e:
+                self.params = self.default_params.copy()
+                print(f"Error updating params {e}")
+        else:
+            self.params = self.default_params.copy()
+            print(f"Debug script path not given. Using default params")
 
-    pub_types can be ["Conference", "JournalArticle"]
-    year_filter has to be a :class:`dict` of type {"max": 1995, "min": 1990}
+    def semantic_scholar_search(self, query: str, cs_only: bool = False, **kwargs):
+        """Perform a search on semantic scholar and return the results in JSON format
+        By default the search is performed in Computer Science subjects
 
-    """
-    if year_filter and not ("min" in year_filter and "max" in year_filter and
-                            year_filter["max"] > year_filter["min"]):
-        print("Invalid Year Filter. Disabling.")
-        year_filter = None
-    params = {'authors': authors,
-              'coAuthors': [],
-              'externalContentTypes': [],
-              'page': 1,
-              'pageSize': 10,
-              'performTitleMatch': title_only,
-              'publicationTypes': pub_types,
-              'queryString': query,
-              'requireViewablePdf': False,
-              'sort': 'relevance',
-              # 'useFallbackRankerService': False,
-              'venues': [],
-              'yearFilter': year_filter}
-    if cs_only:
-        params['fieldOfStudy'] = 'computer-science'
-    if has_github:
-        params['externalContentTypes'] = ["githubReference"]
-    headers = {'User-agent': 'Mozilla/5.0', 'Origin': 'https://www.semanticscholar.org'}
-    print(f"Sending request to semanticscholar search with query: {query} and params {params}")
-    response = requests.post("https://www.semanticscholar.org/api/1/search",
-                             headers=headers, json=params)
-    if response.status_code == 200:
-        results = json.loads(response.content)["results"]
-        print(f"Got num results {len(results)} for query: {query}")
-        return response.content  # already json
-    else:
-        return json.dumps(f"ERROR for {query}, {response.content}")
+        pub_types can be ["Conference", "JournalArticle"]
+        yearFilter has to be a :class:`dict` of type {"max": 1995, "min": 1990}
+
+        """
+        params = self.params.copy()
+        params["queryString"] = query
+        if 'yearFilter' in kwargs:
+            yearFilter = kwargs['yearFilter']
+            if yearFilter and not ("min" in yearFilter and "max" in yearFilter and
+                                   yearFilter["max"] > yearFilter["min"]):
+                print("Invalid Year Filter. Disabling.")
+                yearFilter = None
+            params['yearFilter'] = yearFilter
+        if cs_only:
+            params['fieldsOfStudy'] = ['computer-science']
+        else:
+            params['fieldsOfStudy'] = []
+        for k, v in kwargs.items():
+            if k in params and isinstance(v, type(params[k])):
+                params[k] = v
+        headers = {'User-agent': 'Mozilla/5.0', 'Origin': 'https://www.semanticscholar.org'}
+        print("Sending request to semanticscholar search with query" +
+              f": {query} and params {self.params}")
+        response = requests.post("https://www.semanticscholar.org/api/1/search",
+                                 headers=headers, json=params)
+        if response.status_code == 200:
+            results = json.loads(response.content)["results"]
+            print(f"Got {len(results)} results for query: {query}")
+            return response.content  # already json
+        else:
+            return json.dumps({"error": f"ERROR for {query}, {str(response.content)}"})

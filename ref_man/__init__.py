@@ -24,6 +24,10 @@ def main():
                         help="Semantic Scholar cache directory")
     parser.add_argument("--batch-size", "-b", dest="batch_size", type=int, default=16,
                         help="Simultaneous connections to DBLP")
+    parser.add_argument("--chrome-debugger-path", dest="chrome_debugger_path", type=str,
+                        default="",
+                        help="Path to chrome debugger script which can validate " +
+                        "Semantic Scholar Search params (optional)")
     parser.add_argument("--verbosity", "-v", type=str, default="info",
                         help="Verbosity level. One of [error, info, debug]")
     parser.add_argument("--version", action="store_true",
