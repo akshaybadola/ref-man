@@ -1137,7 +1137,7 @@ history also."
 
 ;; TODO: I don't think shutdown preserves history right now as it always
 ;;       disables `ref-man-chrome--initialized-p'
-(defun ref-man-chrome-init (&optional not-headless)
+(defun ref-man-chrome-init (&optional not-headless quiet)
   "Initialze the `ref-man-chrome' plugin.
 With a non-nil optional NOT-HEADLESS, the chromium process is
 started in windowed mode instead of headless which is default."
@@ -1170,7 +1170,8 @@ started in windowed mode instead of headless which is default."
                                               (plist-get (plist-get result :result) :value))))
                            (setq ref-man-chrome--init-0 nil)))
     (while ref-man-chrome--init-0
-      (message "[ref-man-chrome] init, WAITING init-0")
+      (unless quiet
+        (message "[ref-man-chrome] init, WAITING init-0"))
       (sleep-for .2))
     (ref-man-chrome-eval "window.open();" 0
                          (lambda (result)
@@ -1179,7 +1180,8 @@ started in windowed mode instead of headless which is default."
                                               (plist-get (plist-get result :result) :value))))
                            (setq ref-man-chrome--init-1 nil)))
     (while ref-man-chrome--init-1
-      (message "[ref-man-chrome] init, WAITING init-1")
+      (unless quiet
+        (message "[ref-man-chrome] init, WAITING init-1"))
       (sleep-for .2))
     (ref-man-chrome-connect 1)
     (setq ref-man-chrome--initialized-p t)

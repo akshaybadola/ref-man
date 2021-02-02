@@ -262,7 +262,7 @@ from A to B."
                                               content t)))
     content))
 
-(defun rer-man-delete-blank-lines-in-region (&optional beg end no-trailing-newline)
+(defun ref-man-delete-blank-lines-in-region (&optional beg end no-trailing-newline)
   "Delete all empty lines in region.
 Region is either the active region or optional points BEG and
 END.

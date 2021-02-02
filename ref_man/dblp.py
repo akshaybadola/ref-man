@@ -25,9 +25,9 @@ class _DBLPHelper:
         if cls.verbose:
             print(f"Fetching from DBLP, query: {query}\n")
         if ret_type == "json":
-            response = requests.request("GET", f"https://dblp.uni-trier.de/search/publ/api" +
-                                        f"?q={query}&format=json",
-                                        proxies=cls.proxies)
+            response = requests.get(f"https://dblp.uni-trier.de/search/publ/api" +
+                                    f"?q={query}&format=json",
+                                    proxies=cls.proxies)
             q.put((query, response))
         else:
             q.put((query, "INVALID"))

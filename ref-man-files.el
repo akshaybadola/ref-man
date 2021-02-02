@@ -25,7 +25,7 @@ Returns path concatenated with `ref-man-documents-dir'."
                                             (url-generic-parse-url url))) "="))
                               "." "pdf"))
                      ((or (string-match-p "arxiv.org/abs/" url) (string-match-p "arxiv.org/pdf/" url))
-                      (concat (f-base (car (url-path-and-query obj))) ".pdf"))
+                      (concat (f-filename (string-remove-suffix ".pdf" (car (url-path-and-query obj)))) ".pdf"))
                      ((string-match-p "springer.com" url)
                       (concat (string-join (last (split-string url "/") 2) "-") ".pdf"))
                      ((string-match-p "aaai.org" url)

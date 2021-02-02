@@ -61,6 +61,7 @@
 
 ;;; Code:
 
+(require 'a)
 (require 'async)
 (require 'biblio-core)
 (require 'bibtex)   ; Primary function I use from 'bibtex is 'bibtex-parse-entry
@@ -240,7 +241,7 @@ on the system."
 (defconst ref-man--num-to-months
   '((1 . "Jan") (2 . "Feb") (3 . "Mar") (4 . "Apr")
     (5 . "May") (6 . "Jun") (7 . "Jul") (8 . "Aug")
-    (9 . "Sep") (10 . "Oct") (11. "Nov") (12 . "Dec")))
+    (9 . "Sep") (10 . "Oct") (11 . "Nov") (12 . "Dec")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END ref-man constants  ;;
@@ -300,10 +301,14 @@ higher priority."
 ;; CHECK: What does this do exactly?
 (defun ref-man--validate-author (author)
   "Remove numbers and stuff from AUTHOR string."
-  (if (or (string-match-p "[0-9]+" (car (last author)))
-                  (string-match-p "^i$\\|^ii$\\|^iii$\\|^iv$" (downcase (car (last author)))))
-      (if (> (length author) 2) (butlast author) (nconc (butlast author) '("")))
-    author))
+  (condition-case nil
+      (if (or (string-match-p "[0-9]+" (car (last author)))
+              (string-match-p "^i$\\|^ii$\\|^iii$\\|^iv$" (downcase (car (last author)))))
+          (if (> (length author) 2) (butlast author) (nconc (butlast author) '("")))
+        author)
+    (error
+     (message "Invalid author %s" author)
+     '("author invalid"))))
 
 
 (defun ref-man--dblp-clean-helper (result)
@@ -363,6 +368,9 @@ only the top RESULT from `ref-man-venue-priorities'"
                      (list (symbol-name x) (cdr (assoc x result)))))
                  ref-man-key-list)))))
 
+;; FIXME: Check for errors in case something is nil.
+;;        `ref-man-parse-bib-property-key' throws error because of this
+;;        subroutine as TITLE here evals to nil.
 (defun ref-man--build-bib-key-from-plist (str-plist)
   "Builds a unique key with the format [author year first-title-word].
 Entry STR-PLIST is a plist."
@@ -2175,16 +2183,28 @@ citations after that."
 ;; START org commands ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; TODO: Send signal to flask server to update cache or maybe it'll be done next time it starts
+;; TODO: Send signal to flask server to update cache, though it'll be done next
+;;       time it starts
 (defun ref-man-org-purge-entry ()
   "Remove the given org entry and associated files from the disk."
   (interactive)
+  (save-excursion
+    (outline-back-to-heading)
+    (when (outline-next-heading)
+      (user-error "Cannot purge if heading has subheadings")))
+  ;; TODO: promote all subheadings one level
+  ;;       This taken from [[https://stackoverflow.com/questions/24130487/emacs-org-promote-all-headings-of-a-subtree-during-export][SO]]
+  ;;       (defun org-promote-to-top-level ()
+  ;;         "Promote a single subtree to top-level."
+  ;;         (let ((cur-level (org-current-level)))
+  ;;           (loop repeat (/ (- cur-level 1) (org-level-increment))
+  ;;                 do (org-promote-subtree))))
   (when (org-entry-get (point) "PDF_FILE")
     (delete-file (replace-regexp-in-string "\\[\\[\\(.+?\\)\\]\\(\\[*.*\\]*\\)\\]" "\\1"
                                            (org-entry-get (point) "PDF_FILE"))))
   (when (org-entry-get (point) "PAPERID")
-    (delete-file (path-join ref-man-python-data-dir (org-entry-get (point) "PDF_FILE"))))
-    (org-copy-subtree 1 t))
+    (delete-file (path-join ref-man-python-data-dir (org-entry-get (point) "PAPERID"))))
+  (org-copy-subtree 1 t))
 
 ;; TODO: Replace all property setters in this section with
 ;;       ref-man--insert-org-pdf-file-property
@@ -2908,12 +2928,19 @@ property drawer as the URL property."
          (title (cdr (assoc "TITLE" props)))
          (author (cdr (assoc "AUTHOR" props)))
          (year (cdr (assoc "YEAR" props))))
-    (when (and title author year)
-      (let ((key (ref-man--build-bib-key-from-plist
-                  (list :title title :author author :year year))))
-        (if (called-interactively-p 'any)
-            (kill-new key)
-          key)))))
+    (if (and title author year)
+        (condition-case nil
+            (let ((key (ref-man--build-bib-key-from-plist
+                        (list :title title :author author :year year))))
+              (if (called-interactively-p 'any)
+                  (kill-new key)
+                key))
+          (error (message "Could not parse as bibtex\ntitle: %s, author: %s, year: %s"
+                          title author year)
+                 nil))
+      (message "Not enough properties to parse as bibtex\ntitle: %s, author: %s, year: %s"
+               title author year)
+      nil)))
 
 (defun ref-man--check-fix-pdf-file-property ()
   (let* ((props (org-entry-properties))
@@ -2926,6 +2953,10 @@ property drawer as the URL property."
     (when (assoc "FILE_NAME" props)
       (org-delete-property "FILE_NAME"))
     pdf-file))
+
+(defun ref-man--check-for-duplicates ()
+  )
+
 
 ;; TODO: Link (arxiv, ACL, DOI) to SS_IDs for papers also, minimize redundancy
 ;;       NOTE: Perhaps maintain a python cache for that

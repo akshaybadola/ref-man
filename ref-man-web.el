@@ -58,6 +58,7 @@
 ;; FIXME: these should be moved from here into some config
 (global-set-key (kbd "C-c e e") 'eww)
 (global-set-key (kbd "C-c e g") 'ref-man-web-gscholar)
+(global-set-key (kbd "C-c e s") 'ref-man-web-search)
 (setq browse-url-browser-function 'eww-browse-url)
 (defvar ref-man--gscholar-launch-buffer-list
   nil
@@ -427,15 +428,37 @@ buffer is not gscholar"
             (t (prog1 'async
                  (url-retrieve (format "http://localhost:9999/url_info?url=%s" link)
                                #'ref-man-web-get-link-info (list link callback))))))))
+
+(defun ref-man-web-user-input (&optional default initial)
+  (let ((prompt (if default (format "Enter URL or keywords (default %s): " default)
+                  (read-from-minibuffer "Enter URL or keywords: "))))
+    (read-from-minibuffer prompt initial)))
+
+(defun ref-man-web-title-according-to-mode ()
+  "Get the title at point according to `major-mode'.
+In `org-mode' the heading is returned.  In `bibtex-mode' the title
+field is returned.  If no mode matches or USER-INPUT is non-nil,
+then read it from minibuffer."
+  (cond ((eq major-mode 'org-mode)
+         ;; CHECK: Do I still need these?
+         ;; CHECK: must be at heading?
+         (setq ref-man--org-gscholar-launch-point (point))
+         (setq ref-man--org-gscholar-launch-buffer (current-buffer))
+         (substring-no-properties (org-get-heading t t)))
+        ((eq major-mode 'bibtex-mode)
+         (bibtex-autokey-get-field "title"))
+        (t nil)))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END eww utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; START eww callable functions ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; TODO: Move the url regex functions here. See `ref-man-chrome-gscholar'
+;;;;;;;;;;;;;;;;;;;;;;;;
+;; START eww commands ;;
+;;;;;;;;;;;;;;;;;;;;;;;;
+;; TODO: Move the url regex functions here. See `ref-man-web-gscholar'
+(defvar ref-man-web-default-webjump "google"
+  "Default webjump")
 (defun ref-man-web-search (url)
   "Search on Google Scholar according to mode.
 Uses `ref-man-get-title-according-to-mode' which is used to
@@ -443,23 +466,57 @@ extract the query string from compatible modes.
 
 With a `\\[universal-argument]', read query string directly from user
 regarding regardless of mode."
-  (when (and ref-man-use-chrome-for-search
-             (not (ref-man-chrome--initialized-p)))
-    (ref-man-chrome-init))
-  (let ((query (ref-man-get-title-according-to-mode current-prefix-arg)))
-    (if (string-empty-p query)
-        (message "[ref-man-chrome] Empty query string")
-      (setq query (replace-regexp-in-string ":\\|/" " " query))
-      (message (format "[ref-man%s] Fetching %s"
-                       (if ref-man-use-chrome-for-search "-chrome" "") query))
-      ;; TODO: switch to eww or chrome
-      (if ref-man-use-chrome-for-search
-          (ref-man-chrome--set-location-fetch-html
-           (concat "https://scholar.google.com/scholar?q="
-                   (replace-regexp-in-string " " "+" query)))
-        (ref-man-web-gscholar
-         (concat "https://scholar.google.com/scholar?q="
-                 (replace-regexp-in-string " " "+" query)))))))
+  (interactive (let* ((form-webjump (lambda (x y)
+                                      (pcase x
+                                        ((pred (string= "duckduckgo"))
+                                         (format "https://duckduckgo.com/html/?q=%s" y))
+                                        ((pred (string= "scholar"))
+                                         (format "https://scholar.google.com/scholar?q=%s"
+                                                 (replace-regexp-in-string " " "+" y)))
+                                        ((pred (string= "google"))
+                                         (format "https://www.google.co.in/search?q=%s"
+                                                 (replace-regexp-in-string " " "+" y))))))
+                      (webjump (if current-prefix-arg
+                                   (completing-read
+                                    (format "Select Search Engine (default %s): "
+                                            ref-man-web-default-webjump)
+                                    '("duckduckgo" "scholar" "google") ; no bing
+                                    nil t "" nil ref-man-web-default-webjump)
+                                 "google"))
+                      ;; FIXME: Search engine is always selected (annoying)
+                      ;;        Maybe select engine only with universal argument
+                      (url (funcall form-webjump webjump
+                                    ;; (ref-man-web-user-input webjump)
+                                    (let ((keywords (ref-man-web-title-according-to-mode)))
+                                      (ref-man-web-user-input webjump keywords)))))
+                 (list url)))
+  ;; TODO: Actually the query (or keywords) should be extracted at (interactive)
+  ;;       In that sense URL shouldn't be given but url or keywords
+  ;; FIXME: Incorporate all this
+  ;; (when (and ref-man-use-chrome-for-search
+  ;;            (string-match-p "scholar.google.com" url)
+  ;;            (not (ref-man-chrome--initialized-p)))
+  ;;   (ref-man-chrome-init))
+  ;; (let ((query (ref-man-get-title-according-to-mode current-prefix-arg)))
+  ;;   (if (string-empty-p query)
+  ;;       (message "[ref-man%s] Empty query string"
+  ;;                (if (and ref-man-use-chrome-for-search
+  ;;                         (string-match-p "scholar.google.com" url))
+  ;;                    "-chrome" ""))
+  ;;     (setq query (replace-regexp-in-string ":\\|/" " " query))
+  ;;     (message (format "[ref-man%s] Fetching %s"
+  ;;                      (if (and ref-man-use-chrome-for-search
+  ;;                               (string-match-p "scholar.google.com" url)) "-chrome" "")
+  ;;                      query))
+  ;;     ;; TODO: switch to eww or chrome
+  ;;     (if ref-man-use-chrome-for-search
+  ;;         (ref-man-chrome--set-location-fetch-html
+  ;;          (concat "https://scholar.google.com/scholar?q="
+  ;;                  (replace-regexp-in-string " " "+" query)))
+  ;;       (ref-man-web-gscholar
+  ;;        (concat "https://scholar.google.com/scholar?q="
+  ;;                (replace-regexp-in-string " " "+" query))))))
+  (ref-man-web-gscholar url))
 
 
 ;; NOTE: This is the big function
@@ -470,11 +527,8 @@ regarding regardless of mode."
   "Fetch URL and render the page.
 If the input doesn't look like a URL or a domain name."
   (interactive
-   (let* ((uris (eww-suggested-uris))
-	  (prompt (concat "Enter URL or keywords"
-			  (if uris (format " (default %s)" (car uris)) "")
-			  ": ")))
-     (list (read-string prompt nil nil uris))))
+   (let ((keywords (ref-man-web-title-according-to-mode)))
+     (list (or keywords (ref-man-web-user-input)))))
   (if (eq major-mode 'org-mode)
       (progn (setq ref-man--org-gscholar-launch-buffer (current-buffer))
              (setq ref-man--org-gscholar-launch-point (point)))
@@ -504,23 +558,6 @@ If the input doesn't look like a URL or a domain name."
            (progn ; (setq query-string url)
                   (setq url (concat "https://scholar.google.com/scholar?q="
                                     (replace-regexp-in-string " " "+" url)))))))
-  ;; FIXME: Fix this code!
-  ;; CHECK: Did I write the chrome code for nothing?
-  ;; CHECK: I think this is broken [2020-01-12 Sun 20:40]
-  ;; NOTE: Commented out below section [2020-01-12 Sun 21:01]
-  ;; (string-match-p "scholar\\.google\\.com" url)
-  ;; (let ((buf (generate-new-buffer " *scholar*")))
-  ;;   (with-current-buffer buf (insert (gscholar-bibtex-google-scholar-search-results
-  ;;                                     query-string)))
-  ;;   (if (get-buffer "*google-scholar*")
-  ;;       (kill-buffer (get-buffer "*google-scholar*")))
-  ;;   (when (get-buffer "*html*")
-  ;;     (with-current-buffer (get-buffer "*html*")
-  ;;       (setq-local buffer-read-only nil)))
-  ;;   (shr-render-buffer buf)
-  ;;   (pop-to-buffer-same-window "*html*")
-  ;;   (rename-buffer "*google-scholar*")
-  ;;   (kill-buffer buf))
   (progn
     (pop-to-buffer-same-window
      (if (eq major-mode 'eww-mode)
@@ -642,9 +679,9 @@ URL above it."
             (find-file-other-window file)
           (ref-man-eww-download-pdf url t)))
     (message "[ref-man] Not in eww-mode")))
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; END eww callable functions ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;
+;; END eww commands ;;
+;;;;;;;;;;;;;;;;;;;;;;
 
 (provide 'ref-man-web)
 

@@ -8,7 +8,7 @@
 ;; Time-stamp:	<Wednesday 24 June 2020 09:16:15 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org-mode, eww
 ;; Version:     0.3.1
-;; Package-Requires: ((async "1.9.4") (org "9.1.9") (biblio-core "0.2.1") (gscholar-bibtex "0.3.1") (websocket "1.12") (dash "2.17.0") (dash-functional "1.2.0") (bind-key "2.4") (org-ref "1.1.1"))
+;; Package-Requires: ((a "0.1.1") (async "1.9.4") (org "9.1.9") (biblio-core "0.2.1") (gscholar-bibtex "0.3.1") (websocket "1.12") (dash "2.17.0") (dash-functional "1.2.0") (bind-key "2.4") (org-ref "1.1.1"))
 
 ;; This file is *NOT* part of GNU Emacs.
 
@@ -73,6 +73,7 @@ See URL `https://github.com/allenai/science-parse' for details"
 (require 'ref-man-remote)
 
 (unless (ref-man-python-process-running)
+  ; (ref-man-chrome-init nil t)                 ; start chromium headless first
   (ref-man-start-python-server))
 
 (ref-man-remote-load-public-links-cache)

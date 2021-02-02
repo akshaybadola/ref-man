@@ -274,10 +274,28 @@ links."
                                      (-drop count lsplits)) "/"))))))
 
 ;; NOTE: This is equivalent to run-hook-with-args-until-success
+;; TODO: This should be a pcase for brevity
 (defun ref-man-url-get-pdf-link-helper (site url buf &optional status)
   "Helper function to get pdf link from URL given type of SITE.
 BUF is the html buffer retrieved from URL.  Optional status is a
-plist which contains the http status."
+plist which contains the http status.
+
+SITE is a symbol according to which the helper function is
+returned. Possible values for SITE are:
+
+'acl            denotes an `aclweb.org' type website
+'arxiv          `arxiv.org'
+'doi            a DOI redirect
+'neurips        either a `nips.cc' or `neurips.cc' type site
+'mlr            `mlr.org' proceedings
+'aaai           `aaai.org'
+'acm            `acm.org'
+'cvf            `cv-foundation.org'
+'cvf-old        Older version of cvf website
+'openreview     `openreview.org'
+
+In case none of them matches, then the default is to retrieve the
+first pdf link from the buffer."
   (cond ((eq site 'acl)
          (ref-man-url-acl-pdf-link-helper url))
         ((eq site 'arxiv)
@@ -394,7 +412,21 @@ ARGS is for compatibility and not used."
 (defun ref-man-url-get-pdf-url-according-to-source (url &optional callback cbargs)
   "Fetch a PDF url according to te source URL.
 When optional CALLBACK and CBARGS is non nil, CALLBACK is called
-with PDF link and CBARGS."
+with PDF link and CBARGS.
+
+The function can be used to:
+    a. get a PDF URL from a site
+    b. after obtaining the URL download the PDF file.
+
+Since a URL may redirect or multiple URLs can point to same site,
+which would have similar mechanisms for obtaining the URL, a SITE
+is determined first with `ref-man-url-get-site-from-url'.
+
+Post which a HELPER function is determined which can obtain the
+PDF URL from that particular SITE (see `ref-man-url-get-pdf-link-helper').
+
+After which if an optional CALLBACK (with optional CBARGS) is
+given is it called on the PDF URL."
   (when url
     (let* ((site (ref-man-url-get-site-from-url url))
            (helper (pcase site

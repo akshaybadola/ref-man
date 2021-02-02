@@ -1,4 +1,4 @@
-from typing import Callable, List, Dict, Union
+from typing import Callable, List, Dict, Union, Optional
 import os
 import sys
 import json
@@ -101,6 +101,40 @@ def parallel_fetch(urls, fetch_func, batch_size):
             t.join()
         content.update(helper(q))
         j += 1
+
+
+class Get:
+    def __init__(self):
+        self._finished = {}
+        self._progress = {}
+
+    def __call__(self, url, **kwargs) -> Union[bytes, bytearray]:
+        self._finished[url] = Event()
+        self._progress[url] = 0
+        content = bytearray()
+        response = requests.get(url, stream=True, **kwargs)
+        total = response.headers.get('content-length')
+        if total is None:           # no content length header
+            return response.content
+        else:
+            dl = 0
+            total_length = int(total)
+            for data in response.iter_content(chunk_size=4096):
+                content.extend(data)
+                dl += 4096
+                self._progress[url] = (100 * (dl / total_length))
+        self._finished[url].set()
+        return content
+
+    def finished(self, url: str) -> Optional[bool]:
+        finished = self._finished.get(url)
+        if finished:
+            return finished.is_set()
+        else:
+            return None
+
+    def progress(self, url: str) -> Optional[float]:
+        return self._progress.get(url)
 
 
 def post_json_wrapper(request: flask.Request, fetch_func: Callable, helper: Callable,
@@ -328,58 +362,76 @@ class Server:
         # TODO: Maybe start up the proxy from here
         # TODO: Maybe ssh_socks proxy server should also be entirely in python
         #       paramiko maybe? Or some tunnel library
-        if self.proxy_port:
-            self.logger.info(f"Will redirect fetch_proxy to on {self.proxy_port}")
-            proxies = {"http": f"http://127.0.0.1:{self.proxy_port}",
-                       "https": f"http://127.0.0.1:{self.proxy_port}"}
-            # flag = Event()
-            # flag.set()
-            # check_proxy_thread = Thread(target=check_proxy, args=[proxies, flag])
-            # check_proxy_thread.start()
-        else:
-            proxies = None
-        if self.proxy_everything_port:
-            self.logger.info(f"Will proxy everything on {self.proxy_everything_port}")
+        # if self.proxy_port:
+        #     self.logger.info(f"Will redirect fetch_proxy to on {self.proxy_port}")
+        #     proxies = {"http": f"http://127.0.0.1:{self.proxy_port}",
+        #                "https": f"http://127.0.0.1:{self.proxy_port}"}
+        #     # flag = Event()
+        #     # flag.set()
+        #     # check_proxy_thread = Thread(target=check_proxy, args=[proxies, flag])
+        #     # check_proxy_thread.start()
+        # else:
+        #     proxies = None
+        # if self.proxy_everything_port:
+        #     self.logger.info(f"Will proxy everything on {self.proxy_everything_port}")
+        #     everything_proxies = {"http": f"http://127.0.0.1:{self.proxy_everything_port}",
+        #                           "https": f"http://127.0.0.1:{self.proxy_everything_port}"}
+        #     flag = Event()
+        #     flag.set()
+        #     check_proxy_thread = Thread(target=check_proxy, args=[proxies, flag])
+        #     check_proxy_thread.start()
+        # else:
+        #     everything_proxies = None
+
+        self.check_proxies()
+        self.semantic_search = SemanticSearch(self.chrome_debugger_path)
+        self.init_routes()
+
+    def check_proxies(self) -> str:
+        msgs = []
+        if self.proxy_everything_port is not None:
+            self.everything_proxies = None
             everything_proxies = {"http": f"http://127.0.0.1:{self.proxy_everything_port}",
                                   "https": f"http://127.0.0.1:{self.proxy_everything_port}"}
-            flag = Event()
-            flag.set()
-            check_proxy_thread = Thread(target=check_proxy, args=[proxies, flag])
-            check_proxy_thread.start()
-        else:
-            everything_proxies = None
-
-        if everything_proxies is not None:
             try:
                 response = requests.get("http://google.com", proxies=everything_proxies,
                                         timeout=1)
                 if response.status_code == 200:
-                    self.logger.info("Proxy everything seems to work")
+                    msg = "Proxy everything seems to work"
+                    self.logger.info(msg)
                 else:
-                    self.logger.info("Proxy everything seems reachable but wrong" +
-                                     f" status_code {response.status_code}")
+                    msg = "Proxy everything seems reachable but wrong" +\
+                        f" status_code {response.status_code}"
+                    self.logger.info(msg)
                 self.logger.warning("Warning: proxy_everything is only implemented for DBLP.")
+                msg += "Warning: proxy_everything is only implemented for DBLP."
+                self.everything_proxies = everything_proxies
             except requests.exceptions.Timeout:
-                self.logger.error("Proxy for everything else not reachable")
-                return 1
-        if proxies is not None:
+                msg = "Proxy for everything else not reachable"
+                self.logger.error(msg)
+            msgs.append(msg)
+        if self.proxy_port is not None:
+            self.proxies = None
+            proxies = {"http": f"http://127.0.0.1:{self.proxy_port}",
+                       "https": f"http://127.0.0.1:{self.proxy_port}"}
             try:
                 response = requests.get("http://google.com", proxies=proxies,
                                         timeout=1)
                 if response.status_code == 200:
-                    self.logger.info("Proxy seems to work")
+                    msg = f"Proxy {self.proxy_port} seems to work"
+                    self.logger.info(msg)
+                    self.proxies = proxies
                 else:
-                    self.logger.info(f"Proxy seems reachable but wrong status_code {response.status_code}")
+                    msg = f"Proxy seems reachable but wrong status_code {response.status_code}"
+                    self.logger.info(msg)
             except requests.exceptions.Timeout:
-                self.logger.error("Proxy not reachable. Will not proxy")
-                proxies = None
+                msg = "Timeout: Proxy not reachable. Will not proxy"
+                self.logger.error(msg)
             except requests.exceptions.ProxyError:
-                self.logger.error("Proxy not reachable. Will not proxy")
-                proxies = None
-        self.proxies = proxies
-        self.everything_proxies = everything_proxies
-        self.semantic_search = SemanticSearch(self.chrome_debugger_path)
-        self.init_routes()
+                msg = "ProxyError: Proxy not reachable. Will not proxy"
+                self.logger.error(msg)
+            msgs.append(msg)
+        return "\n".join(msgs)
 
     def init_routes(self):
         @app.route("/arxiv", methods=["GET", "POST"])
@@ -494,6 +546,18 @@ class Server:
             else:
                 return Response(response.content)
 
+        @app.route("/progress")
+        def progress():
+            if "url" not in request.args:
+                return "No url given to check"
+            else:
+                url = request.args["url"]
+                progress = self.get.progress(url)
+                if progress:
+                    return progress
+                else:
+                    return "No such url: {url}"
+
         @app.route("/update_links_cache")
         def update_links_cache():
             if not self.update_cache_run:
@@ -549,6 +613,10 @@ class Server:
                 return "Updated cache for all files"
             elif self.update_success_with_errors_event.is_set():
                 return "Updated cache with errors."
+
+        @app.route("/check_proxies")
+        def check_proxies():
+            return self.check_proxies()
 
         @app.route("/get_cvpr_url", methods=["GET"])
         def get_cvpr_url():
