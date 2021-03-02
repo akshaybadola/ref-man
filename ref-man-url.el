@@ -1,6 +1,6 @@
 ;;; ref-man-url.el --- url utilities and functions for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020
+;; Copyright (C) 2018,2019,2020,2021
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
@@ -293,6 +293,7 @@ returned. Possible values for SITE are:
 'cvf            `cv-foundation.org'
 'cvf-old        Older version of cvf website
 'openreview     `openreview.org'
+'ss             `semanticscholar.org'
 
 In case none of them matches, then the default is to retrieve the
 first pdf link from the buffer."
@@ -323,14 +324,16 @@ first pdf link from the buffer."
            (replace-regexp-in-string "/paper/view/" "/paper/viewFile/"
                                      (ref-man-url-get-last-link-from-html-buffer buf))))
         ((eq site 'acm)
-         (let ((link (with-temp-shr-buffer
-                      buf
-                      (or (car (ref-man-web-get-all-links (current-buffer) nil nil "gateway"))
-                          (car (ref-man-web-get-all-links (current-buffer) nil nil "doi/pdf"))))))
-           (when link
-             (if (string-prefix-p "https://dl.acm.org/" link)
-                 link
-               (url-join "https://dl.acm.org/" link)))))
+         (if (string-match-p "/doi/" url)
+             (replace-regexp-in-string "/doi/" "/doi/pdf/" url)
+           (let ((link (with-temp-shr-buffer
+                        buf
+                        (or (car (ref-man-web-get-all-links (current-buffer) nil nil "gateway"))
+                            (car (ref-man-web-get-all-links (current-buffer) nil nil "doi/pdf"))))))
+             (when link
+               (if (string-prefix-p "https://dl.acm.org/" link)
+                   link
+                 (url-join "https://dl.acm.org/" link))))))
         ((eq site 'cvf)
          (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
            (when link
@@ -357,6 +360,22 @@ first pdf link from the buffer."
              (if (string-match-p "^[http|https]" link)
                  link
                (url-join "https://openreview.net" link)))))
+        ((eq site 'ss)
+         (let* ((links (with-temp-shr-buffer buf
+                                            (ref-man-web-get-all-links (current-buffer) t)))
+                (site-url (ref-man-url-get-best-pdf-url links))
+                (url (cond ((eq (car site-url) 'pdf)
+                            (cdr site-url))
+                           (site-url
+                            (condition-case nil
+                                (ref-man-url-get-pdf-link-helper (car site-url) (cdr site-url) nil)
+                                (error (with-current-buffer
+                                           (url-retrieve-synchronously (cdr site-url))
+                                         (ref-man-url-get-pdf-link-helper
+                                          (car site-url)
+                                          (cdr site-url)
+                                          (current-buffer)))))))))
+           url))
         (t (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
              (when link
                (if (string-match-p "^http:\\|^https:" link)
@@ -398,7 +417,6 @@ ARGS is for compatibility and not used."
       ((and (string-match-p "doi.org" url)
             (string-match-p "cvpr" (-last-item (split-string url "/" t))))
        'doi-cvpr)
-      ((string-match-p "doi.org" url) 'doi)
       ((string-match-p "papers.nips.cc\\|proceedings.neurips.cc" url) 'neurips)
       ((string-match-p "mlr.press" url) 'mlr)
       ((string-match-p "openaccess.thecvf.com" url) 'cvf)
@@ -407,7 +425,36 @@ ARGS is for compatibility and not used."
       ((string-match-p "acm.org" url) 'acm)
       ((string-match-p "openreview.net" url) 'openreview)
       ((string-match-p "semanticscholar.org/paper" url) 'ss)
+      ((string-match-p "doi.org" url) 'doi)
       (t nil)))
+
+(defun ref-man-url--sort-best-subroutine (x)
+  (pcase (car x)
+    ('acm (or (let ((link (car (-filter (lambda (y) (string-match-p "pdf" y)) (cdr x)))))
+                (and link (cons 'pdf link)))
+              (let ((link (car (-filter (lambda (y) (string-match-p "/doi/" y)) (cdr x)))))
+                (and link (cons 'pdf (replace-regexp-in-string "/doi/" "/doi/pdf/" link))))))
+    (_ (cadr x))))
+
+(defun ref-man-url-get-best-pdf-url (urls)
+  "Get the best url from a list of URLS according to ease of downloading."
+  (let ((pdf-urls (-filter #'ref-man-url-downloadable-pdf-url-p urls)))
+    (if pdf-urls
+        (cons 'pdf (car pdf-urls))
+      (let* ((links (-filter #'identity
+                             (-map (lambda (x) (when (ref-man-url-get-site-from-url x)
+                                                 (cons (ref-man-url-get-site-from-url x) x)))
+                                   urls)))
+             (links (-sort (lambda (x y)
+                             (< (cl-position (car x) '(arxiv acl neurips mlr aaai acm
+                                                             cvf cvf-old openreview ss doi))
+                                (cl-position (car y) '(arxiv acl neurips mlr aaai acm cvf
+                                                             cvf-old openreview ss doi))))
+                           (util/pairs-to-alist links)))
+             (best (car links)))
+        (if (= (length best) 2)
+            (car best)
+          (ref-man-url--sort-best-subroutine best))))))
 
 (defun ref-man-url-get-pdf-url-according-to-source (url &optional callback cbargs)
   "Fetch a PDF url according to te source URL.
@@ -450,7 +497,6 @@ given is it called on the PDF URL."
              (let ((buf (url-retrieve-synchronously url t)))
                (funcall helper url buf)))
             (t nil)))))
-
 
 ;; NOTE: This function currently is only used by `ref-man-try-fetch-and-store-pdf-in-org-entry'
 (defun ref-man-url-get-bib-according-to-source (url)

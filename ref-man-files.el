@@ -19,11 +19,14 @@ Returns path concatenated with `ref-man-documents-dir'."
          (obj (url-generic-parse-url url))
          ;; (path (car (url-path-and-query obj)))
          (path (cond ((string-match-p "openreview" url)
-                      (concat "openreview_"
-                              (nth 1 (split-string
-                                      (cdr (url-path-and-query
-                                            (url-generic-parse-url url))) "="))
-                              "." "pdf"))
+                      (if (and (string-match-p "/pdf/" url)
+                               (string-suffix-p ".pdf" url))
+                          (concat "openreview_" (-last-item (split-string url "/")))
+                        (concat "openreview_"
+                                (nth 1 (split-string
+                                        (cdr (url-path-and-query
+                                              (url-generic-parse-url url))) "="))
+                                "." "pdf")))
                      ((or (string-match-p "arxiv.org/abs/" url) (string-match-p "arxiv.org/pdf/" url))
                       (concat (f-filename (string-remove-suffix ".pdf" (car (url-path-and-query obj)))) ".pdf"))
                      ((string-match-p "springer.com" url)
@@ -31,11 +34,16 @@ Returns path concatenated with `ref-man-documents-dir'."
                      ((string-match-p "aaai.org" url)
                       (concat "aaai_" (string-join (last (split-string url "/") 2) "_") ".pdf"))
                      ((string-match-p "acm.org" url)
-                      (if (string-match-p "doi/pdf" url)
-                          (concat "acm_" (mapconcat #'identity (-take-last 2 (split-string url "/")) "_") ".pdf")
-                        (concat "acm_" (car (split-string (nth 1 (split-string url "?id=")) "&")) ".pdf")))
+                      (cond ((string-match-p "citation.cfm?id=" url)
+                             (concat "acm_" (car (split-string (nth 1 (split-string url "?id=")) "&")) ".pdf"))
+                            ((string-match-p "doi/pdf" url)
+                             (concat "acm_" (mapconcat #'identity (-take-last 2 (split-string url "/")) "_") ".pdf"))
+                            (t (concat "acm_"
+                                       (mapconcat #'identity
+                                                  (-take-last 2 (split-string (-first-item
+                                                                               (split-string url "?")) "/")) "_") ".pdf"))))
                      (t (when (string-match-p "\\.pdf$" (car (url-path-and-query obj)))
-                              (car (url-path-and-query obj))))))
+                          (car (url-path-and-query obj))))))
          (file (and path (path-join ref-man-documents-dir (f-filename path)))))
     file))
 

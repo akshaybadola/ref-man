@@ -1,6 +1,6 @@
 ;;; ref-man-core.el --- Core Components for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020
+;; Copyright (C) 2018,2019,2020,2021
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
@@ -68,7 +68,6 @@
 (require 'bind-key)
 (require 'cl-lib)
 (require 'dash)
-(require 'dash-functional)
 (require 'eww)
 (require 'gscholar-bibtex)              ; NOTE: Maybe remove this eventually
 (require 'json)
@@ -1400,9 +1399,40 @@ to `ref-man-python-data-dir' and the port
   (prog1
       (message (format "[ref-man] Starting python process on port: %s"
                        ref-man-python-server-port))
-    (let* ((env (and ref-man-python-process-use-venv
-                     (path-join ref-man-home-dir "env")))
-           (args (-filter #'identity (list (format "--data-dir=%s" data-dir)
+    ;; (let* ((env (and ref-man-python-process-use-venv
+    ;;                  (path-join ref-man-home-dir "env")))
+    ;;        (args (-filter #'identity (list (format "--data-dir=%s" data-dir)
+    ;;                                       (format "--port=%s" port)
+    ;;                                       (and ref-man-proxy-port "--proxy-everything")
+    ;;                                       (and ref-man-proxy-port
+    ;;                                            (format "--proxy-everything-port=%s"
+    ;;                                                    ref-man-proxy-port))
+    ;;                                       (and ref-man-pdf-proxy-port
+    ;;                                            (format "--proxy-port=%s" ref-man-pdf-proxy-port))
+    ;;                                       (format "--chrome-debugger-path=%s"
+    ;;                                               ref-man-chrome-debug-script)
+    ;;                                       "--verbosity=debug")))
+    ;;        (process-environment (if env
+    ;;                                 (with-temp-buffer
+    ;;                                   (call-process "bash" nil t nil "-c"
+    ;;                                                 (concat "source " (path-join env "bin" "activate") " && env"))
+    ;;                                   (goto-char (point-min))
+    ;;                                   (let ((temp nil))
+    ;;                                     (while (not (eobp))
+    ;;                                       (setq temp
+    ;;                                             (cons (buffer-substring (point) (line-end-position))
+    ;;                                                   temp))
+    ;;                                       (forward-line 1))
+    ;;                                     temp))
+    ;;                               process-environment))
+    ;;        (python (ref-man--trim-whitespace (shell-command-to-string "which python"))))
+    ;;   (message "Python process args are %s" args)
+    ;;   (apply #'start-process "ref-man-python-server" "*ref-man-python-server*"
+    ;;          python (path-join ref-man-home-dir "main.py") args))
+    (let ((python (if ref-man-python-process-use-venv
+                      (path-join ref-man-home-dir "env" "bin" "python")
+                    (ref-man--trim-whitespace (shell-command-to-string "which python"))))
+          (args (-filter #'identity (list (format "--data-dir=%s" data-dir)
                                           (format "--port=%s" port)
                                           (and ref-man-proxy-port "--proxy-everything")
                                           (and ref-man-proxy-port
@@ -1412,22 +1442,8 @@ to `ref-man-python-data-dir' and the port
                                                (format "--proxy-port=%s" ref-man-pdf-proxy-port))
                                           (format "--chrome-debugger-path=%s"
                                                   ref-man-chrome-debug-script)
-                                          "--verbosity=debug")))
-           (process-environment (if env
-                                    (with-temp-buffer
-                                      (call-process "bash" nil t nil "-c"
-                                                    (concat "source " (path-join env "bin" "activate") "; env"))
-                                      (goto-char (point-min))
-                                      (let ((temp nil))
-                                        (while (not (eobp))
-                                          (setq temp
-                                                (cons (buffer-substring (point) (line-end-position))
-                                                      temp))
-                                          (forward-line 1))
-                                        temp))
-                                  process-environment))
-           (python (ref-man--trim-whitespace (shell-command-to-string "which python"))))
-      ;; (message "Python process args are %s" args)
+                                          "--verbosity=debug"))))
+      (message "Python process args are %s" args)
       (apply #'start-process "ref-man-python-server" "*ref-man-python-server*"
              python (path-join ref-man-home-dir "main.py") args))))
 
@@ -1752,7 +1768,8 @@ is meant to operate in batch mode."
              (message (format "[ref-man] Got html buffer for url %s. Not saving file" url)))
             ((eq buf-type 'pdf)
              (write-region (point) (point-max) file)
-             (message "[ref-man] Saved %s" file)))
+             (message "[ref-man] Saved %s" file))
+            (t (message "[ref-man] Got uknown format for file")))
       (if buf
           (with-current-buffer buf
             (cond ((string-empty-p (string-trim (replace-regexp-in-string "\*" "" heading)))

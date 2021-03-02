@@ -1,6 +1,6 @@
 ;;; ref-man-remote.el --- Components for `ref-man' to work with remote servers, like mail and remote storage. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020
+;; Copyright (C) 2018,2019,2020,2021
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
@@ -97,6 +97,7 @@ Maps files from `ref-man-documents-dir' to
 For any files not in `ref-man-public-links-cache' generate link
 from remote and update the `ref-man-public-links-cache-file' on
 disk."
+  (interactive)
   (unless (or (string-empty-p ref-man-public-links-cache-file)
               (string-empty-p ref-man-remote-documents-dir))
     ;; Else, update first

@@ -1,6 +1,6 @@
 ;;; ref-man-chrome.el --- Module to route the eww requests through chromium so that google doesn't complain about lack of javascript. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020
+;; Copyright (C) 2018,2019,2020,2021
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
@@ -44,7 +44,6 @@
 (require 'eww)
 (require 'org)
 (require 'dash)
-(require 'dash-functional)
 (require 'subr-x)
 (require 'url-http)
 (require 'websocket)

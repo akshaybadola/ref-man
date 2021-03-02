@@ -1,0 +1,4 @@
+.cask
+*__pycache__*
+*~
+*.elc

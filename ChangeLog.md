@@ -11,3 +11,14 @@
 - Added updating semantic scholar params with a node subprocess
 - Added `progress` and `check_proxies` routes. `progress` is still pending. I
   think for that the Get class I'm trying to implement.
+
+## [2021-02-11 Thu 02:52]
+- Added .gitignore
+- Version bump to 0.3.2
+- Added url extraction from semanticscholar.org. Earlier it defaulted to first
+  pdf link from buffer.
+- Added `ref-man-url-get-best-pdf-url`.
+- Lisp and python code follow separate versioning now.
+- Fixed naming of PDF files downloaded from acm.org
+- Fixed some pdf files names and downloads from openreview.net
+- Fixed proxy_everything port.

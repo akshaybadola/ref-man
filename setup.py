@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 from setuptools import setup, find_packages
 
@@ -11,7 +11,7 @@ description = """ref-man server for network requests.
     of network requests."""
 
 setup(
-    name="ref-man-server",
+    name="ref-man",
     version=__version__,
     description="Ref Man Python Server",
     long_description=description,
@@ -31,7 +31,8 @@ setup(
     ],
     packages=find_packages(),
     include_package_data=True,
-    install_requires=["flask==1.1.2", "requests==2.24.0", "beautifulsoup4==4.9.1"],
+    python_requires=">=3.6.9",
+    install_requires=["flask==1.1.2", "requests==2.24.0", "beautifulsoup4==4.9.1", "psutil==5.8.0"],
     entry_points={
         'console_scripts': [
             'ref-man = ref_man:main',

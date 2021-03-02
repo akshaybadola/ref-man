@@ -389,7 +389,7 @@ class Server:
 
     def check_proxies(self) -> str:
         msgs = []
-        if self.proxy_everything_port is not None:
+        if self.proxy_everything_port:
             self.everything_proxies = None
             everything_proxies = {"http": f"http://127.0.0.1:{self.proxy_everything_port}",
                                   "https": f"http://127.0.0.1:{self.proxy_everything_port}"}
