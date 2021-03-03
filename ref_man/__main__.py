@@ -7,7 +7,7 @@ from .const import __version__
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser("ref-man")
     parser.add_argument("--no-threaded", dest="threaded", action="store_false",
                         help="Whether flask server should be threaded or not")
     parser.add_argument("--port", "-p", type=int, default=9999,
@@ -39,3 +39,7 @@ def main():
     from .server import Server
     server = Server(args)
     server.run()
+
+
+if __name__ == '__main__':
+    main()

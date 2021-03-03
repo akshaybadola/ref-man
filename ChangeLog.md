@@ -22,3 +22,8 @@
 - Fixed naming of PDF files downloaded from acm.org
 - Fixed some pdf files names and downloads from openreview.net
 - Fixed proxy_everything port.
+
+## [2021-03-03 Wed 08:05]
+- Python virtualenv is now always created and used.
+- Staged debug_ss.js and package.json for chrome-remote
+- Fixed python module `python -m ref_man` now runs correctly.

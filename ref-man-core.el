@@ -126,11 +126,6 @@
   :type 'integer
   :group 'ref-man)
 
-(defcustom ref-man-python-process-use-venv nil
-  "Whether to initialize and use a virtualenv for the python process."
-  :type 'boolean
-  :group 'ref-man)
-
 (defcustom ref-man-python-data-dir (expand-file-name "~/.ref-man/data/")
   "Server port on which to communicate with python server."
   :type 'directory
@@ -1372,18 +1367,60 @@ buffer and sanitize the entry at point."
 ;; START python process stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; TODO: Always use venv and setup
-;;
-;; TODO: Check python3 version > 3.6.5
-(defun ref-man-python-process-setup ()
-  (when ref-man-python-process-use-venv
-    (let ((env (path-join ref-man-home-dir "env")))
-      (unless (and (f-exists? env) (f-exists? (path-join env "bin" "python3")))
-        (shell-command (format "python3 -m virtualenv -p python3 %s" env)
-                       "*ref-man-cmd*" "*ref-man-cmd*")
-        (async-shell-command (concat "source " (path-join env "bin" "activate") " && "
-                                     (format "cd %s && pip install ." ref-man-home-dir))
-                             "*ref-man-cmd*" "*ref-man-cmd*")))))
+(defun ref-man--create-venv (path)
+  (if (and (string-match-p "no.*module.*virtualenv.*"
+                           (shell-command-to-string
+                            (format "python3 -m virtualenv -p python3 %s" path)))
+           (string-match-p "no.*module.*virtualenv.*"
+                           (shell-command-to-string
+                            (format "/usr/bin/python3 -m virtualenv -p python3 %s" path))))
+      nil (message "Create venv in %s" path)))
+
+(defun ref-man-no-py-mod-in-venv (python)
+  "Check if python module exists for python executable PYTHON."
+  (string-match-p "no.*module.*ref.*"
+                  (shell-command-to-string
+                   (format "%s -m ref_man --version" python))))
+
+(defun ref-man-py-mod-version (python)
+  "Return version for python module.
+PYTHON is the path for python executable."
+  (shell-command-to-string
+   (format "%s -m ref_man --version" python)))
+
+;; TODO: Check python3 version > 3.6.9
+(defun ref-man-python-setup-env ()
+  "Setup python virtualenv.
+The directory is relative to `ref-man' install directory
+`ref-man-home-dir'."
+  (when (string-match-p "no.*in.*"
+                        (ref-man--trim-whitespace (shell-command-to-string "which python3")))
+    (user-error "No python3 in system"))
+  (let ((env (path-join ref-man-home-dir "env")))
+    (unless (f-exists? env)
+      (f-mkdir env)
+      (unless (ref-man--create-venv env)
+        (user-error "Could not install venv.\n
+Make sure not package 'virtualenv' exists in current python environment")))
+    (let* ((env-has-python (f-exists? (path-join env "bin" "python3")))
+           (python (and env-has-python
+                        (path-join env "bin" "python3"))))
+      (when (and (not python) (ref-man--create-venv env))
+        (user-error "Could not install venv.\n
+Make sure not package 'virtualenv' exists in current python environment"))
+      (let ((env-has-no-ref-man (ref-man-no-py-mod-in-venv python)))
+        (when env-has-no-ref-man
+          (progn (message "ref-man not found. Installing in %s" env)
+                 (shell-command
+                  (concat "source " (path-join env "bin" "activate") " && "
+                          (format "cd %s && python -m pip install ."
+                                  ref-man-home-dir))
+                  "*ref-man-cmd*" "*ref-man-cmd*")))
+        (if (ref-man-py-mod-version python)
+            (message "%s found in %s" (ref-man--trim-whitespace
+                                       (ref-man-py-mod-version python))
+                     env)
+          (user-error "Could not install ref-man in %s" env))))))
 
 ;; TODO: Requests to python server should be dynamic according to whether I want
 ;;       to use proxy or not at that point
@@ -1399,53 +1436,23 @@ to `ref-man-python-data-dir' and the port
   (prog1
       (message (format "[ref-man] Starting python process on port: %s"
                        ref-man-python-server-port))
-    ;; (let* ((env (and ref-man-python-process-use-venv
-    ;;                  (path-join ref-man-home-dir "env")))
-    ;;        (args (-filter #'identity (list (format "--data-dir=%s" data-dir)
-    ;;                                       (format "--port=%s" port)
-    ;;                                       (and ref-man-proxy-port "--proxy-everything")
-    ;;                                       (and ref-man-proxy-port
-    ;;                                            (format "--proxy-everything-port=%s"
-    ;;                                                    ref-man-proxy-port))
-    ;;                                       (and ref-man-pdf-proxy-port
-    ;;                                            (format "--proxy-port=%s" ref-man-pdf-proxy-port))
-    ;;                                       (format "--chrome-debugger-path=%s"
-    ;;                                               ref-man-chrome-debug-script)
-    ;;                                       "--verbosity=debug")))
-    ;;        (process-environment (if env
-    ;;                                 (with-temp-buffer
-    ;;                                   (call-process "bash" nil t nil "-c"
-    ;;                                                 (concat "source " (path-join env "bin" "activate") " && env"))
-    ;;                                   (goto-char (point-min))
-    ;;                                   (let ((temp nil))
-    ;;                                     (while (not (eobp))
-    ;;                                       (setq temp
-    ;;                                             (cons (buffer-substring (point) (line-end-position))
-    ;;                                                   temp))
-    ;;                                       (forward-line 1))
-    ;;                                     temp))
-    ;;                               process-environment))
-    ;;        (python (ref-man--trim-whitespace (shell-command-to-string "which python"))))
-    ;;   (message "Python process args are %s" args)
-    ;;   (apply #'start-process "ref-man-python-server" "*ref-man-python-server*"
-    ;;          python (path-join ref-man-home-dir "main.py") args))
-    (let ((python (if ref-man-python-process-use-venv
-                      (path-join ref-man-home-dir "env" "bin" "python")
-                    (ref-man--trim-whitespace (shell-command-to-string "which python"))))
-          (args (-filter #'identity (list (format "--data-dir=%s" data-dir)
-                                          (format "--port=%s" port)
-                                          (and ref-man-proxy-port "--proxy-everything")
-                                          (and ref-man-proxy-port
-                                               (format "--proxy-everything-port=%s"
-                                                       ref-man-proxy-port))
-                                          (and ref-man-pdf-proxy-port
-                                               (format "--proxy-port=%s" ref-man-pdf-proxy-port))
-                                          (format "--chrome-debugger-path=%s"
-                                                  ref-man-chrome-debug-script)
-                                          "--verbosity=debug"))))
-      (message "Python process args are %s" args)
-      (apply #'start-process "ref-man-python-server" "*ref-man-python-server*"
-             python (path-join ref-man-home-dir "main.py") args))))
+    (let ((python (path-join ref-man-home-dir "env" "bin" "python")))
+      (condition-case nil
+          (ref-man-python-setup-env))
+      (let ((args (-filter #'identity (list (format "--data-dir=%s" data-dir)
+                                            (format "--port=%s" port)
+                                            (and ref-man-proxy-port "--proxy-everything")
+                                            (and ref-man-proxy-port
+                                                 (format "--proxy-everything-port=%s"
+                                                         ref-man-proxy-port))
+                                            (and ref-man-pdf-proxy-port
+                                                 (format "--proxy-port=%s" ref-man-pdf-proxy-port))
+                                            (format "--chrome-debugger-path=%s"
+                                                    ref-man-chrome-debug-script)
+                                            "--verbosity=debug"))))
+        (message "Python process args are %s" args)
+        (apply #'start-process "ref-man-python-server" "*ref-man-python-server*"
+               python "-m" "ref_man" args)))))
 
 (defun ref-man-stop-python-server ()
   "Stop the python server by sending a shutdown command.

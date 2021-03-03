@@ -151,41 +151,46 @@ class SemanticSearch:
                     if cmd and ("google-chrome" in cmd[0] or "chromium" in cmd[0]):
                         check_flag = True
                         break
+                print(f"Process {cmd[0]} found.")
             except Exception as e:
                 print(e)
             if check_flag:
                 print(f"Trying to update Semantic Scholar Search params")
                 p = Popen(shlex.split(f"node {debugger_path}"), stdout=PIPE, stderr=PIPE)
                 out, err = p.communicate()
-                try:
-                    vals = json.loads(out)
-                    if "request" in vals and 'postData' in vals['request']:
-                        if isinstance(vals['request']['postData'], dict):
-                            vals = vals['request']['postData']
-                        elif isinstance(vals['request']['postData'], str):
-                            vals = json.loads(vals['request']['postData'])
-                        else:
-                            raise Exception("Not sure what data was sent")
-                    self.params = vals.copy()
-                    new_params = set(vals.keys()) - set(self.default_params.keys())
-                    if new_params:
-                        print(f"New params in SS Search {new_params}")
-                    not_params = set(self.default_params.keys()) - set(vals.keys())
-                    if not_params:
-                        print(f"Params not in SS Search {not_params}")
-                    values_to_update = {'performTitleMatch': True,
-                                        'includeBadges': False,
-                                        'includeTldrs': False,
-                                        'fieldsOfStudy': ['computer-science']}
-                    for k, v in values_to_update.items():
-                        if k in self.params:
-                            self.params[k] = v
-                        else:
-                            print(f"Could not update param {k}")
-                    print(f"Updated params {self.params}")
-                except Exception as e:
-                    self.params = self.default_params.copy()
-                    print(f"Error updating params {e}")
+                if err:
+                    print("Chromium running but error communicating with it. Can't update params")
+                    print(err.decode())
+                else:
+                    try:
+                        vals = json.loads(out)
+                        if "request" in vals and 'postData' in vals['request']:
+                            if isinstance(vals['request']['postData'], dict):
+                                vals = vals['request']['postData']
+                            elif isinstance(vals['request']['postData'], str):
+                                vals = json.loads(vals['request']['postData'])
+                            else:
+                                raise Exception("Not sure what data was sent")
+                        self.params = vals.copy()
+                        new_params = set(vals.keys()) - set(self.default_params.keys())
+                        if new_params:
+                            print(f"New params in SS Search {new_params}")
+                        not_params = set(self.default_params.keys()) - set(vals.keys())
+                        if not_params:
+                            print(f"Params not in SS Search {not_params}")
+                        values_to_update = {'performTitleMatch': True,
+                                            'includeBadges': False,
+                                            'includeTldrs': False,
+                                            'fieldsOfStudy': ['computer-science']}
+                        for k, v in values_to_update.items():
+                            if k in self.params:
+                                self.params[k] = v
+                            else:
+                                print(f"Could not update param {k}")
+                        print(f"Updated params {self.params}")
+                    except Exception as e:
+                        self.params = self.default_params.copy()
+                        print(f"Error updating params {e}")
             else:
                 print("Chromium with debug port not running. Can't update params")
                 self.params = self.default_params.copy()

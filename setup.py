@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-from setuptools import setup, find_packages
+from setuptools import setup
 
-from ref_man import __version__
+from ref_man.const import __version__
 
 description = """ref-man server for network requests.
 
@@ -29,13 +29,13 @@ setup(
         "Natural Language :: English",
         "Topic :: Text Editors :: Emacs",
     ],
-    packages=find_packages(),
+    packages=["ref_man"],
     include_package_data=True,
     python_requires=">=3.6.9",
     install_requires=["flask==1.1.2", "requests==2.24.0", "beautifulsoup4==4.9.1", "psutil==5.8.0"],
     entry_points={
         'console_scripts': [
-            'ref-man = ref_man:main',
+            'ref-man = ref_man:__main__.main',
         ],
     },
 )
