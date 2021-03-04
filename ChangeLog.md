@@ -27,3 +27,8 @@
 - Python virtualenv is now always created and used.
 - Staged debug_ss.js and package.json for chrome-remote
 - Fixed python module `python -m ref_man` now runs correctly.
+
+## [2021-03-04 Thu 16:28]
+- `cache.py` is separate now and contains `CacheHelper`
+- Pdfs remote links cache is now checked and fixed at startup if remote cache
+  exists.

@@ -22,6 +22,13 @@ def main():
     parser.add_argument("--data-dir", "-d", dest="data_dir", type=str,
                         default=os.path.expanduser("~"),
                         help="Semantic Scholar cache directory")
+    parser.add_argument("--local-pdfs-dir", dest="local_pdfs_dir", type=str,
+                        default=os.path.expanduser("~/pdfs"),
+                        help="Local directory where pdfs are stored")
+    parser.add_argument("--remote-pdfs-dir", dest="remote_pdfs_dir", type=str,
+                        default="", help="Remote rclone pdfs directory")
+    parser.add_argument("--remote-links-cache", dest="remote_links_cache", type=str,
+                        default="", help="Remote links cache file")
     parser.add_argument("--batch-size", "-b", dest="batch_size", type=int, default=16,
                         help="Simultaneous connections to DBLP")
     parser.add_argument("--chrome-debugger-path", dest="chrome_debugger_path", type=str,

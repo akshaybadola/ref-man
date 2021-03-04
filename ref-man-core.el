@@ -1446,9 +1446,20 @@ to `ref-man-python-data-dir' and the port
                                                  (format "--proxy-everything-port=%s"
                                                          ref-man-proxy-port))
                                             (and ref-man-pdf-proxy-port
-                                                 (format "--proxy-port=%s" ref-man-pdf-proxy-port))
-                                            (format "--chrome-debugger-path=%s"
-                                                    ref-man-chrome-debug-script)
+                                                 (format "--proxy-port=%s"
+                                                         ref-man-pdf-proxy-port))
+                                            (and ref-man-chrome-debug-script
+                                                 (format "--chrome-debugger-path=%s"
+                                                         ref-man-chrome-debug-script))
+                                            (and ref-man-documents-dir
+                                                 (format "--local-pdfs-dir=%s"
+                                                         ref-man-documents-dir))
+                                            (and ref-man-remote-documents-dir
+                                                 (format "--remote-pdfs-dir=%s"
+                                                         ref-man-remote-documents-dir))
+                                            (and ref-man-public-links-cache-file
+                                                 (format "--remote-links-cache=%s"
+                                                         ref-man-public-links-cache-file))
                                             "--verbosity=debug"))))
         (message "Python process args are %s" args)
         (apply #'start-process "ref-man-python-server" "*ref-man-python-server*"
