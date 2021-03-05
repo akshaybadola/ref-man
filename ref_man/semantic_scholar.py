@@ -142,6 +142,10 @@ class SemanticSearch:
                                'includeTldrs': False,
                                'performTitleMatch': True,
                                'includeBadges': False}
+        self.params = self.default_params.copy()
+        self.update_params(debugger_path)
+
+    def update_params(self, debugger_path):
         if debugger_path:
             check_flag = False
             try:
@@ -189,13 +193,11 @@ class SemanticSearch:
                                 print(f"Could not update param {k}")
                         print(f"Updated params {self.params}")
                     except Exception as e:
+                        print(f"Error updating params {e}. Will use default params")
                         self.params = self.default_params.copy()
-                        print(f"Error updating params {e}")
             else:
                 print("Chromium with debug port not running. Can't update params")
-                self.params = self.default_params.copy()
         else:
-            self.params = self.default_params.copy()
             print(f"Debug script path not given. Using default params")
 
     def semantic_scholar_search(self, query: str, cs_only: bool = False, **kwargs):

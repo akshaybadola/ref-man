@@ -1424,7 +1424,9 @@ Make sure not package 'virtualenv' exists in current python environment"))
 
 ;; TODO: Requests to python server should be dynamic according to whether I want
 ;;       to use proxy or not at that point
-(defun ref-man--python-process-helper (data-dir port)
+(defun ref-man--python-process-helper (data-dir port &optional
+                                                proxy-port proxy-everything-port
+                                                docs-dir remote-docs-dir cache-file)
   "Start the python server.
 DATA-DIR is the server data directory.  PORT is the port to which
 the server binds.

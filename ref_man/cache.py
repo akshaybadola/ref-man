@@ -45,6 +45,12 @@ class CacheHelper:
         files = set(lf) - set(cf)
         return files
 
+    def _remote_path(self, fname):
+        return os.path.join(self.remote_dir, os.path.basename(fname))
+
+    def _local_path(self, fname):
+        return os.path.join(self.local_dir, os.path.basename(fname))
+
     def stop_update(self):
         self.updating_ev.clear()
 
@@ -56,65 +62,90 @@ class CacheHelper:
     def check_and_fix_cache(self):
         self.logger.debug("Checking existing cache")
         local_files, cache, remote_files = self.read_cache()
+        deleted_links = [c for c in cache if not(os.path.exists(c.split(";")[0]))]
+        deleted_files = [c.split(";")[0] for c in deleted_links]
+        if deleted_links:
+            self.logger.info(f"Files {deleted_files} not on disk. Removing from cache.")
+            for f in deleted_links:
+                cache.remove(f)
+            with open(self.cache_file, "w") as f:
+                f.write("\n".join(cache))
         broken_links = [c.split(";")[0] for c in cache if c.split(";")[1] == ""]
-        self.logger.debug(f"Found {len(broken_links)} broken links. Updating")
-        self.update_thread = Thread(target=self.update_cache_helper, args=[broken_links])
-        self.update_thread.start()
+        if broken_links:
+            self.logger.debug(f"Found {len(broken_links)} broken links. Updating")
+            self.update_thread = Thread(target=self.update_cache_helper, args=[broken_links])
+            self.update_thread.start()
+        else:
+            self.logger.debug(f"No broken links found")
 
-    def copy_file(self):
+    def copy_file(self, fname):
+        local_path = self._local_path(fname)
+        remote_path = self._remote_path(fname)
         try:
-            p = Popen(f"rclone --no-update-modtime -v copy {self.local_path} {self.remote_dir}",
+            p = Popen(f"rclone --no-update-modtime -v copy {local_path} {remote_path}",
                       shell=True, stdout=PIPE, stderr=PIPE)
             out, err = p.communicate(timeout=10)
             err = err.decode("utf-8").lower()
             if err and ("copied" in err or "transferred" in err):
-                self.logger.debug(f"Copied file {self.local_path} to remote")
+                self.logger.debug(f"Copied file {local_path} to remote")
                 status = True
             else:
                 status = False
         except TimeoutExpired:
-            self.logger.warning(f"Timeout while copying for file {self.local_path}")
+            self.logger.warning(f"Timeout while copying for file {local_path}")
             status = False
         return status
 
-    def try_get_link(self, f, remote_path):
+    def try_get_link(self, remote_path):
+        self.logger.debug(f"Fetching link for {remote_path}")
         try:
             p = Popen(f"rclone -v link {remote_path}", shell=True, stdout=PIPE, stderr=PIPE)
             out, err = p.communicate(timeout=10)
-            if err and "error 403" in err.decode("utf-8").lower():
-                status = False
-                link = "not_present"
+            if err:
+                if "error 403" in err.decode().lower() or\
+                   "object not found" in err.decode().lower():
+                    status = False
+                    link = "NOT_PRESENT"
+                else:
+                    status = False
+                    link = "OTHER_ERROR"
             else:
                 link = out.decode("utf-8").replace("\n", "")
-                status = True
+                if link:
+                    status = True
+                else:
+                    status = False
+                    link = "EMPTY_RESPONSE"
         except TimeoutExpired:
-            self.logger.warning(f"Timeout while getting link for file {f}")
-            link = "timeout"
+            self.logger.warning(f"Timeout while getting link for file {remote_path}")
+            link = "TIMEOUT"
             status = False
         return status, link
 
-    def get_link(self, f, cache, warnings):
+    def get_link(self, fname, cache, warnings):
         try:
             start = time.time()
-            remote_path = os.path.join(self.remote_dir, os.path.basename(f))
+            remote_path = self._remote_path(fname)
             if " " in remote_path:
                 remote_path = f'"{remote_path}"'
-            status, link = self.try_get_link(f, remote_path)
+            status, link = self.try_get_link(remote_path)
             if not status:
-                if link == "not_present":
-                    self.logger.warning(f"File {f} does not exist on remote. Copying")
-                    status = self.copy_file(f)
+                if link == "NOT_PRESENT":
+                    self.logger.warning(f"File {fname} does not exist on remote. Copying")
+                    status = self.copy_file(fname)
                     if status:
-                        status, link = self.try_get_link(f)
+                        status, link = self.try_get_link(remote_path)
+                else:
+                    raise ValueError(f"Error {link} for {remote_path}")
             duration = time.time() - start
             if not status:
-                warnings.append(f"{f}")
-                self.logger.warning(f"Error occurred for file {f} {link}")
+                warnings.append(f"{fname}")
+                self.logger.error(f"Error occurred for file {fname} {link}")
             else:
-                self.logger.debug(f"got link {link} for file {f} in {duration} seconds")
-                cache.append(f"{f};{link}")
+                self.logger.debug(f"got link {link} for file {fname} in {duration} seconds")
+                cache[fname] = link
         except Exception as e:
-            self.logger.warning(f"Error occured for file {f} {e}")
+            self.logger.error(f"Error occured for file {fname} {e}")
 
     def update_cache(self):
         if not self.updating:
@@ -131,17 +162,18 @@ class CacheHelper:
         if self.success_with_errors_ev.is_set():
             self.success_with_errors_ev.clear()
         self.logger.info(f"Updating local cache {self.cache_file}")
-        init_cache_size = None
         try:
             warnings = []
             local_files, cache, remote_files = self.read_cache()
+            files = set(local_files) - set(remote_files)
             if fix_files:
                 for f in fix_files:
                     if f in cache:
                         cache.remove(f)
-                remote_files = fix_files
+                files = fix_files
             init_cache_size = len(cache)
-            files = set(local_files) - set(remote_files)
+            cache = dict(c.split(";") for c in cache)
+            self.logger.info(f"Will try to fetch links for {len(files)} files")
             for f in files:
                 if not self.updating_ev.is_set():
                     break
@@ -149,7 +181,8 @@ class CacheHelper:
             self.logger.info(f"Writing {len(cache) - init_cache_size} links to {self.cache_file}")
             shutil.copyfile(self.cache_file, self.cache_file + ".bak")
             with open(self.cache_file, "w") as cf:
-                cf.write("\n".join(cache))
+                write_list = [";".join(c) for c in cache.items()]
+                cf.write("\n".join(write_list))
             self.updating_ev.clear()
             if warnings:
                 self.success_with_errors_ev.set()

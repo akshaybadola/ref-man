@@ -32,3 +32,9 @@
 - `cache.py` is separate now and contains `CacheHelper`
 - Pdfs remote links cache is now checked and fixed at startup if remote cache
   exists.
+
+## [2021-03-06 Sat 00:36]
+- Fixed some bugs in cache.
+- Changed python process launch args to specify cache related args.
+- Fixed an issue with semantic scholar params where it wouldn't switch to
+  default if chrome was running and params couldn't be updated..
