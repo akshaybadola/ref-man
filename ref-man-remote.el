@@ -46,6 +46,7 @@
   :type 'string
   :group 'ref-man)
 
+;; FIXME: Not sure what this was for, but it's not used right now.
 (defcustom ref-man-mail-uploads-dir ""
   "Remote dir where mail attachments will be uploaded."
   :type 'string

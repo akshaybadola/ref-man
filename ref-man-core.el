@@ -198,7 +198,7 @@ on the system."
 (defvar ref-man--biblio-callback-buf nil)
 (defvar ref-man--subtree-num-entries nil)
 (defvar ref-man-external-python-process-pid nil)
-
+(defvar ref-man-org-file-link-re "\\[\\(?:\\[\\(.+?\\)]\\)?\\[\\(.+?\\)]]")
 
 (defvar shr-map
   (let ((map (make-sparse-keymap)))
@@ -500,7 +500,7 @@ Bengio and Oriol Vinyals and Navdeep Jaitly and Noam Shazee\"."
           (mapcar (lambda (x) (mapconcat 'identity (reverse (split-string x ", ")) " "))
                   authors))
          (result-authors (mapconcat 'identity result-authors " and ")))
-    result-authors))
+    (ref-man--invert-accents result-authors)))
 
 (defun ref-man--build-bib-assoc (key-str &optional na)
   "Return a list of string cons'es from DBLP entry KEY-STR.
@@ -1007,9 +1007,10 @@ after current."
             (cond ((or (eq (car ent) 'author) (eq (car ent) 'authors))
                    (when (not (string-empty-p author-str))
                      (org-set-property "AUTHOR"
-                                       (ref-man--replace-non-ascii
-                                        (ref-man--fix-curly
-                                         (ref-man--build-bib-author author-str))))))
+                                       (ref-man--invert-accents
+                                        (ref-man--replace-non-ascii
+                                         (ref-man--fix-curly
+                                          (ref-man--build-bib-author author-str)))))))
                   ((and (eq (car ent) 'isInfluential)
                         (eq (cdr ent) 't))
                    (outline-back-to-heading)
@@ -1031,6 +1032,8 @@ after current."
       (let ((key (ref-man-parse-bib-property-key)))
         (unless (or key ignore-errors)
           (debug)
+          ;; FIXME: This function should filter the user read key
+          ;; ref-man--build-bib-key-from-plist
           (setq key (read-from-minibuffer (format "Could not parse key:\nauthor: %s\ntitle: %s\nyear: %s"
                                                   (org-entry-get (point) "AUTHOR")
                                                   (org-entry-get (point) "TITLE")
@@ -1105,6 +1108,8 @@ org writing functions."
                             (ref-man--replace-non-ascii (ref-man--fix-curly (cdr ent))))))
   (let ((key (ref-man-parse-bib-property-key)))
     (unless key
+      ;; FIXME: This function should filter the user read key
+      ;; ref-man--build-bib-key-from-plist
       (setq key (read-from-minibuffer (format "Could not parse key:\nauthor: %s\ntitle: %s\nyear: %s"
                                               (org-entry-get (point) "AUTHOR")
                                               (org-entry-get (point) "TITLE")
@@ -1207,19 +1212,40 @@ Only for interactive use.  Same as
 and kills the entry as bibtex."
   (ref-man-org-bibtex-read-from-headline t))
 
-(defun ref-man-org-bibtex-read-from-headline (&optional kill)
+(defun ref-man-org-publish-type (p-assoc)
+  "Get the correct published type for an org entry properties P-ASSOC alist."
+  (let ((venue (a-get p-assoc "VENUE"))
+        (booktitle (a-get p-assoc "BOOKTITLE"))
+        (journal (a-get p-assoc "JOURNAL")))
+    (cond ((and journal (not (string-match-p "arxiv\\|corr" journal)))
+           (setq p-assoc (a-dissoc p-assoc "VENUE" "BOOKTITLE"))
+           "article")
+          ((and booktitle (not (string-match-p "arxiv\\|corr" booktitle)))
+           (setq p-assoc (a-dissoc p-assoc "JOURNAL" "VENUE"))
+           "inproceedings")
+          ((and venue (not (string-match-p "arxiv\\|corr" venue)))
+           (setq p-assoc (a-dissoc p-assoc "JOURNAL" "BOOKTITLE"))
+           "inproceedings")
+          (t "unpublished"))))
+
+(defun ref-man-org-bibtex-read-from-headline (&optional kill gdrive)
   "Parse the headline at point and convert to a bib entry.
 The entry is appended to `ref-man-bibtex-save-ring'.  When
 optional KILL is non-nill, the entry is also added to `kill-ring'
-with `kill-new'."
+with `kill-new'.
+
+When optional GDRIVE is non-nil include a (possible) gdrive gdrive
+from `ref-man-public-links-cache'"
   (interactive)
   (if (eq major-mode 'org-mode)
       (let* ((props (org-entry-properties))
              (bib-str (list
-                       (cons "type"  (concat "@" (cdr (assoc "BTYPE" props))))
+                       (cons "type" (concat "@" (ref-man-org-publish-type props)))
                        (cons "key"  (cdr (assoc "CUSTOM_ID" props)))
                        (cons "title"  (cdr (assoc "TITLE" props)))
                        (cons "author"  (cdr (assoc "AUTHOR" props)))
+                       (cons "journal"  (cdr (assoc "JOURNAL" props)))
+                       (cons "publisher"  (cdr (assoc "PUBLISHER" props)))
                        (cons "venue"  (cdr (assoc "VENUE" props)))
                        (cons "booktitle"  (cdr (assoc "BOOKTITLE" props)))
                        (cons "volume"  (cdr (assoc "VOLUME" props)))
@@ -1229,15 +1255,23 @@ with `kill-new'."
                        (cons "pages"  (cdr (assoc "PAGES" props)))
                        (cons "doi"  (cdr (assoc "DOI" props)))
                        (cons "url"  (cdr (assoc "URL" props)))
+                       (cons "gdrive" (and (cdr (assoc "PDF_FILE" props))
+                                         (gethash (replace-regexp-in-string
+                                                   ref-man-org-file-link-re "\\2"
+                                                   (cdr (assoc "PDF_FILE" props)))
+                                                  ref-man-public-links-cache)))
                        (cons "publisher"  (cdr (assoc "PUBLISHER" props)))
                        (cons "organization"  (cdr (assoc "ORGANIZATION" props)))))
              (header (concat (cdr (assoc "type" bib-str)) "{" (cdr (assoc "key" bib-str)) ",\n"))
              (bib-str (delq (assoc "type" bib-str) bib-str))
              (bib-str (delq (assoc "key" bib-str) bib-str))
+             (bib-str (if (and gdrive (assoc "gdrive" bib-str))
+                          bib-str (delq (assoc "gdrive" bib-str) bib-str)))
              (bib-str (concat header
                               (mapconcat (lambda (x)
                                            (if (cdr x) (concat "  " (car x) "={" (cdr x) "},\n")))
-                                         bib-str "") "}\n")))
+                                         bib-str "") "}\n"))
+             (bib-str (ref-man--replace-non-ascii bib-str)))
         (when kill
           (kill-new bib-str))
         (push bib-str ref-man-bibtex-save-ring)
@@ -1317,12 +1351,14 @@ the headline itself.  Default is to edit the headline also."
               ;; (`("=key=" . ,_) (org-set-property "CUSTOM_ID" (ref-man--fix-curly (cdr ent))))
               (`("=key=" . ,_) nil)     ; Ignore =key=
               (`("timestamp" . ,_) nil)     ; Ignore timestamp
-              (`("author" . ,_) (org-set-property "AUTHOR" (ref-man--replace-non-ascii
-                                                            (ref-man--trim-and-unquote
-                                                             (ref-man--fix-curly (cdr ent))))))
-              (`(,_ . ,_) (org-set-property (upcase (car ent)) (ref-man--replace-non-ascii
-                                                                (ref-man--trim-and-unquote
-                                                                 (ref-man--fix-curly (cdr ent))))))))
+              (`("author" . ,_) (org-set-property "AUTHOR" (ref-man--invert-accents
+                                                            (ref-man--replace-non-ascii
+                                                             (ref-man--trim-and-unquote
+                                                              (ref-man--fix-curly (cdr ent)))))))
+              (`(,_ . ,_) (org-set-property (upcase (car ent)) (ref-man--invert-accents
+                                                                (ref-man--replace-non-ascii
+                                                                 (ref-man--trim-and-unquote
+                                                                  (ref-man--fix-curly (cdr ent)))))))))
        ;; Put key generated by own rules
       (org-set-property "CUSTOM_ID" (ref-man-parse-bib-property-key)))))
 
@@ -1841,6 +1877,8 @@ is meant to operate in batch mode."
         ;; (setq ref-man--subtree-list
         ;;       (plist-put (plist-put ref-man--subtree-list :url url) :file file))
         )))
+(make-obsolete 'ref-man--eww-pdf-download-callback-store 'ref-man--eww-pdf-download-callback-store-new
+               "ref-man 0.3.2")
 
 (defun ref-man--check-response-buffer (buf)
   "Check if buffer BUF is json or pdf.
@@ -1855,6 +1893,7 @@ Examine buffer for certain characters % and { as a heuristic."
             ((eq 60 char) 'html)
             (t char)))))
 
+;; FIXME: This should use `ref-man--fetch-from-pdf-url-new'
 (defun ref-man--handle-json-response (json-data &optional storep)
   "Handle JSON response from `url-retrieve'.
 JSON-DATA is parsed and sent by `ref-man--eww-pdf-download-callback'.
@@ -1878,7 +1917,11 @@ STATUS is response status (I think).  URL is the url.
 
 With optional argument VIEW non-nil, view the pdf file also.
 OVERWRITE specifies to overwrite the target pdf file without
-confirmation if it exists."
+confirmation if it exists.
+
+If `ref-man--org-gscholar-launch-buffer' is non-nil then PDF-FILE
+property in the property drawer for the org entry at point is
+inserted or updated.  See `ref-man--insert-org-pdf-file-property'."
   (if (plist-get status :error)
       (message (format "[ref-man] Error occured while download %s" url))
     (let ((file (ref-man-files-filename-from-url url))
@@ -2203,6 +2246,31 @@ citations after that."
    (cdass 'citations ss-data) "citations" 'ss ignore-errors)
   (outline-up-heading 1)
   (org-hide-block-all))
+
+(defun ref-man-org-get-bib-from-org-link (&optional get-path)
+  "Get a possible bibtext from an org link in text.
+The link must point to an org heading from which a bibtex entry
+can be parsed."
+  (save-excursion
+    (save-restriction
+      (widen)
+      (let* ((link (org-element-context))
+             (type (org-element-property :type link))
+             (path (org-element-property :path link)))
+        (when (member type '("fuzzy" "custom-id" "coderef"))
+          (org-link-search
+           (pcase type
+             ("custom-id" (concat "#" path))
+             ("coderef" (format "(%s)" path))
+             (_ path))
+           ;; Prevent fuzzy links from matching themselves.
+           (and (equal type "fuzzy")
+	        (+ 2 (org-element-property :begin link)))
+           t)                           ; don't change visibility around point
+          (if get-path
+              (list path (org-entry-get (point) "CUSTOM_ID")
+                    (ref-man-org-bibtex-read-from-headline nil t))
+            (ref-man-org-bibtex-read-from-headline nil t)))))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END org utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -2219,6 +2287,86 @@ citations after that."
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START org commands ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;
+(defun ref-man-export-article (&optional buffer type)
+  "Export current org buffer subtree as a pdf article.
+When optional BUFFER is non-nil, export the full buffer.
+Optional TYPE specifies the output type, can be 'pdf or 'html."
+  (interactive)
+  (let* ((org-export-with-toc nil)
+         (org-export-with-broken-links 'mark)
+         (org-export-with-timestamps nil)
+         (org-export-with-clocks nil)
+         (org-export-with-sub-superscripts nil)
+         (org-export-with-date nil)
+         (org-export-with-properties nil)
+         (org-export-with-latex nil)
+         (type (or type (and current-prefix-arg 'html) 'pdf))
+         (tmp-bib-file (make-temp-file "ref-bib-" nil ".bib"))
+         (tmp-md-file (make-temp-file "ref-md-" nil ".md"))
+         (docproc-dir "/home/joe/lib/docprocess/")
+         (out-file (if (eq type 'pdf)
+                       (path-join docproc-dir (concat (f-base tmp-md-file) "_files")
+                                  (concat (f-base tmp-md-file) ".pdf"))
+                     (path-join docproc-dir (concat (f-base tmp-md-file) ".html"))))
+         (pandocwatch (path-join docproc-dir "pandocwatch.py"))
+         (python "/usr/bin/python")
+         (title (substring-no-properties (org-get-heading)))
+         (yaml-header (format "---
+title: %s
+author: Akshay Badola
+bibliography: %s
+link-citations: true
+mathjax: %s
+csl: %s
+---
+"
+                              title
+                              tmp-bib-file
+                              (path-join docproc-dir "/settings/MathJax")
+                              (path-join docproc-dir "/settings/csl/my.csl")))
+         bibtexs)
+    (save-excursion
+      (save-restriction
+        (unless buffer
+          (org-narrow-to-subtree)
+          (org-end-of-meta-data)
+          (narrow-to-region (point) (point-max)))
+        (goto-char (point-min))
+        (while (re-search-forward org-link-any-re nil t nil)
+          (push (ref-man-org-get-bib-from-org-link t) bibtexs))
+        (with-temp-buffer
+          (insert (mapconcat (lambda (x) (nth 2 x)) bibtexs ""))
+          (goto-char (point-min))
+          (while (re-search-forward "gdrive=" nil t nil)
+            (replace-match "issn="))
+          (write-region (point-min) (point-max) tmp-bib-file))
+        (org-export-to-buffer 'md "*temp-org-buf*" nil nil nil nil)
+        (with-current-buffer "*temp-org-buf*"
+          (while (re-search-forward "\\[BROKEN LINK: \\(.+?\\)]" nil t) ; Insert links
+            (let ((path (string-remove-prefix "\\" (match-string 1))))
+              (replace-match (format "[@%s]" (car (a-get bibtexs path))))))
+          (goto-char (point-min))
+          (while (re-search-forward "\\\\(\\(.+\\)\\\\)" nil t)
+            (replace-match "$\\1$"))    ; Replace \(\) math format as pandoc doesn't work with that
+          (let ((case-fold-search nil)) ; remove TODO
+            (goto-char (point-min))
+            (while (re-search-forward "(.*TODO.*)" nil t)
+              (replace-match "")))
+          (goto-char (point-max))
+          (insert "\n\n# References\n")
+          (goto-char (point-min))
+          (insert (concat yaml-header "\n"))
+          (write-region (point-min) (point-max) tmp-md-file))
+        (shell-command (format "cd %s && %s %s -ro --extra-opts --input-files %s -g %s"
+                               docproc-dir
+                               python
+                               pandocwatch
+                               tmp-md-file
+                               type)
+                       "*ref-man-export-article*")
+        (delete-file tmp-bib-file)
+        (delete-file tmp-md-file)
+        (find-file out-file)))))
 
 ;; TODO: Send signal to flask server to update cache, though it'll be done next
 ;;       time it starts
@@ -2246,6 +2394,7 @@ citations after that."
 ;; TODO: Replace all property setters in this section with
 ;;       ref-man--insert-org-pdf-file-property
 ;; TODO: Fix redundancies in bib fetching and pdf fetching
+;; FIXME: This should use `ref-man--fetch-from-pdf-url-new'
 (defun ref-man-try-fetch-bib-insert-as-org-heading (&optional fetch-pdf)
   "Fetches the bib from URL in properties of current heading and updates the heading"
   ;; NOTE: This is how it should be but for now only arxiv
@@ -2340,10 +2489,10 @@ both update the entry and display the data."
   (interactive)
   (when (called-interactively-p 'any)
     ;; CHECK: Why am I doing this let to meh?
-    (let ((meh current-prefix-arg))
-      (cond ((and meh (equal meh '(4)))   ; update only
+    (let ((cpa current-prefix-arg))
+      (cond ((and cpa (equal cpa '(4)))   ; update only
              (setq update t))
-            ((and meh (equal meh '(16)))  ; both update and display
+            ((and cpa (equal cpa '(16)))  ; both update and display
              (setq update t)
              (setq display t))
             (t (setq display t)))))        ; by default only display
@@ -2391,13 +2540,19 @@ both update the entry and display the data."
     (message "[ref-man] Not in org-mode") nil))
 
 (defun ref-man--update-props-from-assoc (props-alist)
+  "Update a heading and property drawer from a PROPS-ALIST."
   (org-insert-property-drawer)
   (seq-do (lambda (x)
-            (unless (string-equal (car x) "ABSTRACT")
-              (org-entry-put (point) (car x) (cdr x))))
+            (cond ((not (string-equal (car x) "ABSTRACT"))
+                   (org-entry-put (point) (car x) (cdr x)))
+                  ((string-equal (car x) "AUTHOR")
+                   (org-entry-put (point) (car x) (ref-man--invert-accents (cdr x))))
+                  (t nil)))
           props-alist)
   (let ((key (ref-man-parse-bib-property-key)))
     (unless key
+      ;; FIXME: This function should filter the user read key
+      ;; ref-man--build-bib-key-from-plist
       (setq key (read-from-minibuffer (format "Could not parse key:\nauthor: %s\ntitle: %s\nyear: %s"
                                               (org-entry-get (point) "AUTHOR")
                                               (org-entry-get (point) "TITLE")
@@ -2409,7 +2564,10 @@ both update the entry and display the data."
     (end-of-line)
     (insert (cdass "TITLE" props-alist)))
   (when (assoc "ABSTRACT" props-alist)
-    (ref-man-org-insert-abstract (cdass "ABSTRACT" props-alist) (current-buffer))))
+    (ref-man-org-insert-abstract (cdass "ABSTRACT" props-alist) (current-buffer)))
+  (when (and (not (string= (org-get-heading) (cdass "TITLE" props-alist)))
+             (y-or-n-p "Heading and Title differ. Update? "))
+    (org-edit-headline (cdass "TITLE" props-alist))))
 
 (defun ref-man-parse-ss-search-result (result)
   (let ((retval nil))
@@ -3116,7 +3274,9 @@ property drawer as the URL property."
 ;;       (ref-man-try-fetch-pdf-from-url url storep))))
 
 (defun ref-man-eww-download-pdf (url &optional view)
-  "Download the pdf file from a website and optionally view it"
+  "Download the pdf file from the URL and optionally VIEW it.
+Also update the PDF-FILE property in org heading drawer if the
+web buffer was called from an org buffer."
   (interactive)
   (let ((file (ref-man-files-check-pdf-file-exists url t))
         (url (ref-man-url-maybe-proxy url)))
@@ -3148,6 +3308,7 @@ eww. Stores the buffer and the position from where it was called."
     (message "[ref-man] Not in org-mode") nil))
 (make-obsolete 'ref-man-org-search-heading-on-gscholar-with-eww
                'ref-man-search-web "")
+
 ;; FIXME: This function may take up a lot of processing. Should implement some
 ;;        cache for it Can be called after downloading pdf from any website
 ;;

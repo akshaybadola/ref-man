@@ -29,7 +29,7 @@ def load_ss_cache(data_dir):
         for key, ind in assoc:
             if c[ind]:
                 ss_cache[key][c[ind]] = c[-1]
-    print(f"Loaded cache {ss_cache}")
+    print(f"Loaded cache with {sum(len(x) for x in ss_cache.values())} entries")
     return ss_cache
 
 

@@ -461,7 +461,7 @@ class Server:
             else:
                 self.logger.warn("Proxy dead. Fetching without proxy")
                 response = requests.get(url, headers=default_headers)
-            if url.startswith("http:") and response.url.startswith("https:"):
+            if url.startswith("http:") or response.url.startswith("https:"):
                 return Response(response.content)
             elif response.url != url:
                 if response.headers["Content-Type"] in\

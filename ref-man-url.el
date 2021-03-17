@@ -44,6 +44,10 @@ localhost specified by this port."
 
 (defvar ref-man-python-server-port)     ; from `ref-man-core'
 
+(defvar ref-man-url-supported-sites
+  '(acl arxiv neurips mlr aaai acm doi-cvpr cvf cvf-old openreview ss)
+  "List of supported sites for fetching pdf.")
+
 ;; CHECK: What does this do?
 (defun ref-man-url-to-arxiv-id (url)
   "Get arxivid from URL."
@@ -162,13 +166,13 @@ localhost specified by this port."
        (cond ((string-match-p "arxiv.org" url)
               (string-match-p "/pdf/" url))
              ((string-match-p "aaai.org" url)
-              (string-match-p "/download/" url))
+              (or (string-match-p "/download/" url)
+                  (string-match-p "ojs.aaai.org.+article/view/[0-9]+/[0-9]+" url)))
              ((string-match-p "openreview.net" url)
               (string-match-p "pdf" url))
              ((string-match-p "dl.acm.org" url)
               (or (string-match-p "doi/pdf" url) (string-match-p "gateway.cfm" url)))
              (t (string-match-p "\\.pdf$" url)))))
-
 
 (defun ref-man-url-get-bibtex-link-from-nips-url  (url))
 (defun ref-man-url-get-bibtex-link-from-cvf-url  (url))
@@ -275,6 +279,7 @@ links."
 
 ;; NOTE: This is equivalent to run-hook-with-args-until-success
 ;; TODO: This should be a pcase for brevity
+;; The list of `site's should be separate
 (defun ref-man-url-get-pdf-link-helper (site url buf &optional status)
   "Helper function to get pdf link from URL given type of SITE.
 BUF is the html buffer retrieved from URL.  Optional status is a
@@ -437,7 +442,8 @@ ARGS is for compatibility and not used."
     (_ (cadr x))))
 
 (defun ref-man-url-get-best-pdf-url (urls)
-  "Get the best url from a list of URLS according to ease of downloading."
+  "Get the best url from a list of URLS according to ease of downloading.
+Return a '(site url) pair."
   (let ((pdf-urls (-filter #'ref-man-url-downloadable-pdf-url-p urls)))
     (if pdf-urls
         (cons 'pdf (car pdf-urls))
@@ -452,9 +458,14 @@ ARGS is for compatibility and not used."
                                                              cvf-old openreview ss doi))))
                            (util/pairs-to-alist links)))
              (best (car links)))
-        (if (= (length best) 2)
-            (car best)
-          (ref-man-url--sort-best-subroutine best))))))
+        (cond ((and (symbolp (car best))
+                    (listp (cdr best)))
+               (cons (car best)
+                     (cadr best)))
+              ((and (symbolp (car best))
+                    (stringp (cdr best)))
+               best)
+              (t (ref-man-url--sort-best-subroutine best)))))))
 
 (defun ref-man-url-get-pdf-url-according-to-source (url &optional callback cbargs)
   "Fetch a PDF url according to te source URL.

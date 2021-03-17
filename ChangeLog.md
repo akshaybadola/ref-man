@@ -37,4 +37,14 @@
 - Fixed some bugs in cache.
 - Changed python process launch args to specify cache related args.
 - Fixed an issue with semantic scholar params where it wouldn't switch to
-  default if chrome was running and params couldn't be updated..
+  default if chrome was running and params couldn't be updated.
+
+## NEXT
+- Added `ref-man--invert-accents`.
+- Strings are now inserted in org-mode without escaping non-ascii due to sytnax
+  issues arising from that.
+- Fixed a `cons` bug in `ref-man-url-get-best-pdf-url`
+- Modified `ref-man-org-bibtex-read-from-headline`.
+- Added `ref-man-org-get-bib-from-org-link`.
+- Added command `ref-man-export-article` which exports the subtree to either pdf
+  or html via pandoc. Primary advantage being auto generation of references.

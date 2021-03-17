@@ -80,9 +80,8 @@ class CacheHelper:
 
     def copy_file(self, fname):
         local_path = self._local_path(fname)
-        remote_path = self._remote_path(fname)
         try:
-            p = Popen(f"rclone --no-update-modtime -v copy {local_path} {remote_path}",
+            p = Popen(f"rclone --no-update-modtime -v copy {local_path} {self.remote_dir}",
                       shell=True, stdout=PIPE, stderr=PIPE)
             out, err = p.communicate(timeout=10)
             err = err.decode("utf-8").lower()

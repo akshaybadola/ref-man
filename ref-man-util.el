@@ -46,6 +46,36 @@
     "through" "to" "too" "under" "up" "very" "was" "were"
     "what" "when" "where" "which" "who" "why" "will" "with"))
 
+(defvar ref-man-bibtex-ascii-accents
+  '(("í" . "{\\\\'i}")
+    ("æ" . "{\\\\ae}")
+    ("ć" . "{\\\\'c}")
+    ("é" . "{\\\\'e}")
+    ("ä" . "{\\\\\"a}")
+    ("è" . "{\\\\`e}")
+    ("à" . "{\\\\`a}")
+    ("á" . "{\\\\'a}")
+    ("ø" . "{\\\\o}")
+    ("ë" . "{\\\\\"e}")
+    ("ü" . "{\\\\\"u}")
+    ("ñ" . "{\\\\~n}")
+    ("ņ" . "{\\\\c{n}}")
+    ("ñ" . "{\\\\~n}")
+    ("å" . "{\\\\aa}")
+    ("ö" . "{\\\\\"o}")
+    ("á" . "{\\\\'a}")
+    ("í" . "{\\\\'i}")
+    ("ó" . "{\\\\'o}")
+    ("ó" . "{\\\\'o}")
+    ("ú" . "{\\\\'u}")
+    ("ú" . "{\\\\'u}")
+    ("ý" . "{\\\\'y}")
+    ("š" . "{\\\\v{s}}")
+    ("č" . "{\\\\v{c}}")
+    ("ř" . "{\\\\v{r}}")
+    ("š" . "{\\\\v{s}}")
+    ("İ" . "{\\\\.i}")))
+
 (defvar ref-man-bibtex-ascii-replacement-strings
   '(("í" . "{\\\\'i}")
     ("æ" . "{\\\\ae}")
@@ -250,16 +280,24 @@ Identical to `ref-man--trim-whitespace' but remove quotes also."
   (member x ref-man-stop-words))
 
 ;; CHECK: Might be faster with a pcase
-(defun ref-man--transcribe (str change-list)
+(defun ref-man--transcribe (str change-list &optional inverse)
   "Transcribe non-ascii characters in STR to ASCII lookalikes.
 Argument CHANGE-LIST is an alist of regexps, `(A . B)' changes
-from A to B."
+from A to B.
+
+With optional non-nil INVERSE, do the opposite and change B to
+A."
   (let ((content str)
         (change-list (or change-list bibtex-autokey-transcriptions)))
-    (dolist (pattern change-list)
-      (setq content (replace-regexp-in-string (car pattern)
-                                              (cdr pattern)
-                                              content t)))
+    (if inverse
+        (dolist (pattern change-list)
+          (setq content (replace-regexp-in-string (cdr pattern)
+                                                  (car pattern)
+                                                  content t)))
+      (dolist (pattern change-list)
+        (setq content (replace-regexp-in-string (car pattern)
+                                                (cdr pattern)
+                                                content t))))
     content))
 
 (defun ref-man-delete-blank-lines-in-region (&optional beg end no-trailing-newline)
@@ -304,16 +342,26 @@ This function is aliased from URL `https://github.com/akshaybadola/emacs-util'."
   (with-current-buffer buf
     (ref-man-delete-blank-lines-in-region (point-min) (point-max) no-trailing-newline)))
 
-(defun ref-man--replace-non-ascii (str)
+(defun ref-man--replace-non-ascii (str &optional inverse)
   "Replace non-ascii characters in STR with escape codes.
 
 Uses `ref-man-bibtex-ascii-replacement-strings' for replacements.
 If `org-ref-nonascii-latex-replacements' exists, then the
-replacements are a union of both above alists."
+replacements are a union of both above alists.
+
+With non-nil optional INVERSE, perform the inverse replacement
+from the alist."
   (ref-man--transcribe str (or (and (boundp 'org-ref-nonascii-latex-replacements)
                                     (-union ref-man-bibtex-ascii-replacement-strings
                                             org-ref-nonascii-latex-replacements))
-                               ref-man-bibtex-ascii-replacement-strings)))
+                               ref-man-bibtex-ascii-replacement-strings)
+                       inverse))
+
+(defun ref-man--invert-accents (str)
+  "Replace escaped ascii characters in STR with non-ascii characters.
+
+Performs inverse of `ref-man--replace-non-ascii'."
+  (ref-man--transcribe str ref-man-bibtex-ascii-accents t))
 
 (defun ref-man-save-headings-before-pdf-file-open (arg)
   "Add advice to save headings and paths before calling `org-open-at-point'.

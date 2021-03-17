@@ -544,7 +544,12 @@ function."
 
 (defun ref-man-chrome-download-pdf (&optional view)
   "Download the pdf for current google scholar entry.
-With optional VIEW, view the pdf also."
+With optional VIEW, view the pdf also.
+
+If the web buffer was called from an org file and
+`ref-man--org-gscholar-launch-buffer' is non-nil then PDF-FILE
+property in the property drawer for the org entry at point is
+inserted or updated.  See `ref-man--insert-org-pdf-file-property'."
   (interactive)
   (let (
         ;; FIXME: unused
@@ -829,17 +834,20 @@ mode."
         (chromium (or (and (processp (ref-man-chrome--chromium-running)) 'internal)
                       (and (integerp (ref-man-chrome--chromium-running)) 'external))))
     (setq ref-man-chrome--chromium-port port)
-    (cond ((eq chromium 'internal)
-           (if (y-or-n-p "Existing internal chromium process found. Kill it and start headless? ")
-               (progn (ref-man-chrome--kill-chromium-process)
-                      (message "[ref-man-chrome] Killing old and starting new chromium.")
-                      (ref-man-chrome--process-helper headless data-dir port))
-             (message "[ref-man-chrome] Not starting chromium")))
-          ((eq chromium 'external)
-           (message "[ref-man-chrome] Chromium running outside emacs. Cannot kill and start new."))
-          ((not chromium)
-           (message "[ref-man-chrome] Starting new chromium.")
-           (ref-man-chrome--process-helper headless data-dir port)))))
+    (ref-man-chrome--process-helper headless data-dir port)
+    ;; NOTE: start process regardless of whether running previously
+    ;; (cond ((eq chromium 'internal)
+    ;;        (if (y-or-n-p "Existing internal chromium process found. Kill it and start headless? ")
+    ;;            (progn (ref-man-chrome--kill-chromium-process)
+    ;;                   (message "[ref-man-chrome] Killing old and starting new chromium.")
+    ;;                   (ref-man-chrome--process-helper headless data-dir port))
+    ;;          (message "[ref-man-chrome] Not starting chromium")))
+    ;;       ((eq chromium 'external)
+    ;;        (message "[ref-man-chrome] Chromium running outside emacs. Cannot kill and start new."))
+    ;;       ((not chromium)
+    ;;        (message "[ref-man-chrome] Starting new chromium.")
+    ;;        (ref-man-chrome--process-helper headless data-dir port)))
+    ))
 
 (defun ref-man-chrome-restart ()
   "Restart the chrome process.
@@ -1136,6 +1144,8 @@ history also."
 
 ;; TODO: I don't think shutdown preserves history right now as it always
 ;;       disables `ref-man-chrome--initialized-p'
+;; FIXME: There's some bug here which leads to thousands of buffers
+;;        left open.
 (defun ref-man-chrome-init (&optional not-headless quiet)
   "Initialze the `ref-man-chrome' plugin.
 With a non-nil optional NOT-HEADLESS, the chromium process is
