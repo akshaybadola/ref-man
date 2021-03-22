@@ -1423,11 +1423,20 @@ buffer and sanitize the entry at point."
                   (shell-command-to-string
                    (format "%s -m ref_man --version" python))))
 
-(defun ref-man-py-mod-version (python)
-  "Return version for python module.
+(defun ref-man-installed-py-mod-version (python &optional strip)
+  "Return version for installed python module.
 PYTHON is the path for python executable."
   (shell-command-to-string
    (format "%s -m ref_man --version" python)))
+
+(defun ref-man-file-py-mod-version ()
+  "Return the version of python module in file `const.py'"
+  (let* ((const-file (path-join ref-man-home-dir "ref_man" "const.py"))
+        (buf (find-file-noselect const-file)))
+    (with-current-buffer buf
+      (goto-char (point-min))
+      (re-search-forward "__version__ = \"\\(.+\\)\"")
+      (substring-no-properties (match-string 1)))))
 
 ;; TODO: Check python3 version > 3.6.9
 (defun ref-man-python-setup-env ()
@@ -1435,7 +1444,8 @@ PYTHON is the path for python executable."
 The directory is relative to `ref-man' install directory
 `ref-man-home-dir'."
   (when (string-match-p "no.*in.*"
-                        (ref-man--trim-whitespace (shell-command-to-string "which python3")))
+                        (ref-man--trim-whitespace
+                         (shell-command-to-string "which python3")))
     (user-error "No python3 in system"))
   (let ((env (path-join ref-man-home-dir "env")))
     (unless (f-exists? env)
@@ -1449,17 +1459,24 @@ Make sure not package 'virtualenv' exists in current python environment")))
       (when (and (not python) (ref-man--create-venv env))
         (user-error "Could not install venv.\n
 Make sure not package 'virtualenv' exists in current python environment"))
-      (let ((env-has-no-ref-man (ref-man-no-py-mod-in-venv python)))
-        (when env-has-no-ref-man
-          (progn (message "ref-man not found. Installing in %s" env)
+      (let ((env-has-no-ref-man (ref-man-no-py-mod-in-venv python))
+            (update (not (equal (ref-man-file-py-mod-version)
+                                (string-trim (replace-regexp-in-string
+                                              "ref-man.*? version \\(.*\\)" "\\1"
+                                              (ref-man-installed-py-mod-version
+                                               (path-join ref-man-home-dir "env" "bin" "python"))))))))
+        (when (or update env-has-no-ref-man)
+          (progn (message "%s %s" (cond (env-has-no-ref-man "ref-man-server not found. Installing in ")
+                                        (update "New version of ref-man. Updating existing ref-man-server in "))
+                          env)
                  (shell-command
                   (concat "source " (path-join env "bin" "activate") " && "
-                          (format "cd %s && python -m pip install ."
+                          (format "cd %s && python -m pip install -U ."
                                   ref-man-home-dir))
                   "*ref-man-cmd*" "*ref-man-cmd*")))
-        (if (ref-man-py-mod-version python)
+        (if (ref-man-installed-py-mod-version python)
             (message "%s found in %s" (ref-man--trim-whitespace
-                                       (ref-man-py-mod-version python))
+                                       (ref-man-installed-py-mod-version python))
                      env)
           (user-error "Could not install ref-man in %s" env))))))
 
