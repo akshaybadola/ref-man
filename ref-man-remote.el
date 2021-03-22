@@ -109,16 +109,13 @@ disk."
                         ref-man-remote-documents-dir
                         ref-man-public-links-cache-file )
                 t)))
-      (when (and buf
-                 (string-match-p "updating cache"
-                                 (with-current-buffer buf (buffer-string))))
-        (with-current-buffer buf
-          (goto-char (point-min))
-          (re-search-forward "\r?\n\r?\n")
-          (message (buffer-substring-no-properties (point) (point-max))))
-        ;; (setq ref-man-remote-cache-update-check-timer
-        ;;       (run-at-time 5 60 #'ref-man-remote-check-cache-updated))
-        ))))
+      ;; NOTE: Timer not implemented
+      ;; (setq ref-man-remote-cache-update-check-timer
+      ;;       (run-at-time 5 60 #'ref-man-remote-check-cache-updated))
+      (with-current-buffer buf
+        (goto-char (point-min))
+        (re-search-forward "\r?\n\r?\n")
+        (message (buffer-substring-no-properties (point) (point-max)))))))
 
 (defun ref-man-remote-cancel-cache-update-timers ()
   "Cancel the timers which call `ref-man-check-cache-updated'."

@@ -101,8 +101,13 @@
   :type 'file
   :group 'ref-man)
 
+(defcustom ref-man-bib-files nil
+  "List of `bibtex' files to search for references while generating articles."
+  :type 'list
+  :group 'ref-man)
+
 (defcustom ref-man-temp-bib-file-path (expand-file-name "~/.ref-man/.temp.bib")
-  "Temprory bib file to append any extract bibtex info."
+  "Temporary bib file to append any extract bibtex info."
   :type 'file
   :group 'ref-man)
 
@@ -1692,6 +1697,15 @@ Org buffer defaults to `ref-man--org-gscholar-launch-buffer'."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START org utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defun ref-man-pandoc-bib-string (&optional bib-file)
+  "Generate the bibliography part of pandoc yaml metadata.
+The files included are those in `ref-man-bib-files'. With
+optional BIB-FILE, include that also."
+  (let ((bib-files (if bib-file
+                       (cons bib-file ref-man-bib-files)
+                     ref-man-bib-files)))
+    (concat "bibliography:\n" (mapconcat (lambda (x) (concat " - " x)) bib-files "\n"))))
+
 (defun ref-man-org-clear-property-drawer (&optional org-buf pt)
   "Clear the property drawer at point in buffer ORG-BUF.
 Optional PT is the point to go to before clearing the drawer,
@@ -2269,8 +2283,10 @@ can be parsed."
            t)                           ; don't change visibility around point
           (if get-path
               (list path (org-entry-get (point) "CUSTOM_ID")
-                    (ref-man-org-bibtex-read-from-headline nil t))
-            (ref-man-org-bibtex-read-from-headline nil t)))))))
+                    (and (org-entry-get (point) "CUSTOM_ID")
+                         (ref-man-org-bibtex-read-from-headline nil t)))
+            (and (org-entry-get (point) "CUSTOM_ID")
+                 (ref-man-org-bibtex-read-from-headline nil t))))))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END org utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -2287,53 +2303,75 @@ can be parsed."
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START org commands ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;
-(defun ref-man-export-article (&optional buffer type)
+(defun ref-man-org-export-article-no-urls (&optional buffer type)
+  (interactive)
+  (ref-man-org-export-article buffer (or type (and current-prefix-arg 'html) 'pdf) t))
+
+(defun ref-man-org-export-article (&optional buffer type no-urls no-gdrive with-toc)
   "Export current org buffer subtree as a pdf article.
 When optional BUFFER is non-nil, export the full buffer.
-Optional TYPE specifies the output type, can be 'pdf or 'html."
+Optional TYPE specifies the output type, can be 'pdf or 'html.
+Optional non-nil NO-URLS means to not include URLs in generated
+bibliography, similar for NO-GDRIVE. Default is to include both."
   (interactive)
-  (let* ((org-export-with-toc nil)
-         (org-export-with-broken-links 'mark)
-         (org-export-with-timestamps nil)
-         (org-export-with-clocks nil)
-         (org-export-with-sub-superscripts nil)
-         (org-export-with-date nil)
-         (org-export-with-properties nil)
-         (org-export-with-latex nil)
-         (type (or type (and current-prefix-arg 'html) 'pdf))
-         (tmp-bib-file (make-temp-file "ref-bib-" nil ".bib"))
-         (tmp-md-file (make-temp-file "ref-md-" nil ".md"))
-         (docproc-dir "/home/joe/lib/docprocess/")
-         (out-file (if (eq type 'pdf)
-                       (path-join docproc-dir (concat (f-base tmp-md-file) "_files")
-                                  (concat (f-base tmp-md-file) ".pdf"))
-                     (path-join docproc-dir (concat (f-base tmp-md-file) ".html"))))
-         (pandocwatch (path-join docproc-dir "pandocwatch.py"))
-         (python "/usr/bin/python")
-         (title (substring-no-properties (org-get-heading)))
-         (yaml-header (format "---
+  (save-mark-and-excursion
+    (let* ((org-export-with-toc t)
+           (org-export-with-todo-keywords nil)
+           (org-export-with-tags nil)
+           (org-export-with-broken-links 'mark)
+           (org-export-with-timestamps nil)
+           (org-export-with-clocks nil)
+           (org-export-with-sub-superscripts nil)
+           (org-export-with-date nil)
+           (org-export-with-properties nil)
+           (org-export-with-latex nil)
+           (type (or type (and current-prefix-arg 'html) 'pdf))
+           (tmp-bib-file (make-temp-file "ref-bib-" nil ".bib"))
+           (tmp-md-file (make-temp-file "ref-md-" nil ".md"))
+           (docproc-dir "/home/joe/lib/docprocess/")
+           (csl-file (path-join docproc-dir (if no-urls
+                                                "/settings/csl/apsa-no-urls.csl"
+                                              "/settings/csl/apsa-urls.csl")))
+           (mathjax-path (path-join docproc-dir "/settings/MathJax"))
+           (out-file (if (eq type 'pdf)
+                         (path-join docproc-dir (concat (f-base tmp-md-file) "_files")
+                                    (concat (f-base tmp-md-file) ".pdf"))
+                       (path-join docproc-dir (concat (f-base tmp-md-file) ".html"))))
+           (pandocwatch (path-join docproc-dir "pandocwatch.py"))
+           (python "/usr/bin/python")
+           (title (substring-no-properties (org-get-heading)))
+           (yaml-header (format "---
 title: %s
 author: Akshay Badola
-bibliography: %s
+%s
 link-citations: true
 mathjax: %s
 csl: %s
 ---
-"
-                              title
-                              tmp-bib-file
-                              (path-join docproc-dir "/settings/MathJax")
-                              (path-join docproc-dir "/settings/csl/my.csl")))
-         bibtexs)
-    (save-excursion
+" title (ref-man-pandoc-bib-string tmp-bib-file) mathjax-path csl-file))
+           bibtexs pt-min pt-max)
       (save-restriction
         (unless buffer
           (org-narrow-to-subtree)
           (org-end-of-meta-data)
-          (narrow-to-region (point) (point-max)))
+          (setq pt-min (point))
+          (goto-char (point-max))
+          (while (and (re-search-backward org-complex-heading-regexp nil t)
+                      (not (equal
+                            (downcase
+                             (substring-no-properties (org-get-heading t t t t)))
+                            "references"))))
+          (setq pt-max (- (point) 1))
+          (narrow-to-region pt-min pt-max))
+        ;; Generate bibtexs from fuzzy links
         (goto-char (point-min))
         (while (re-search-forward org-link-any-re nil t nil)
           (push (ref-man-org-get-bib-from-org-link t) bibtexs))
+        ;; Insert standard pandoc references to bibtexs
+        (goto-char (point-min))
+        (while (re-search-forward org-link-any-re nil t nil)
+          (push (ref-man-org-get-bib-from-org-link t) bibtexs))
+        ;; Replace "gdrive" with "issn" in bibs
         (with-temp-buffer
           (insert (mapconcat (lambda (x) (nth 2 x)) bibtexs ""))
           (goto-char (point-min))
@@ -2342,13 +2380,23 @@ csl: %s
           (write-region (point-min) (point-max) tmp-bib-file))
         (org-export-to-buffer 'md "*temp-org-buf*" nil nil nil nil)
         (with-current-buffer "*temp-org-buf*"
+          (unless with-toc
+            (goto-char (point-min))
+            (let (toc-min toc-max)
+              (re-search-forward "# Table of Contents")
+              (beginning-of-line)
+              (setq toc-min (point))
+              (forward-paragraph 2)
+              (setq toc-max (point))
+              (delete-region toc-min toc-max)))
+          (goto-char (point-min))
           (while (re-search-forward "\\[BROKEN LINK: \\(.+?\\)]" nil t) ; Insert links
             (let ((path (string-remove-prefix "\\" (match-string 1))))
               (replace-match (format "[@%s]" (car (a-get bibtexs path))))))
           (goto-char (point-min))
           (while (re-search-forward "\\\\(\\(.+\\)\\\\)" nil t)
             (replace-match "$\\1$"))    ; Replace \(\) math format as pandoc doesn't work with that
-          (let ((case-fold-search nil)) ; remove TODO
+          (let ((case-fold-search nil)) ; remove snippets in parentheses marked TODO
             (goto-char (point-min))
             (while (re-search-forward "(.*TODO.*)" nil t)
               (replace-match "")))

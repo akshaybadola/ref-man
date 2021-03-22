@@ -39,12 +39,14 @@
 - Fixed an issue with semantic scholar params where it wouldn't switch to
   default if chrome was running and params couldn't be updated.
 
-## NEXT
+## [2021-03-22 Mon 08:56]
 - Added `ref-man--invert-accents`.
 - Strings are now inserted in org-mode without escaping non-ascii due to sytnax
   issues arising from that.
 - Fixed a `cons` bug in `ref-man-url-get-best-pdf-url`
 - Modified `ref-man-org-bibtex-read-from-headline`.
 - Added `ref-man-org-get-bib-from-org-link`.
-- Added command `ref-man-export-article` which exports the subtree to either pdf
+- Added command `ref-man-org-export-article` which exports the subtree to either pdf
   or html via pandoc. Primary advantage being auto generation of references.
+- Defined `ref-man-bib-files` for `ref-man-org-export-article`. Can be added to
+  other bibliography functions.
