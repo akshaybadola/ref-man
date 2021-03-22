@@ -155,10 +155,11 @@ class SemanticSearch:
                     if cmd and ("google-chrome" in cmd[0] or "chromium" in cmd[0]):
                         check_flag = True
                         break
-                print(f"Process {cmd[0]} found.")
+                if cmd:
+                    print(f"Process {cmd[0]} found.")
             except Exception as e:
                 print(e)
-            if check_flag:
+            if check_flag and cmd:
                 print(f"Trying to update Semantic Scholar Search params")
                 p = Popen(shlex.split(f"node {debugger_path}"), stdout=PIPE, stderr=PIPE)
                 out, err = p.communicate()
