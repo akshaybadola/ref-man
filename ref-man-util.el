@@ -357,6 +357,14 @@ from the alist."
                                ref-man-bibtex-ascii-replacement-strings)
                        inverse))
 
+(defun ref-man-not-pdf-files (&optional dir)
+  "Return list of files which are not pdf files in DIR.
+If DIR is not given it defaults to `ref-man-documents-dir'."
+  (-filter (lambda (x) (let ((case-fold-search t)
+                             (pdf-str (shell-command-to-string (format "file '%s'" x))))
+                         (not (string-match-p "pdf document" pdf-str))))
+           (f-files (or dir ref-man-documents-dir))))
+
 (defun ref-man--invert-accents (str)
   "Replace escaped ascii characters in STR with non-ascii characters.
 

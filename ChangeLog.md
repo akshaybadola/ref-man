@@ -50,3 +50,8 @@
   or html via pandoc. Primary advantage being auto generation of references.
 - Defined `ref-man-bib-files` for `ref-man-org-export-article`. Can be added to
   other bibliography functions.
+
+## [2021-03-23 Tue 08:38]
+- Added `ref-man-fix-drawers-deleted-files` and utility function
+  `ref-man-not-pdf-files`.
+- 

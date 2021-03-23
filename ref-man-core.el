@@ -2303,6 +2303,29 @@ can be parsed."
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START org commands ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;
+(defun ref-man-fix-drawers-deleted-files ()
+  "Remove files missing from `ref-man-documents-dir' in property drawers."
+  (interactive)
+  (if (eq major-mode 'org-mode)
+      (save-excursion
+        (let ((case-fold-search nil)
+              files)
+          (goto-char (point-min))
+          (while (re-search-forward "^ +:PDF_FILE:\\(.+?\\)\n" nil t)
+            (let ((file (save-match-data
+                          (let* ((match (substring-no-properties (match-string 1)))
+                                 (match (string-trim match)))
+                            (replace-regexp-in-string
+                             org-link-bracket-re "\\1"
+                             match)))))
+              (unless (f-exists-p file)
+                (push file files)
+                (replace-match ""))))
+          (if files
+              (message "[ref-man] Removed pdf file properties for %s files: %s" (length files) files)
+            (message "[ref-man] No links to deleted files"))))
+    (message "[ref-man] Not in org-mode")))
+
 (defun ref-man-org-export-article-no-urls (&optional buffer type)
   (interactive)
   (ref-man-org-export-article buffer (or type (and current-prefix-arg 'html) 'pdf) t))
@@ -2340,6 +2363,7 @@ bibliography, similar for NO-GDRIVE. Default is to include both."
            (pandocwatch (path-join docproc-dir "pandocwatch.py"))
            (python "/usr/bin/python")
            (title (substring-no-properties (org-get-heading)))
+           (extra-opts " --template=settings/templates/default.latex")
            (yaml-header (format "---
 title: %s
 author: Akshay Badola
@@ -2349,6 +2373,7 @@ mathjax: %s
 csl: %s
 ---
 " title (ref-man-pandoc-bib-string tmp-bib-file) mathjax-path csl-file))
+           (cmd "")
            bibtexs pt-min pt-max)
       (save-restriction
         (unless buffer
@@ -2368,16 +2393,18 @@ csl: %s
         (while (re-search-forward org-link-any-re nil t nil)
           (push (ref-man-org-get-bib-from-org-link t) bibtexs))
         ;; Insert standard pandoc references to bibtexs
+        ;; TODO: Raise a `user-error' if error getting hte bib from link
         (goto-char (point-min))
         (while (re-search-forward org-link-any-re nil t nil)
           (push (ref-man-org-get-bib-from-org-link t) bibtexs))
         ;; Replace "gdrive" with "issn" in bibs
-        (with-temp-buffer
-          (insert (mapconcat (lambda (x) (nth 2 x)) bibtexs ""))
-          (goto-char (point-min))
-          (while (re-search-forward "gdrive=" nil t nil)
-            (replace-match "issn="))
-          (write-region (point-min) (point-max) tmp-bib-file))
+        (unless no-gdrive
+          (with-temp-buffer
+            (insert (mapconcat (lambda (x) (nth 2 x)) bibtexs ""))
+            (goto-char (point-min))
+            (while (re-search-forward "gdrive=" nil t nil)
+              (replace-match "issn="))
+            (write-region (point-min) (point-max) tmp-bib-file)))
         (org-export-to-buffer 'md "*temp-org-buf*" nil nil nil nil)
         (with-current-buffer "*temp-org-buf*"
           (unless with-toc
@@ -2405,13 +2432,15 @@ csl: %s
           (goto-char (point-min))
           (insert (concat yaml-header "\n"))
           (write-region (point-min) (point-max) tmp-md-file))
-        (shell-command (format "cd %s && %s %s -ro --extra-opts --input-files %s -g %s"
+        (setq cmd (format "cd %s && %s %s -ro --extra-opts --input-files %s -g %s %s"
                                docproc-dir
                                python
                                pandocwatch
                                tmp-md-file
-                               type)
-                       "*ref-man-export-article*")
+                               type
+                               extra-opts))
+        (message "Running command %s" cmd)
+        (shell-command cmd "*ref-man-export-article*")
         (delete-file tmp-bib-file)
         (delete-file tmp-md-file)
         (find-file out-file)))))
