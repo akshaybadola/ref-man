@@ -54,4 +54,3 @@
 ## [2021-03-23 Tue 08:38]
 - Added `ref-man-fix-drawers-deleted-files` and utility function
   `ref-man-not-pdf-files`.
-- 
