@@ -8,4 +8,4 @@ default_headers = {"accept": ACCEPT,
                    "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
                    "cache-control": "no-cache",
                    "user-agent": USER_AGENT}
-__version__ = "0.3.0"
+__version__ = "0.3.1"
