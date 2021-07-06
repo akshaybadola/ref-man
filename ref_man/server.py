@@ -1,9 +1,7 @@
 from typing import Callable, List, Dict, Union, Optional
 import os
-import sys
 import json
 import time
-import shutil
 import logging
 import requests
 from queue import Queue
@@ -11,35 +9,18 @@ from threading import Thread, Event
 import flask
 from flask import Flask, request, Response
 from werkzeug import serving
-from subprocess import Popen, PIPE, TimeoutExpired
 
 import re
 import operator
 from bs4 import BeautifulSoup
+
+from common_pyutil.log import get_stream_logger
 
 from .const import default_headers, __version__
 from .arxiv import arxiv_get, arxiv_fetch, arxiv_helper
 from .dblp import dblp_helper
 from .semantic_scholar import SemanticSearch, load_ss_cache, semantic_scholar_paper_details
 from .cache import CacheHelper
-
-
-def get_stream_logger(name="default",
-                      handler_log_level=logging.DEBUG,
-                      log_level=logging.DEBUG,
-                      datefmt=None, fmt=None):
-    if datefmt is None:
-        datefmt = '%Y/%m/%d %I:%M:%S %p'
-    if fmt is None:
-        '%(asctime)s %(message)s'
-    logger = logging.getLogger(name)
-    formatter = logging.Formatter(datefmt=datefmt, fmt=fmt)
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setLevel(handler_log_level)
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
-    logger.setLevel(log_level)
-    return logger
 
 
 app = Flask(__name__)
@@ -80,8 +61,9 @@ def fetch_url_info(url, headers, q=None):
         return retval
 
 
-def parallel_fetch(urls, fetch_func, batch_size):
-    def helper(q):
+def parallel_fetch(urls: List[str], fetch_func: Callable[[str, Queue], None],
+                   batch_size: int):
+    def helper(q: Queue):
         responses = {}
         while not q.empty():
             url, retval = q.get()
@@ -93,7 +75,7 @@ def parallel_fetch(urls, fetch_func, batch_size):
         _urls = urls[(batch_size * j): (batch_size * (j + 1))].copy()
         if not _urls:
             break
-        q = Queue()
+        q: Queue = Queue()
         threads = []
         for url in _urls:
             threads.append(Thread(target=fetch_func, args=[url, q]))
@@ -104,42 +86,9 @@ def parallel_fetch(urls, fetch_func, batch_size):
         j += 1
 
 
-class Get:
-    def __init__(self):
-        self._finished = {}
-        self._progress = {}
-
-    def __call__(self, url, **kwargs) -> Union[bytes, bytearray]:
-        self._finished[url] = Event()
-        self._progress[url] = 0
-        content = bytearray()
-        response = requests.get(url, stream=True, **kwargs)
-        total = response.headers.get('content-length')
-        if total is None:           # no content length header
-            return response.content
-        else:
-            dl = 0
-            total_length = int(total)
-            for data in response.iter_content(chunk_size=4096):
-                content.extend(data)
-                dl += 4096
-                self._progress[url] = (100 * (dl / total_length))
-        self._finished[url].set()
-        return content
-
-    def finished(self, url: str) -> Optional[bool]:
-        finished = self._finished.get(url)
-        if finished:
-            return finished.is_set()
-        else:
-            return None
-
-    def progress(self, url: str) -> Optional[float]:
-        return self._progress.get(url)
-
-
-def post_json_wrapper(request: flask.Request, fetch_func: Callable, helper: Callable,
-                      batch_size: int, host: str, logger: logging.Logger):
+def post_json_wrapper(request: flask.Request, fetch_func: Callable[[str, Queue], None],
+                      helper: Callable, batch_size: int, host: str,
+                      logger: logging.Logger):
     """Helper function to parallelize the requests and gather them.
 
     Args:
@@ -158,7 +107,7 @@ def post_json_wrapper(request: flask.Request, fetch_func: Callable, helper: Call
         except Exception:
             return json.dumps("BAD REQUEST")
     logger.info(f"Fetching {len(data)} queries from {host}")
-    verbosity = True
+    verbose = True
     j = 0
     content: Dict[str, str] = {}
     while True:
@@ -173,7 +122,7 @@ def post_json_wrapper(request: flask.Request, fetch_func: Callable, helper: Call
         for d in _data:
             # FIXME: This should also send the logger instance
             threads.append(Thread(target=fetch_func, args=[d, q],
-                                  kwargs={"verbosity": verbosity}))
+                                  kwargs={"verbose": verbose}))
             threads[-1].start()
         for t in threads:
             t.join()
@@ -182,7 +131,7 @@ def post_json_wrapper(request: flask.Request, fetch_func: Callable, helper: Call
     return json.dumps(content)
 
 
-def check_proxy(proxies, flag):
+def check_proxy(proxies: Dict[str, str], flag: Event):
     check_count = 0
     while flag.is_set():
         try:
@@ -242,16 +191,14 @@ class Server:
         self.verbosity = args.verbosity
         self.threaded = args.threaded
         # We set "error" to warning
-        verbosity_levels = {"info": logging.INFO,
-                            "error": logging.WARNING,
-                            "debug": logging.DEBUG}
+        verbosity_levels = {"info", "error", "debug"}
         if self.verbosity not in verbosity_levels:
             self.verbosity = "info"
-            self.logger = get_stream_logger(log_level=verbosity_levels[self.verbosity])
+            self.logger = get_stream_logger("ref_man_logger", log_level=self.verbosity)
             self.logger.warning(f"{args.verbosity} was not in known levels." +
                                 f"Set to {self.verbosity}")
         else:
-            self.logger = get_stream_logger(log_level=verbosity_levels[self.verbosity])
+            self.logger = get_stream_logger("ref_man_logger", log_level=self.verbosity)
             self.logger.debug(f"Log level is set to {args.verbosity}.")
         # NOTE: This soup stuff should be separate buffer
         cur_dir = os.path.dirname(os.path.abspath(__file__))
@@ -301,19 +248,19 @@ class Server:
         self.semantic_search = SemanticSearch(self.chrome_debugger_path)
         self.init_routes()
 
-    def logi(self, msg):
+    def logi(self, msg: str) -> str:
         self.logger.info(msg)
         return msg
 
-    def logd(self, msg):
+    def logd(self, msg: str) -> str:
         self.logger.debug(msg)
         return msg
 
-    def logw(self, msg):
+    def logw(self, msg: str) -> str:
         self.logger.warn(msg)
         return msg
 
-    def loge(self, msg):
+    def loge(self, msg: str) -> str:
         self.logger.error(msg)
         return msg
 
@@ -341,7 +288,7 @@ class Server:
                 self.logger.error(msg)
             msgs.append(msg)
         if self.proxy_port is not None:
-            self.proxies = None
+            self.proxies: Optional[Dict[str, str]] = None
             proxies = {"http": f"http://127.0.0.1:{self.proxy_port}",
                        "https": f"http://127.0.0.1:{self.proxy_port}"}
             try:

@@ -42,7 +42,9 @@ localhost specified by this port."
   :type 'boolean
   :group 'ref-man)
 
-(defvar ref-man-python-server-port)     ; from `ref-man-core'
+;; NOTE: External variables
+(defvar ref-man-python-server-port)     ; from `ref-man-py'
+(defvar ref-man-documents-dir)          ; from `ref-man-files'
 
 (defvar ref-man-url-supported-sites
   '(acl arxiv neurips mlr aaai acm doi-cvpr cvf cvf-old openreview ss)
@@ -456,7 +458,7 @@ Return a '(site url) pair."
                                                              cvf cvf-old openreview ss doi))
                                 (cl-position (car y) '(arxiv acl neurips mlr aaai acm cvf
                                                              cvf-old openreview ss doi))))
-                           (util/pairs-to-alist links)))
+                           (ref-man-pairs-to-alist links)))
              (best (car links)))
         (cond ((and (symbolp (car best))
                     (listp (cdr best)))

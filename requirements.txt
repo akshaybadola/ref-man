@@ -2,3 +2,4 @@ Flask==1.1.2
 requests==2.24.0
 beautifulsoup4==4.9.1
 psutil==5.8.0
+git+https://github.com/akshaybadola/common-pyutil.git@master

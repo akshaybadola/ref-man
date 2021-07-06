@@ -157,6 +157,23 @@
 The characters here directly borrowed from `org-ref'.
 See `org-ref-nonascii-latex-replacements'")
 
+(defun ref-man-pairs-to-alist (pairs)
+  "Merge cons PAIRS into an alist with first elements as keys.
+
+The head of the list is the associative element.
+
+Example:
+    (pairs-to-alist '((a b) (b c d) (a d) (e f)))
+     => '((a b d) (b c d) (e f))"
+  (when (and (consp pairs) (a-assoc pairs))
+    (let (newlist)
+      (seq-do (lambda (x)
+                (if (a-has-key newlist (car x))
+                    (setq newlist (a-update newlist (car x) (lambda (y) (push (cdr x) y))))
+                  (push (list (car x) (cdr x)) newlist)))
+              pairs)
+      newlist)))
+
 (defsubst cdass (elem alist)
   "Short for (cdr (assoc ELEM) list).
 Argument ALIST association list."

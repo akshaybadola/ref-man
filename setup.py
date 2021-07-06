@@ -32,7 +32,11 @@ setup(
     packages=["ref_man"],
     include_package_data=True,
     python_requires=">=3.6.9",
-    install_requires=["flask==1.1.2", "requests==2.24.0", "beautifulsoup4==4.9.1", "psutil==5.8.0"],
+    install_requires=["flask==1.1.2",
+                      "requests==2.24.0",
+                      "beautifulsoup4==4.9.1",
+                      "psutil==5.8.0",
+                      "common_pyutil @ git+https://github.com/akshaybadola/common-pyutil.git@master"],
     entry_points={
         'console_scripts': [
             'ref-man = ref_man:__main__.main',

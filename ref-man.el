@@ -7,7 +7,7 @@
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Time-stamp:	<Wednesday 24 June 2020 09:16:15 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org-mode, eww
-;; Version:     0.3.2
+;; Version:     0.4.0
 ;; Package-Requires: ((a "0.1.1") (async "1.9.4") (org "9.2.3") (biblio-core "0.2.1") (gscholar-bibtex "0.3.1") (websocket "1.12") (dash "2.18.0") (bind-key "2.4") (org-ref "1.1.1"))
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -65,16 +65,26 @@ See URL `https://github.com/allenai/science-parse' for details"
 (defconst ref-man-home-dir (file-name-directory load-file-name)
   "Home or install directory for `ref-man'.")
 
-(defconst ref-man-version "0.3.1"
+(defconst ref-man-version "0.4.0"
   "`ref-man' version number.")
 
 (require 'ref-man-core)
 (require 'ref-man-chrome)
 (require 'ref-man-remote)
+(require 'ref-man-py)
 
-(unless (ref-man-python-process-running)
+(defun ref-man-init-dirs ()
+  (seq-do (lambda (x)
+            (when (and x (not (f-exists-p x)))
+              (make-directory x)))
+          (list ref-man-data-root-dir ref-man-org-store-dir
+                ref-man-documents-dir ref-man-extra-documents-dirs
+                ref-man-python-data-dir)))
+(ref-man-init-dirs)
+
+(unless (ref-man-py-process-running)
   ; (ref-man-chrome-init nil t)                 ; start chromium headless first
-  (ref-man-start-python-server))
+  (ref-man-py-start-server))
 
 (ref-man-remote-load-public-links-cache)
 ;; FIXME: This throws an error if python-server is not running

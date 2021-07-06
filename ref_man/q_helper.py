@@ -1,11 +1,19 @@
+from queue import Queue
+from typing import Callable
+import requests
+
+
 class QHelper:
-    def __init__(self, func_success, func_no_result, func_error, verbose=False):
+    def __init__(self, func_success: Callable[[str, requests.Response, bytes], None],
+                 func_no_result: Callable[[str, requests.Response, bytes], None],
+                 func_error: Callable[[str, requests.Response, bytes], None],
+                 verbose: bool = False):
         self.func_success = func_success
         self.func_no_result = func_no_result
         self.func_error = func_error
         self.verbose = verbose
 
-    def __call__(self, q):
+    def __call__(self, q: Queue):
         content = {}
         while not q.empty():
             query, response = q.get()
@@ -20,7 +28,10 @@ class QHelper:
         return content
 
 
-def q_helper(func_success, func_no_result, func_error, q):
+def q_helper(func_success: Callable[[str, requests.Response, bytes], None],
+             func_no_result: Callable[[str, requests.Response, bytes], None],
+             func_error: Callable[[str, requests.Response, bytes], None],
+             q: Queue):
     content = {}
     while not q.empty():
         query, response = q.get()

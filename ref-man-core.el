@@ -121,37 +121,6 @@
   :type 'boolean
   :group 'ref-man)
 
-(defcustom ref-man-python-server-port-start 9999
-  "Server port on which to communicate with python server."
-  :type 'integer
-  :group 'ref-man)
-
-(defcustom ref-man-python-server-port 9999
-  "Port on which to communicate with python server."
-  :type 'integer
-  :group 'ref-man)
-
-(defcustom ref-man-python-data-dir (expand-file-name "~/.ref-man/data/")
-  "Server port on which to communicate with python server."
-  :type 'directory
-  :group 'ref-man)
-
-(defcustom ref-man-proxy-port nil
-  "Whether to use http proxy for all python requests.
-If this is non-nil then the all the requests by the python server
-go through this http proxy at localhost, specified by this port."
-  :type 'integer
-  :group 'ref-man)
-
-(defcustom ref-man-chrome-debug-script ""
-  "Path to the chrome debugger javascript file.
-The file contains code to get the Semantic Scholar Search
-params. As they can change, we need to update them once the
-server starts. Requires some kind of chrome(ium) to be installed
-on the system."
-  :type 'file
-  :group 'ref-man)
-
 (defvar ref-man-key-list
   '(authors title venue volume number pages year doi ee)
   "Only these keys from bibtex are retained (I think).")
@@ -163,13 +132,6 @@ on the system."
 ;; NOTE: External functions
 (declare-function ref-man-try-start-science-parse-server "ref-man")
 (declare-function ref-man-kill-science-parse-process "ref-man")
-
-(seq-do (lambda (x)
-          (when (and x (not (f-exists-p x)))
-            (make-directory x)))
-        (list ref-man-data-root-dir ref-man-org-store-dir
-              ref-man-documents-dir ref-man-extra-documents-dirs
-              ref-man-python-data-dir))
 
 ;; (setq ref-man-org-links-file-path (expand-file-name "~/.temp-org-links.org"))
 ;; (setq ref-man-documents-dir (expand-file-name "~/org/pdfs/"))
@@ -187,8 +149,12 @@ on the system."
 ;; from `ref-man'
 (defvar ref-man-home-dir)
 (defvar ref-man-science-parse-server-port)
-
+(defvar ref-man-python-data-dir)        ; from `ref-man-py'
+(defvar ref-man-python-server-port)      ; from `ref-man-py'
+(defvar ref-man-public-links-cache)      ; from `ref-man-remote'
+(defvar ref-man-public-links-cache-file) ; from `ref-man-remote'
 ;; (declare-function 'string-match-p "subr")
+
 
 ;; NOTE: Internal variables
 (defvar ref-man--org-gscholar-launch-buffer nil)
@@ -202,7 +168,6 @@ on the system."
 (defvar ref-man--current-pdf-file-name nil)
 (defvar ref-man--biblio-callback-buf nil)
 (defvar ref-man--subtree-num-entries nil)
-(defvar ref-man-external-python-process-pid nil)
 (defvar ref-man-org-file-link-re "\\[\\(?:\\[\\(.+?\\)]\\)?\\[\\(.+?\\)]]")
 
 (defvar shr-map
@@ -774,10 +739,13 @@ all results."
   (message "[ref-man] Fetching from DBLP synchronously.")
   (let* ((query (replace-in-string query " " "+"))
          (query-url (format "https://dblp.uni-trier.de/search/publ/api?q=%s&format=xml" query))
-         (buf (url-retrieve-synchronously query-url)))
-    (with-current-buffer buf (set-buffer-multibyte t))
+         (buf (url-retrieve-synchronously query-url))
+         (beg (with-current-buffer buf (set-buffer-multibyte t)
+                                   (goto-char (point-min))
+                                   (re-search-forward "\r?\n\r?\n")
+                                   (point))))
     (pcase-let ((`(,(and result `(result . ,_)))
-                 (xml-parse-region nil nil buf)))
+                 (xml-parse-region beg nil buf)))
       (remove nil (ref-man-dblp-clean
                    (mapcar (lambda (hit)
                              (gscholar-bibtex--xml-get-child hit 'info))
@@ -836,26 +804,31 @@ buffer with that filename."
          (filename (car entry-alist))
          (visiting-filename
           (path-join ref-man-org-store-dir (concat (string-remove-prefix "na_" filename) ".org")))
-         (buf (find-buffer-visiting visiting-filename)))
+         (buf (find-buffer-visiting visiting-filename))
+         open-file)
     (if (not filename)
         (message "[ref-man] filename could not be generated!")
       (setq filename (string-remove-prefix "na_" filename)) ; always remove na_ from filename
-      (cond ((and buf (with-current-buffer buf (buffer-string)))
-             (message "[ref-man] File is already opened and not empty. Switching")
-             (ref-man--create-org-buffer (concat filename ".org")))
-            ((and buf (not (with-current-buffer buf (buffer-string)))
-                  (file-exists-p visiting-filename))
-             (with-current-buffer (get-buffer-create (concat filename ".org"))
-               (insert-file-contents visiting-filename t)))
-            ((and (not buf) (file-exists-p visiting-filename))
-             (message "[ref-man] File already exists. Opening")
-             (let ((org-buf (ref-man--create-org-buffer (concat filename ".org"))))
-               (unless (with-current-buffer org-buf
-                         (insert-file-contents visiting-filename t) (buffer-string))
-                 (ref-man--generate-org-buffer-content org-buf refs-list entry-alist visiting-filename))))
-            ((and (not buf) (not (file-exists-p visiting-filename)))
-             (let ((org-buf (ref-man--create-org-buffer (concat filename ".org"))))
-               (ref-man--generate-org-buffer-content org-buf refs-list entry-alist visiting-filename)))))))
+      (if buf
+          (cond ((not (string-empty-p (with-current-buffer buf (buffer-string))))
+                 (message "[ref-man] File is already opened and not empty. Switching...")
+                 (ref-man--create-org-buffer (concat filename ".org")))
+                ((string-empty-p (with-current-buffer buf (buffer-string)))
+                 (message "[ref-man] Buffer is opened but is empty."))
+                (t nil))
+        (when (file-exists-p visiting-filename)
+          (message "[ref-man] File already exists. Opening...")
+          (setq open-file t)))
+      (let ((org-buf (ref-man--create-org-buffer (concat filename ".org")))
+            should-generate)
+        (setq should-generate t)
+        (when open-file
+          (with-current-buffer org-buf
+            (insert-file-contents visiting-filename t))
+          (unless (string-empty-p (with-current-buffer buf (buffer-string)))
+            (message "[ref-man] Opened buffer but is empty.")
+            (setq should-generate nil)))
+        (ref-man--generate-org-buffer-content org-buf refs-list entry-alist visiting-filename)))))
 
 (defun ref-man-org-insert-abstract (abs &optional buf)
   "Insert abstract as text in entry after property drawer if it exists.
@@ -927,7 +900,9 @@ a reference, it's inserted as is prefixed with \"na_\"."
            ;;                           (nth 1 first-author)))
            ;;                       (if (gethash "year" hash) (format "%s" (gethash "year" hash)) "_")
            ;;                       (car (split-string (gethash "title" hash) " " t))) ""))
-           (key (ref-man--build-bib-key-from-plist (list :title title :year year :author author)))
+           (key (ref-man--build-bib-key-from-plist (list :title (cdr title)
+                                                         :year (cdr year)
+                                                         :author (cdr author))))
            (entry (list key (-filter 'cdr (list author title year month venue volume number pages)))))
       entry)))
 
@@ -1404,232 +1379,6 @@ buffer and sanitize the entry at point."
 ;; END Org generation and insertion stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; START python process stuff ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defun ref-man--create-venv (path)
-  (if (and (string-match-p "no.*module.*virtualenv.*"
-                           (shell-command-to-string
-                            (format "python3 -m virtualenv -p python3 %s" path)))
-           (string-match-p "no.*module.*virtualenv.*"
-                           (shell-command-to-string
-                            (format "/usr/bin/python3 -m virtualenv -p python3 %s" path))))
-      nil (message "Create venv in %s" path)))
-
-(defun ref-man-no-py-mod-in-venv (python)
-  "Check if python module exists for python executable PYTHON."
-  (string-match-p "no.*module.*ref.*"
-                  (shell-command-to-string
-                   (format "%s -m ref_man --version" python))))
-
-(defun ref-man-installed-py-mod-version (python &optional strip)
-  "Return version for installed python module.
-PYTHON is the path for python executable."
-  (shell-command-to-string
-   (format "%s -m ref_man --version" python)))
-
-(defun ref-man-file-py-mod-version ()
-  "Return the version of python module in file `const.py'"
-  (let* ((const-file (path-join ref-man-home-dir "ref_man" "const.py"))
-        (buf (find-file-noselect const-file)))
-    (with-current-buffer buf
-      (goto-char (point-min))
-      (re-search-forward "__version__ = \"\\(.+\\)\"")
-      (substring-no-properties (match-string 1)))))
-
-;; TODO: Check python3 version > 3.6.9
-(defun ref-man-python-setup-env ()
-  "Setup python virtualenv.
-The directory is relative to `ref-man' install directory
-`ref-man-home-dir'."
-  (when (string-match-p "no.*in.*"
-                        (ref-man--trim-whitespace
-                         (shell-command-to-string "which python3")))
-    (user-error "No python3 in system"))
-  (let ((env (path-join ref-man-home-dir "env")))
-    (unless (f-exists? env)
-      (f-mkdir env)
-      (unless (ref-man--create-venv env)
-        (user-error "Could not install venv.\n
-Make sure not package 'virtualenv' exists in current python environment")))
-    (let* ((env-has-python (f-exists? (path-join env "bin" "python3")))
-           (python (and env-has-python
-                        (path-join env "bin" "python3"))))
-      (when (and (not python) (ref-man--create-venv env))
-        (user-error "Could not install venv.\n
-Make sure not package 'virtualenv' exists in current python environment"))
-      (let ((env-has-no-ref-man (ref-man-no-py-mod-in-venv python))
-            (update (not (equal (ref-man-file-py-mod-version)
-                                (string-trim (replace-regexp-in-string
-                                              "ref-man.*? version \\(.*\\)" "\\1"
-                                              (ref-man-installed-py-mod-version
-                                               (path-join ref-man-home-dir "env" "bin" "python"))))))))
-        (when (or update env-has-no-ref-man)
-          (progn (message "%s %s" (cond (env-has-no-ref-man "ref-man-server not found. Installing in ")
-                                        (update "New version of ref-man. Updating existing ref-man-server in "))
-                          env)
-                 (shell-command
-                  (concat "source " (path-join env "bin" "activate") " && "
-                          (format "cd %s && python -m pip install -U ."
-                                  ref-man-home-dir))
-                  "*ref-man-cmd*" "*ref-man-cmd*")))
-        (if (ref-man-installed-py-mod-version python)
-            (message "%s found in %s" (ref-man--trim-whitespace
-                                       (ref-man-installed-py-mod-version python))
-                     env)
-          (user-error "Could not install ref-man in %s" env))))))
-
-;; TODO: Requests to python server should be dynamic according to whether I want
-;;       to use proxy or not at that point
-(defun ref-man--python-process-helper (data-dir port &optional
-                                                proxy-port proxy-everything-port
-                                                docs-dir remote-docs-dir cache-file)
-  "Start the python server.
-DATA-DIR is the server data directory.  PORT is the port to which
-the server binds.
-
-When called from `ref-man-start-python-server', DATA-DIR is set
-to `ref-man-python-data-dir' and the port
-`ref-man-python-server-port'."
-  ;; NOTE: Hack so that process isn't returned
-  (prog1
-      (message (format "[ref-man] Starting python process on port: %s"
-                       ref-man-python-server-port))
-    (let ((python (path-join ref-man-home-dir "env" "bin" "python")))
-      (condition-case nil
-          (ref-man-python-setup-env))
-      (let ((args (-filter #'identity (list (format "--data-dir=%s" data-dir)
-                                            (format "--port=%s" port)
-                                            (and ref-man-proxy-port "--proxy-everything")
-                                            (and ref-man-proxy-port
-                                                 (format "--proxy-everything-port=%s"
-                                                         ref-man-proxy-port))
-                                            (and ref-man-pdf-proxy-port
-                                                 (format "--proxy-port=%s"
-                                                         ref-man-pdf-proxy-port))
-                                            (and ref-man-chrome-debug-script
-                                                 (format "--chrome-debugger-path=%s"
-                                                         ref-man-chrome-debug-script))
-                                            (and ref-man-documents-dir
-                                                 (format "--local-pdfs-dir=%s"
-                                                         ref-man-documents-dir))
-                                            (and ref-man-remote-documents-dir
-                                                 (format "--remote-pdfs-dir=%s"
-                                                         ref-man-remote-documents-dir))
-                                            (and ref-man-public-links-cache-file
-                                                 (format "--remote-links-cache=%s"
-                                                         ref-man-public-links-cache-file))
-                                            "--verbosity=debug"))))
-        (message "Python process args are %s" args)
-        (apply #'start-process "ref-man-python-server" "*ref-man-python-server*"
-               python "-m" "ref_man" args)))))
-
-(defun ref-man-stop-python-server ()
-  "Stop the python server by sending a shutdown command.
-This is sent via http and lets the server exit gracefully."
-  (interactive)
-  (let ((buf (url-retrieve-synchronously
-              (format "http://localhost:%s/shutdown" ref-man-python-server-port))))
-    (with-current-buffer buf
-      (goto-char (point-min))
-      (re-search-forward "\r?\n\r?\n")
-      (message (buffer-substring-no-properties (point) (point-max))))))
-
-(defun ref-man--kill-internal-python-process ()
-  "Kill the internal python process process by sending SIGKILL."
-  (signal-process (get-buffer "*ref-man-python-server*") 15))
-
-(defun ref-man--kill-external-python-process ()
-  "Kill the external python process process by sending SIGKILL."
-  (signal-process ref-man-external-python-process-pid 15))
-
-(defun ref-man-python-server-reachable-p ()
-  "Check if python server is reachable."
-  (condition-case nil
-      (let ((buf (url-retrieve-synchronously
-                  (format "http://localhost:%s/version" ref-man-python-server-port) t)))
-        (when buf
-          (string-match-p "ref-man python server"
-                          (with-current-buffer buf (buffer-string)))))
-    (error nil)))
-
-(defun ref-man-python-process-running ()
-  "Check if python server is running.
-Returns 'external or 'internal according to where the process is
-running if it's running else nil."
-  (cond ((get-buffer-process "*ref-man-python-server*")
-         (setq ref-man-external-python-process-pid nil)
-         'internal)
-        ((ref-man-external-python-process-p)
-         'external)
-        (t nil)))
-
-(defun ref-man-python-server-running ()
-  "Check if python server is already running."
-  (let ((python-process (ref-man-python-process-running)))
-    (when python-process
-      (if (ref-man-python-server-reachable-p)
-          python-process
-        (if (eq python-process 'internal)
-            'internal-error 'external-error)))))
-
-(defun ref-man-external-python-process-p ()
-  "Check for `server.py' python processes outside emacs.
-In case a process is found, `ref-man-python-server-port' is set
-to the port of that process and
-`ref-man-external-python-process-pid' is set to its pid."
-  (let ((python-strings
-         (split-string (shell-command-to-string "ps -ef | grep python | grep server") "\n")))
-    (cl-loop for x in python-strings
-             do
-             (when (and (string-match-p "port" x) (string-match-p "data-dir" x))
-               (setq ref-man-python-server-port
-                     (string-to-number
-                      (cadr (split-string
-                             (car (split-string
-                                   (substring x (string-match "port" x)))) "="))))
-               (setq ref-man-external-python-process-pid (string-to-number (nth 1 (split-string x))))
-               (cl-return t)))))
-
-(defun ref-man-start-python-server ()
-  "Start the python server, unless already running.
-
-The server can be running outside emacs also in which case
-`ref-man-python-server-port' is set to port.
-
-See accompanying `server.py' for the server details.  The API and
-methods are still evolving but as of now it supports DBLP and
-ArXiv.  The process if started opens a local port and can fetch
-data in multiple threads from supported APIs before preprocessing
-and consolidating.  It also maintains a local datastore."
-  (interactive)
-  ;; FIXME: for 'internal-error and 'external-error
-  (if (ref-man-python-server-running)
-      (message (format "Found existing process running on port: %s"
-                       ref-man-python-server-port))
-    (message "No existing python process found")
-    (let ((port (find-open-port ref-man-python-server-port-start))
-          (data-dir ref-man-python-data-dir))
-      (setq ref-man-python-server-port port)
-      (ref-man--python-process-helper data-dir port))))
-
-(defun ref-man-restart-python-server ()
-  "Restart the python server."
-  (interactive)
-  (cond ((or (eq 'internal (ref-man-python-server-running))
-             (eq 'external (ref-man-python-server-running)))
-         (ref-man-stop-python-server))
-        ((eq 'internal-error (ref-man-python-server-running))
-         (ref-man--kill-internal-python-process))
-        ((eq 'external-error (ref-man-python-server-running))
-         (ref-man--kill-external-python-process)))
-  ;; FIXME: This runs before server shuts down
-  (ref-man-start-python-server))
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; END python process stuff ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START Biblio stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1642,7 +1391,7 @@ and consolidating.  It also maintains a local datastore."
   (setq ref-man--org-gscholar-launch-point (point))
   (setq ref-man--org-gscholar-launch-buffer (current-buffer))
   (save-excursion
-    (let* ((query (org-get-heading t t))
+    (let* ((query (org-get-heading t t t t))
            (target-buffer (window-buffer (ref-man--get-or-create-window-on-side)))
            (backend #'biblio-crossref-backend)
            (results-buffer (biblio--make-results-buffer target-buffer query backend)))
@@ -1748,7 +1497,7 @@ then read it from minibuffer."
     (cond ((eq major-mode 'org-mode)
            (setq ref-man--org-gscholar-launch-point (point)) ; CHECK: must be at heading?
            (setq ref-man--org-gscholar-launch-buffer (current-buffer))
-           (substring-no-properties (org-get-heading t t)))
+           (substring-no-properties (org-get-heading t t t t)))
           ((eq major-mode 'bibtex-mode)
            (bibtex-autokey-get-field "title"))
           (t (read-string
@@ -2279,9 +2028,10 @@ citations after that."
   (org-hide-block-all))
 
 (defun ref-man-org-get-bib-from-org-link (&optional get-path)
-  "Get a possible bibtext from an org link in text.
-The link must point to an org heading from which a bibtex entry
-can be parsed."
+  "Get a possible bibtex from an org link in text.
+The link must point to either an org heading, or a bibtex key in
+one of the bibliography files in `ref-man-bib-files' from which a
+bibtex entry can be parsed."
   (save-excursion
     (save-restriction
       (widen)
@@ -2379,7 +2129,7 @@ bibliography, similar for NO-GDRIVE. Default is to include both."
                        (path-join docproc-dir (concat (f-base tmp-md-file) ".html"))))
            (pandocwatch (path-join docproc-dir "pandocwatch.py"))
            (python "/usr/bin/python")
-           (title (substring-no-properties (org-get-heading)))
+           (title (substring-no-properties (org-get-heading t t t t)))
            (extra-opts " --template=settings/templates/default.latex")
            (yaml-header (format "---
 title: %s
@@ -2410,7 +2160,7 @@ csl: %s
         (while (re-search-forward org-link-any-re nil t nil)
           (push (ref-man-org-get-bib-from-org-link t) bibtexs))
         ;; Insert standard pandoc references to bibtexs
-        ;; TODO: Raise a `user-error' if error getting hte bib from link
+        ;; TODO: Raise a `user-error' if error getting the bib from link
         (goto-char (point-min))
         (while (re-search-forward org-link-any-re nil t nil)
           (push (ref-man-org-get-bib-from-org-link t) bibtexs))
@@ -2544,7 +2294,7 @@ is from a recognized parseable host. As of now, only ArXiv"
                ref-man-convert-links-in-subtree-to-headings-fetch--pdfs)))))
     (message "[ref-man] Not in org-mode") nil))
 
-(defun ref-man-kill-bibtex-to-org-format ()
+(defun ref-man-bibtex-kill-as-org ()
   "Parse a bibtex entry at point and copy as org heading."
   (interactive)
   (save-excursion
@@ -2558,7 +2308,7 @@ is from a recognized parseable host. As of now, only ArXiv"
         (kill-new (buffer-string))
         (message "Killed entry as org heading")))))
 
-(defun ref-man-fetch-update-ss-data-on-disk-for-entry ()
+(defun ref-man-fetch-and-update-ss-data-for-entry ()
   "Force update and fetch Semantic Scholar data for org entry at point."
   (interactive)
   (ref-man-fetch-ss-data-for-entry nil nil t))
@@ -2569,7 +2319,7 @@ is from a recognized parseable host. As of now, only ArXiv"
 
 The data is cached on the disk and if the entry is already
 present, the cached entry is fetched.  With optional argument
-UPDATE-ON-DISK, force upate the data in cache.
+UPDATE-ON-DISK, force update the data in cache.
 
 When called interactively, the default behaviour is to fetch the
 data and display in a new org buffer named \"*Semantic Scholar*\".
@@ -2652,14 +2402,14 @@ both update the entry and display the data."
                                               (org-entry-get (point) "TITLE")
                                               (org-entry-get (point) "YEAR")))))
     (org-set-property "CUSTOM_ID" key))
-  (when (string-empty-p (org-get-heading))
+  (when (string-empty-p (org-get-heading t t t t))
     (unless (org-at-heading-p)
       (outline-previous-heading))
     (end-of-line)
     (insert (cdass "TITLE" props-alist)))
   (when (assoc "ABSTRACT" props-alist)
     (ref-man-org-insert-abstract (cdass "ABSTRACT" props-alist) (current-buffer)))
-  (when (and (not (string= (org-get-heading) (cdass "TITLE" props-alist)))
+  (when (and (not (string= (org-get-heading t t t t) (cdass "TITLE" props-alist)))
              (y-or-n-p "Heading and Title differ. Update? "))
     (org-edit-headline (cdass "TITLE" props-alist))))
 
@@ -2713,7 +2463,7 @@ or, '((fieldsOfStudy . (computer-science)) (yearFilter (max . 1995) (min . 1990)
 As of now, by default INSERT-FIRST is set to t later in the code as
 pagination of results isn't supported yet."
   (interactive (list (let* ((ss (if (eq major-mode 'org-mode)
-                                    (substring-no-properties (org-get-heading)) ""))
+                                    (substring-no-properties (org-get-heading t t t t)) ""))
                             (prompt (if (string-empty-p ss)
                                         "Search String: "
                                       (format "Search String (default %s): " ss))))
@@ -3172,7 +2922,7 @@ the current heading are excluded."
       (narrow-to-region ref-man--point-min ref-man--point-max))))
 
 (defun ref-man--check-heading-p ()
-  (> (length (string-trim (substring-no-properties (org-get-heading t t)))) 0))
+  (> (length (string-trim (substring-no-properties (org-get-heading t t t t)))) 0))
 
 (defun ref-man--check-fix-url-property ()
   "Fix the URL property in the property drawer.
@@ -3397,7 +3147,7 @@ eww. Stores the buffer and the position from where it was called."
         (setq ref-man--org-gscholar-launch-buffer (current-buffer))
         (save-excursion
           (let ((query-string (replace-regexp-in-string ":\\|/" " "
-                               (substring-no-properties (org-get-heading t t)))))
+                               (substring-no-properties (org-get-heading t t t t)))))
             (ref-man-web-gscholar query-string))))
     (message "[ref-man] Not in org-mode") nil))
 (make-obsolete 'ref-man-org-search-heading-on-gscholar-with-eww

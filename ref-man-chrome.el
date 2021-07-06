@@ -40,6 +40,7 @@
 
 ;;; Code:
 
+(require 'a)
 (require 'cl-lib)
 (require 'eww)
 (require 'org)
@@ -135,10 +136,10 @@ For debugging purposes.")
 (defvar ref-man-chrome--rpc-callbacks
   nil
   "Initial value of rpc-callbacks.")
-(defvar ref-man-chrome--sockets
+(defvar ref-man-chrome-socket-alist
   nil
   "List containing open chromium debugging sockets.")
-(defvar ref-man-chrome--tabs
+(defvar ref-man-chrome-tab-plist
   nil
   "Alist which maps tabs to debugging sockets.")
 (defvar ref-man-chrome--initialized-p
@@ -178,11 +179,6 @@ sockets are opened and verified.")
 ;;
 ;; CHECK: If a closure would be enough for these
 (defvar ref-man-chrome--tab-id)
-(defvar ref-man-chrome--test-connect)
-(make-obsolete-variable 'ref-man-chrome--test-connect nil "ref-man 0.3.0")
-(defvar ref-man-chrome--init-0)
-(defvar ref-man-chrome--init-1)
-(defvar ref-man-chrome--fetched-sentinel)
 
 ;; NOTE: External variables
 ;; from package `url'
@@ -897,9 +893,9 @@ also."
   (setq ref-man-chrome--chromium-port nil)
   (setq ref-man-chrome--rpc-id 0)
   (setq ref-man-chrome--rpc-callbacks nil)
-  (setq ref-man-chrome--sockets nil)
+  (setq ref-man-chrome-socket-alist nil)
   (setq ref-man-chrome--initialized-p nil)
-  (setq ref-man-chrome--tabs nil)
+  (setq ref-man-chrome-tab-plist nil)
   (when reset-history
     (ref-man-chrome-clear-history)))
 
@@ -969,6 +965,10 @@ response comes."
 
 (defun ref-man-chrome--on-open (socket)
   "Callback when websocket SOCKET opens."
+  (ref-man-chrome-call-rpc "Console.enable" socket)
+  (ref-man-chrome-call-rpc "Debugger.enable" socket)
+  (ref-man-chrome-call-rpc "Network.setCacheDisabled" socket
+                           '(:cacheDisabled t))
   (message (format "[ref-man-chrome]: Opened new websocket %s" socket)))
 
 (defun ref-man-chrome--on-close (socket)
@@ -1068,41 +1068,97 @@ DATA may or may not be present."
                   :on-message #'ref-man-chrome--on-message
                   :on-close #'ref-man-chrome--on-close))
 
-(defun ref-man-chrome--get-socket-url-for-tab (id)
+;; TODO: These should be macros
+(defun ref-man-chrome-get-socket-url-for-tab-indx (indx)
+  "Get websocket url for a tab INDX."
+  (let ((maybe-url (-filter (lambda (x) (eq (plist-get x :indx) indx)) ref-man-chrome-tab-plist)))
+    (unless maybe-url
+      (ref-man-chrome-make-tab-plist))
+    (plist-get (car (-filter (lambda (x) (eq (plist-get x :indx) indx))
+                             ref-man-chrome-tab-plist))
+               :socket)))
+
+(defun ref-man-chrome-get-socket-url-for-tab-id (id)
   "Get websocket url for a tab ID."
+  (let ((maybe-url (-filter (lambda (x) (equal (plist-get x :id) id)) ref-man-chrome-tab-plist)))
+    (unless maybe-url
+      (ref-man-chrome-make-tab-plist))
+    (plist-get (car (-filter (lambda (x) (equal (plist-get x :id) id))
+                             ref-man-chrome-tab-plist))
+               :socket)))
+
+(defun ref-man-chrome-make-tab-plist ()
+  "Make a plist of chrome tabs associating debugger ids to integers."
   (let* ((tabs (ref-man-chrome-get-tabs))
-         (tab-ids (mapcar (lambda (x) (plist-get x :id)) tabs))
          (sockets (mapcar (lambda (x)
                             (cons (plist-get x :id) (plist-get x :webSocketDebuggerUrl)))
                           tabs))
-         (indx (if ref-man-chrome--tabs
-                   (+ 1 (apply 'max (mapcar 'cdr ref-man-chrome--tabs))) 0)))
-    (cl-loop for x in tab-ids
-          do (progn (when (not (assoc x ref-man-chrome--tabs))
-                      (push (cons x indx) ref-man-chrome--tabs)
-                      (cl-incf indx))))
-    (cdr (assoc (car (rassoc id ref-man-chrome--tabs)) sockets))))
+         (indx 0))
+    ;; Only push ids for new tabs
+    (cl-loop for x in sockets
+             do (progn (unless (plist-get ref-man-chrome-tab-plist (car x))
+                         (push (list :indx indx :id (car x) :socket (cdr x))
+                               ref-man-chrome-tab-plist)
+                         (cl-incf indx))))))
 
-;; TODO: Check for already connected
-(defun ref-man-chrome-connect (id)
+;; FIXME: If func is called twice, once with ID and once with INDX but for the
+;; same tab there'll be duplicate sockets for same tabs.
+(defun ref-man-chrome-connect (id-or-indx &optional is-id)
   "Connect to a chromium tab's debugger websocket.
-ID maps the internal ID to the chromium tab."
-  (let* ((socket-url (ref-man-chrome--get-socket-url-for-tab id))
-         (socket (ref-man-chrome--open-socket socket-url)))
-    (setq ref-man-chrome--sockets (plist-put ref-man-chrome--sockets id socket))
-    ;; (setq ref-man-chrome--sockets (nconc ref-man-chrome--sockets (list socket)))
-    (ref-man-chrome-call-rpc "Console.enable" socket)
-    (ref-man-chrome-call-rpc "Debugger.enable" socket)
-    (ref-man-chrome-call-rpc "Network.setCacheDisabled" socket
-                        '(:cacheDisabled t))))
+ID-OR-INDX could is internal tab indx to the chromium tab.  Optional IS-ID
+means consider the ID-OR-INDX as chrome tab id instead of
+internal tab indx.  Open the socket if it doesn't exist in
+`ref-man-chrome-socket-alist'."
+  (let* ((fn (if is-id #'ref-man-chrome-get-socket-url-for-tab-id
+               #'ref-man-chrome-get-socket-url-for-tab-indx))
+         (socket-url (funcall fn id-or-indx))
+         (socket (progn
+                   (unless socket-url
+                     (error "[ref-man-chrome] No socket url for id-or-indx %s" id-or-indx))
+                   (or (a-get ref-man-chrome-socket-alist id-or-indx)
+                       (ref-man-chrome--open-socket socket-url)))))
+    (unless (websocket-openp socket)
+      (setq socket (ref-man-chrome--open-socket socket-url)))
+    (unless (eq socket (a-get ref-man-chrome-socket-alist id-or-indx))
+      (setq ref-man-chrome-socket-alist
+            (a-assoc ref-man-chrome-socket-alist id-or-indx socket)))))
+
+(defun ref-man-chrome-connect-to-empty-tab ()
+  "Return a websocket connection for the first empty chrome tab.
+Make a new connection if required."
+  (ref-man-chrome-connect-to-tab-with-url-re "chrome://new"))
+
+(defun ref-man-chrome-connect-to-tab-with-url-re (url-re)
+  "Return a websocket connection for the chrome tab url matching URL-RE.
+Make a new connection if required."
+  (let* ((tabs (ref-man-chrome-get-tabs))
+         (maybe-tab (car (-filter (lambda (x) (string-match-p url-re (plist-get x :url))) tabs)))
+         (tab-id (plist-get maybe-tab :id))
+         (maybe-socket (a-get ref-man-chrome-socket-alist tab-id)))
+    (or maybe-socket
+        (and (ref-man-chrome-connect tab-id t)
+             (a-get ref-man-chrome-socket-alist tab-id)))))
 
 (defun ref-man-chrome-eval (eval-str id &optional callback)
   "Evaluate (usually javascript) expression EVAL-STR for tab ID (0 or 1).
 Optional CALLBACK to call when response is received from
 websocket."
+  (ref-man-chrome-eval-on-socket
+   eval-str
+   (a-get ref-man-chrome-socket-alist id)
+   callback))
+
+(defun ref-man-chrome-eval-on-socket (eval-str socket &optional callback)
+  "Evaluate (usually javascript) expression EVAL-STR for chrome debugger websocket SOCKET.
+Optional CALLBACK to call when response is received from
+websocket."
+  (unless socket
+    (error "[ref-man-chrome] Empty socket given."))
+  (unless (websocket-openp socket)
+    (error "[ref-man-chrome] Socket is closed."))
   (ref-man-chrome-call-rpc
    "Runtime.evaluate"                   ; method
-   (plist-get ref-man-chrome--sockets id) ; socket
+   socket                               ;socket
    (list :expression eval-str             ; `eval-str' is javascript code usually
          :returnByValue t)              ; params
    callback))
@@ -1150,49 +1206,44 @@ history also."
   "Initialze the `ref-man-chrome' plugin.
 With a non-nil optional NOT-HEADLESS, the chromium process is
 started in windowed mode instead of headless which is default."
+  (interactive)
   (if ref-man-chrome--initialized-p
       (message "[ref-man-chrome] init, Chromium plugin was already initialized.")
     ;; FIXME: Check for shutdown
     (unless ref-man-chrome--history-table
       (ref-man-chrome-init-history))
-    ;; FIXME: This rest of code is confusing
     (unless (ref-man-chrome--chromium-process)
-      (ref-man-chrome-start-process (not not-headless)))
-    ;; FIXME: This should be let anyway
-    ;;
-    ;; FIXME: I think I've got `condition-case' wrong here. I think
-    ;;        `ref-man-chrome--test-connect' is set automatically. Not sure
-    (setq ref-man-chrome--test-connect nil)
-    ;; (setq my/test-loop-iter 0)
-    (while (not ref-man-chrome--test-connect)
-      ;; (setq my/test-loop-iter (+ 1 my/test-loop-iter))
-      (condition-case ref-man-chrome--test-connect
-          (progn (ref-man-chrome-connect 0)
-                 (setq ref-man-chrome--test-connect t))
-        (error nil)))
-    (setq ref-man-chrome--init-0 t)
-    (setq ref-man-chrome--init-1 t)
-    (ref-man-chrome-eval "location.href = \"https://scholar.google.com\"" 0
-                         (lambda (result)
-                           (when ref-man-chrome-verbose
-                             (message (concat "[ref-man-chrome] Set URL of tab 0 to "
-                                              (plist-get (plist-get result :result) :value))))
-                           (setq ref-man-chrome--init-0 nil)))
-    (while ref-man-chrome--init-0
-      (unless quiet
-        (message "[ref-man-chrome] init, WAITING init-0"))
-      (sleep-for .2))
-    (ref-man-chrome-eval "window.open();" 0
-                         (lambda (result)
-                           (when ref-man-chrome-verbose
-                             (message (concat "[ref-man-chrome] Opened tab 1 "
-                                              (plist-get (plist-get result :result) :value))))
-                           (setq ref-man-chrome--init-1 nil)))
-    (while ref-man-chrome--init-1
-      (unless quiet
-        (message "[ref-man-chrome] init, WAITING init-1"))
-      (sleep-for .2))
-    (ref-man-chrome-connect 1)
+      (ref-man-chrome-start-process (or current-prefix-arg (not not-headless)))
+      ;; FIXME: Should be sleep until socket opens.  Here `sleep-for' waits
+      ;;        until the process starts and the chrome debug port
+      ;;        opens. However if it's not headless then the port doesn't open
+      ;;        for some time. It should instead be an async test and then
+      ;;        callback to see if the port has indeed opened.
+      (sleep-for .4))
+    (let ((ref-man-chrome--init-0 t)
+          (ref-man-chrome--init-1 t))
+      (ref-man-chrome-connect 0)
+      (ref-man-chrome-eval "location.href = \"https://scholar.google.com\"" 0
+                           (lambda (result)
+                             (when ref-man-chrome-verbose
+                               (message (concat "[ref-man-chrome] Set URL of tab 0 to "
+                                                (plist-get (plist-get result :result) :value))))
+                             (setq ref-man-chrome--init-0 nil)))
+      (while ref-man-chrome--init-0
+        (unless quiet
+          (message "[ref-man-chrome] init, WAITING init-0"))
+        (sleep-for .2))
+      (ref-man-chrome-eval "window.open();" 0
+                           (lambda (result)
+                             (when ref-man-chrome-verbose
+                               (message (concat "[ref-man-chrome] Opened tab 1 "
+                                                (plist-get (plist-get result :result) :value))))
+                             (setq ref-man-chrome--init-1 nil)))
+      (while ref-man-chrome--init-1
+        (unless quiet
+          (message "[ref-man-chrome] init, WAITING init-1"))
+        (sleep-for .2))
+      (ref-man-chrome-connect 1))
     (setq ref-man-chrome--initialized-p t)
     (message "[ref-man-chrome] initialized")))
 
@@ -1373,9 +1424,9 @@ parsing.
 The buffer is opened in `ref-man-chrome-mode' and this is the
 function responsible for making sure everything is setup
 correctly."
-  (setq ref-man-chrome--tab-id (if tab-id tab-id 0))
-  (let ((call-str (format "location.href = \"%s\"" url)))
-    (setq ref-man-chrome--fetched-sentinel t)
+  (setq ref-man-chrome--tab-id (or tab-id 0))
+  (let ((call-str (format "location.href = \"%s\"" url))
+        (ref-man-chrome--fetched-sentinel t))
     (ref-man-chrome-eval call-str ref-man-chrome--tab-id
                          (lambda (result)
                            (when ref-man-chrome-verbose
@@ -1493,6 +1544,148 @@ correctly."
 ;;         ["Toggle Paragraph Direction" eww-toggle-paragraph-direction]))
 ;;     map))
 
+
+(defvar ref-man-chrome-parse-linkedin-server-str "from flask import Flask, request
+from bs4 import BeautifulSoup
+
+
+app = Flask(__name__)
+write_file = 'linkedin_applicants'
+
+
+@app.route('/write', methods=['POST'])
+def parse_and_write_to_file():
+    data = request.json.get('page')
+    soup = BeautifulSoup(data, features='lxml')
+    vcards = soup.find_all('div', {'class': 'vcard'})
+    write_data = []
+    for vcard in vcards:
+        name = vcard.find_next('span', {'class': 'given-name'})
+        # contains location and industry
+        # overview = vcard.find_next('dl', {'class': 'overview-info'})
+        # contains [current, past, email, phone, education, keywords]
+        info = vcard.find_next('dl', {'class': 'career-info'})
+        email = info.find_next('dd', {'class': 'email'})
+        phone = info.find_next('dd', {'class': 'phone'})
+        # candidate match
+        # match = vcard.find_next('div', {'class', 'candidate-match'})
+        write_data.append(','.join(map(lambda x: x.text.strip(), [name, email, phone])))
+    with open(write_file, 'a') as f:
+        f.write('\n' + '\n'.join(write_data))
+    return '\n'.join(write_data)
+
+
+app.run('localhost', 8989)
+"
+  "The python server script for parsing linkedin data as a string.")
+
+(defun ref-man-chrome-linkedin-num-applicants ()
+  "Message the number of applicants from linkedin CSV."
+  (interactive)
+  (let ((num-lines (string-to-number
+                    (car (split-string
+                          (shell-command-to-string "wc /home/joe/linkedin_applicants.csv"))))))
+    (message (format "done\nTotal applicants: %s\nCurrent Page: %s"
+                     num-lines (/ num-lines 25)))))
+
+(defun ref-man-chrome-http-buffer-data (buf)
+  (with-current-buffer buf
+    (goto-char (point-min))
+    (re-search-forward "\r?\n\r?\n")
+    (message (string-trim (buffer-substring-no-properties (point) (point-max))))))
+
+(defun ref-man-chrome-message-http-buffer (buf)
+  (message (string-trim (ref-man-chrome-http-buffer-data buf))))
+
+(defvar ref-man-chrome-linkedin-write-file nil)
+(defvar ref-man-chrome-linkedin-out-dir nil)
+(defun ref-man-chrome-parse-linkedin-setup ()
+  "Setup the linkedin parse by specifying the write file.
+The directory where the file is located
+is`/home/joe/projects/bikram_startup/hiring/resumes/'."
+  (interactive)
+  (if (and ref-man-chrome-linkedin-write-file
+           ref-man-chrome-linkedin-out-dir)
+      (let ((url-request-method "POST")
+            (url-request-extra-headers
+             `(("Content-Type" . "application/json")))
+            (url-request-data (encode-coding-string
+                               (json-encode-alist
+                                (list (cons "write_file" ref-man-chrome-linkedin-write-file)
+                                      (cons "out_dir" ref-man-chrome-linkedin-out-dir)))
+                               'utf-8)))
+        (ref-man-chrome-message-http-buffer
+         (url-retrieve-synchronously "http://localhost:8989/setup")))
+    (message "Set variable `ref-man-chrome-linkedin-write-file' first")))
+
+(defvar ref-man-chrome-linkedin-page-source nil)
+(defun ref-man-chrome-parse-linkedin-data (&optional write)
+  "Retrieve the applicants from linkedin recruiter page.
+Requires `python3' with `flask' and `bs4' packages.  The script
+is written to a temp file and is run as a service.  As of now,
+this is the python file which is run
+`/home/joe/lib/misc-python/linkedin_parse.py'"
+  (interactive)
+  (let ((url-request-method "POST")
+        (url-request-extra-headers
+         `(("Content-Type" . "application/json")))
+        (url-request-data (encode-coding-string
+                           (json-encode-alist
+                            (list (cons "page"  ref-man-chrome-linkedin-page-source)))
+                           'utf-8))
+        (linkedin-socket (ref-man-chrome-connect-to-tab-with-url-re "applicantswithfacets"))
+        (download-socket (when (or write current-prefix-arg)
+                           (condition-case nil
+                               (ref-man-chrome-connect-to-empty-tab)
+                             (error nil))
+                           (ref-man-chrome-connect-to-tab-with-url-re "cap/people"))))
+    (ref-man-chrome-eval-on-socket
+     "document.documentElement.innerHTML"
+     linkedin-socket
+     (lambda (result)
+       (setq ref-man-chrome-linkedin-page-source
+             (plist-get (plist-get result :result) :value))))
+    (sleep-for .5)
+    (cond ((not (or write current-prefix-arg))
+           (ref-man-chrome-message-http-buffer (url-retrieve-synchronously "http://localhost:8989/parse"))
+           (setq url-request-method "GET")
+               (setq url-request-extra-headers nil)
+               (setq url-request-data nil)
+               (ref-man-chrome-message-http-buffer
+                (url-retrieve-synchronously "http://localhost:8989/write")))
+          (t
+           (with-current-buffer
+               (url-retrieve-synchronously "http://localhost:8989/parse")
+             (let ((mails-urls (progn (goto-char (point-min))
+                                      (re-search-forward "\r?\n\r?\n")
+                                      (mapcar (lambda (x)
+                                                (split-string x ";"))
+                                              (-filter
+                                               #'identity
+                                               (split-string
+                                                (buffer-substring-no-properties (point) (point-max))))))))
+               (message "[ref-man-chrome] Downloading resumes")
+               (seq-do (lambda (x)
+                         (when (cadr x)
+                           (ref-man-chrome-eval-on-socket
+                            (format "location.href = \"%s\"" (cadr x))
+                            download-socket))
+                         (sleep-for 2)
+                         (setq url-request-data (encode-coding-string
+                                                 (json-encode-alist (list (cons (car x) (cadr x))))
+                                                 'utf-8))
+                         (with-current-buffer
+                             (url-retrieve-synchronously "http://localhost:8989/update_resumes")
+                           (goto-char (point-min))
+                           (re-search-forward "\r?\n\r?\n")
+                           (message (string-trim (buffer-substring-no-properties (point) (point-max))))))
+                       mails-urls)
+               (message "[ref-man-chrome] Finished downloading resumes")
+               (setq url-request-method "GET")
+               (setq url-request-extra-headers nil)
+               (setq url-request-data nil)
+               (ref-man-chrome-message-http-buffer
+                (url-retrieve-synchronously "http://localhost:8989/write"))))))))
 
 (provide 'ref-man-chrome)
 

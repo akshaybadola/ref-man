@@ -54,3 +54,17 @@
 ## [2021-03-23 Tue 08:38]
 - Added `ref-man-fix-drawers-deleted-files` and utility function
   `ref-man-not-pdf-files`.
+
+## [2021-03-23 Tue 08:38]
+- `ref-man-chrome.el` is more modular now and later can be separated as a chrome
+  debugger interface.
+- New file `ref-man-py.el` separating python functionality from
+  `ref-man-core.el`.
+- Fix to `ref-man--generate-entry-from-hash` where I was passing `cons` instead
+  of string to `ref-man--build-bib-key-from-plist`.
+- Cleaner `ref-man--generate-buffer-and-fetch-if-required`
+- Removed `util` as a dependency and added `ref-man-pairs-to-alist` which is a
+  copy of `util/pairs-to-alist`.
+- Some cleanup of the python module.
+- Added `common_pyutil` as a dependency for the python module.
+- Minor version bump to `0.4.0` with separation of python module.

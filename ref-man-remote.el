@@ -30,7 +30,7 @@
 ;; storage.  Provides custom functions to use with `mu4e' to export `org-mode'
 ;; buffers as mail and attach files as remote links automatically.
 ;;
-;; Remote storage management requires rclone to be available.  See
+;; Remote storage management requires rclone to be available.  See URL
 ;; https://rclone.org/.  Not all remote servers may support generating public
 ;; links.  Refer to rclone documentation.
 
@@ -40,6 +40,9 @@
 (require 'f)
 (require 'dash)
 (require 'cl-lib)
+
+(unless (featurep 'ref-man-util)
+  (require 'ref-man-util))
 
 (defcustom ref-man-remote-documents-dir ""
   "Remote documents dir which will sync with `ref-man-documents-dir'."
@@ -107,7 +110,7 @@ disk."
                         ref-man-python-server-port
                         ref-man-documents-dir
                         ref-man-remote-documents-dir
-                        ref-man-public-links-cache-file )
+                        ref-man-public-links-cache-file)
                 t)))
       ;; NOTE: Timer not implemented
       ;; (setq ref-man-remote-cache-update-check-timer

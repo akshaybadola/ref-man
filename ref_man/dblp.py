@@ -1,5 +1,8 @@
+from typing import Tuple, Callable, Dict, List
+import logging
 import json
 import requests
+import queue
 
 from .q_helper import QHelper
 
@@ -14,15 +17,18 @@ class _DBLPHelper:
     proxies = None
 
     @classmethod
-    def dblp_fetch(cls, query, q, ret_type="json", verbose=None):
-        """Fetch `query` from the dblp server and store the response in
-        :class:queue.Queue `q`.
+    def dblp_fetch(cls, query: str, q: queue.Queue, ret_type: str = "json", verbose=False):
+        """Fetch :code:`query` from the dblp server and store the response in
+        :class:queue.Queue :code:`q`.
 
-        `ret_type` is the format in to query the server. Valid values can be `json`
-        and `xml`. `xml` isn't implemented right now.
-
+        Args:
+            query: The string to query from the server
+            ret_type: the format in to query the server. Valid values can
+                be :code:`json` and :code:`xml`.
+                :code:`xml` isn't implemented right now.
         """
-        if cls.verbose:
+        # logger.info(f"Fetching from DBLP, query: {query}\n")
+        if verbose or cls.verbose:
             print(f"Fetching from DBLP, query: {query}\n")
         if ret_type == "json":
             response = requests.get(f"https://dblp.uni-trier.de/search/publ/api" +
@@ -67,7 +73,8 @@ class _DBLPHelper:
         content[query] = ["NO_RESULT"]
 
     @classmethod
-    def _dblp_error(cls, query, response, content):
+    def _dblp_error(cls, query: str, response: requests.Response,
+                    content: Dict[str, List[str]]):
         """Handle any other HTTP status (aside from 200 and 422) for `query` from DBLP
         server.
 
@@ -76,12 +83,12 @@ class _DBLPHelper:
 
         """
         if cls.verbose:
-            content[query] = [f"ERROR, {response.content}"]
+            content[query] = [f"ERROR, {response.content.decode('utf-8')}"]
         else:
             content[query] = [f"ERROR"]
 
 
-def dblp_helper(proxies=None, verbose=False):
+def dblp_helper(proxies=None, verbose=False) -> Tuple[Callable, QHelper]:
     _DBLPHelper.proxies = proxies
     _DBLPHelper.verbose = verbose
     return _DBLPHelper.dblp_fetch, QHelper(_DBLPHelper._dblp_success,

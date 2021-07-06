@@ -4,9 +4,10 @@
 
 (package-file "ref-man.el")
 
-;; NOTE: How to depend on a git repo
-;; (depends-on "dropboxer"
-;;             :git "https://gitlab.com/NobbZ/emacs-dropboxer.git"
+(depends-on "a" "0.1.1")
+;; NOTE: Removed util as cask git install dependency seems buggy
+;; (depends-on "util"
+;;             :git "https://github.com/akshaybadola/emacs-util"
 ;;             :branch "master")
 
 (development
