@@ -174,12 +174,6 @@ Example:
               pairs)
       newlist)))
 
-(defsubst cdass (elem alist)
-  "Short for (cdr (assoc ELEM) list).
-Argument ALIST association list."
-  (when (assoc elem alist)
-    (cdr (assoc elem alist))))
-
 (defun url-join (&rest elements)
   "Join ELEMENTS with a single \"/\", like a url."
   (string-join (-remove #'string-empty-p

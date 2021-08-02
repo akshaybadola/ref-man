@@ -68,3 +68,16 @@
 - Some cleanup of the python module.
 - Added `common_pyutil` as a dependency for the python module.
 - Minor version bump to `0.4.0` with separation of python module.
+
+## [2021-08-02 Mon 15:03]
+- Modified README
+- Updated requirements
+- Version bump to `0.5.0`
+- Replaced `cdass` with `a-get`
+- Added the blog generation backend and settings for that.
+- Added `ref-man-key-from-url` and `allow-misc` flag while exporting bibtex from
+  org heading.
+- Modularized `ref-man-docproc-export-article` and fixed some issues
+- Fixed `References` heading was being added each time even without any
+  citations
+- Bibliography not in external files is now embedded in the yaml header itself.

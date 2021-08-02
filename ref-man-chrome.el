@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 24 June 2020 09:16:15 AM IST>
+;; Time-stamp:	<Friday 09 July 2021 01:55:15 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -820,12 +820,14 @@ which debugging port to open."
   "Get the *chromium* process if running in Emacs."
   (get-process "chromium"))
 
-(defun ref-man-chrome-start-process (headless)
+(defun ref-man-chrome-start-process (&optional headless)
   "Start a new chromium process.
 Start in headless mode if HEADLESS is non-nil, else windowed
-mode."
-  (interactive)
-  (let ((port (ref-man-chrome--find-open-port))
+mode.  When called interactively, start in windowed mode by
+default."
+  (interactive "p")
+  (let ((headless (and headless (pcase headless (1 nil) (_ t))))
+        (port (ref-man-chrome--find-open-port))
         (data-dir ref-man-chrome-user-data-dir)
         (chromium (or (and (processp (ref-man-chrome--chromium-running)) 'internal)
                       (and (integerp (ref-man-chrome--chromium-running)) 'external))))

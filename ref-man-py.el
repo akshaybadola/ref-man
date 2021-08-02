@@ -105,8 +105,8 @@ PYTHON is the path for python executable."
         (buf (find-file-noselect const-file)))
     (with-current-buffer buf
       (goto-char (point-min))
-      (re-search-forward "__version__ = \"\\(.+\\)\"")
-      (substring-no-properties (match-string 1)))))
+      (re-search-forward "__version__\\(.+?\\)=\\(.+?\\)\"\\(.+\\)\"")
+      (substring-no-properties (match-string 3)))))
 
 (defun ref-man-py-env-needs-update-p ()
   "Check if `ref-man' module needs to be updated."

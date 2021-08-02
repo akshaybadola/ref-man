@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 24 June 2020 09:16:15 AM IST>
+;; Time-stamp:	<Tuesday 06 July 2021 15:47:57 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org-mode, eww
 ;; Version:     0.4.0
 ;; Package-Requires: ((a "0.1.1") (async "1.9.4") (org "9.2.3") (biblio-core "0.2.1") (gscholar-bibtex "0.3.1") (websocket "1.12") (dash "2.18.0") (bind-key "2.4") (org-ref "1.1.1"))
@@ -28,7 +28,37 @@
 
 ;;; Commentary:
 ;;
-;; TODO
+;; Emacs library to manage bibliography having tight integration with org-mode
+;; and eww.  Grew out of a frustration to effectively manage downloaded pdfs,
+;; notes, export/import to bib and document generation.
+
+;; Very much a work in progress, it's similar in functionality to
+;; `org-ref'.  When I had started writing this, (I don't exactly recall) either I
+;; didn't know of its existence or felt that it lacked a few features that I
+;; needed.  So the project evolved as such.
+
+;; Features:
+;; - Bibliography Management with `org-mode'.  Import/export bib files
+;;   to org mode entries.  The data is stored in the org heading PROPERTIES table.
+;; - Auto download from supported remote URLs
+;;   See `ref-man-url-get-pdf-link-helper' for the list of supported sites.
+;; - Auto fetch bibliography from DBLP (or other specified source)
+;;   Currently Google Scholar, DBLP and Crossref are supported.
+;;   - Convert the references for a paper to an org buffer and display for easy
+;;     inspection and marking
+;;   - Update the properties from the fetched bib data.
+;; - Strong Integration with remote servers for PDF, bibliography and other
+;;   metadata extraction
+;;   - arxiv.org
+;;   - semanticscholar.org
+;;   - scholar.google.com
+
+;; Details
+;; - Use chromium (or google chrome) to avoid google's annoying "Prove you're not a
+;;   robot" message for scholar.google.com
+;;   - Uses the debug adapter to route pages through chromium and display in an `eww'
+;;     like buffer
+;;   - Helps if you're logged in with a gmail id.
 
 ;;; Code:
 
@@ -58,7 +88,7 @@ See URL `https://github.com/allenai/science-parse' for details"
   :group 'ref-man)
 
 (defcustom ref-man-use-chrome-for-search nil
-  "Whether chromium should be used for searching instead of eww"
+  "Whether chromium should be used for searching instead of eww."
   :type 'boolean
   :group 'ref-man)
 
@@ -144,7 +174,7 @@ Return 'external if server is running but outside Emacs and
     (if status status
       (if has-java
           (if (and ref-man-science-parse-jar-file ref-man-science-parse-server-port)
-              (if (y-or-n-p-with-timeout "[ref-man] Science Parse Server not runing. Start it? " 3 nil)
+              (if (y-or-n-p-with-timeout "[ref-man] Science Parse Server not runing.  Start it? " 3 nil)
                   (progn
                     (unless (string-match-p "science-parse" (shell-command-to-string  "ps -ef | grep java"))
                       (start-process "science-parse" "*science-parse*"
