@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Tuesday 06 July 2021 15:48:57 PM IST>
+;; Time-stamp:	<Monday 02 August 2021 15:13:05 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -641,3 +641,5 @@ match for TITLE's first three words will be returned."
 
 
 (provide 'ref-man-url)
+
+;;; ref-man-url.el ends here
