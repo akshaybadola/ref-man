@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 02 August 2021 15:13:18 PM IST>
+;; Time-stamp:	<Thursday 09 September 2021 01:23:53 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -310,6 +310,18 @@ A."
                                                 (cdr pattern)
                                                 content t))))
     content))
+
+(defun ref-man-util-regions-contiguous-p (regions)
+  "Return t if list of REGIONS are contiguous."
+  (let ((flag t)
+        temp)
+    (seq-do (lambda (x)
+              (if (eq (car x) 'end)
+                  (push (cdr x) temp)
+                (when (and temp (not (= (- (cdr x) (car temp)) 1)))
+                  (setq flag nil))))
+            regions)
+    flag))
 
 (defun ref-man-delete-blank-lines-in-region (&optional beg end no-trailing-newline)
   "Delete all empty lines in region.

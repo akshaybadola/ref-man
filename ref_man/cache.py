@@ -1,3 +1,5 @@
+import logging
+from pathlib import Path
 import os
 import time
 import shutil
@@ -6,7 +8,8 @@ from threading import Thread, Event
 
 
 class CacheHelper:
-    def __init__(self, local_dir, remote_dir, cache_file, logger):
+    def __init__(self, local_dir: Path, remote_dir: Path,
+                 cache_file: Path, logger: logging.Logger):
         self.local_dir = local_dir
         self.remote_dir = remote_dir
         self.cache_file = cache_file
@@ -18,15 +21,15 @@ class CacheHelper:
         self.check_and_fix_cache()
 
     @property
-    def updating(self):
+    def updating(self) -> bool:
         return self.updating_ev.is_set()
 
     @property
-    def finished(self):
+    def finished(self) -> bool:
         return self.success_ev.is_set()
 
     @property
-    def finished_with_errors(self):
+    def finished_with_errors(self) -> bool:
         return self.success_with_errors_ev.is_set()
 
     # TODO: Change to sqlite

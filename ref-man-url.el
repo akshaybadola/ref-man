@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 02 August 2021 15:13:05 PM IST>
+;; Time-stamp:	<Thursday 09 September 2021 01:23:47 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -33,6 +33,7 @@
 
 (unless (featurep 'ref-man-util)
   (require 'ref-man-util))
+(require 'doi-utils)
 
 (defcustom ref-man-pdf-proxy-port nil
   "Fetch PDFs over a proxy server if non-nil.
@@ -50,13 +51,13 @@ localhost specified by this port."
   '(acl arxiv neurips mlr aaai acm doi-cvpr cvf cvf-old openreview ss)
   "List of supported sites for fetching pdf.")
 
-;; CHECK: What does this do?
 (defun ref-man-url-to-arxiv-id (url)
-  "Get arxivid from URL."
-  (let ((suffix (car (last (split-string url "/")))))
-    (if (string-match-p "pdf" suffix)
-        (replace-in-string suffix ".pdf" "")
-      suffix)))
+  "Get arxivid from an arxiv.org URL."
+  (when (eq (ref-man-url-get-site-from-url url) 'arxiv)
+    (let ((suffix (car (last (split-string url "/")))))
+      (if (string-match-p "pdf" suffix)
+          (replace-in-string suffix ".pdf" "")
+        suffix))))
 
 (defun ref-man-url-from-arxiv-id ()
   "Get url from arxivid extracted from org property drawer at point."
@@ -221,38 +222,55 @@ Useful when you want the buffer to persist afterwards."
        (goto-char (point-min))
        ,@body)))
 
+(defun ref-man-url-get-all-links-from-html-buffer (buf &optional predicate)
+  "Extract all links from an html response buffer BUF.
+The buffer is first rendered with `shr' and then searched for
+links.  With optional PREDICATE, return links that satisfies
+predicate."
+  (with-temp-shr-buffer buf
+                        (let ((predicate (or predicate #'identity)))
+                          (-filter predicate (ref-man-web-get-all-links
+                                              (current-buffer) t)))))
+
 (defun ref-man-url-get-first-pdf-link-from-html-buffer (buf &optional predicate)
   "Extract first pdf link from an html response buffer BUF.
 The buffer is first rendered with `shr' and then searched for
-links.  With optional PREDICATE, return first link from the
-output of `-filter' with predicate."
+links.  With optional PREDICATE, return first link that satisfies
+predicate."
   (with-temp-shr-buffer buf
                         (let ((predicate (or predicate #'identity)))
                           (-first predicate (ref-man-web-get-all-links
                                              (current-buffer) t nil "pdf")))))
 
-(defun ref-man-url-get-last-pdf-link-from-html-buffer (buf)
+(defun ref-man-url-get-last-pdf-link-from-html-buffer (buf &optional predicate)
   "Extract last pdf link from an html response buffer BUF.
 The buffer is first rendered with `shr' and then searched for
-links."
+links.  With optional PREDICATE, return first link that satisfies
+predicate."
   (with-temp-shr-buffer buf
-                        (-last-item (ref-man-web-get-all-links
-                                     (current-buffer) nil nil "pdf"))))
+                        (let ((predicate (or predicate #'identity)))
+                          (-last predicate (ref-man-web-get-all-links
+                                            (current-buffer) t nil "pdf")))))
 
-(defun ref-man-url-get-first-link-from-html-buffer (buf)
+(defun ref-man-url-get-first-link-from-html-buffer (buf &optional predicate)
   "Extract first link from an html response buffer BUF.
 The buffer is first rendered with `shr' and then searched for
-links."
+links.  With optional PREDICATE, return first link that satisfies
+predicate."
   (with-temp-shr-buffer buf
-                        (car (ref-man-web-get-all-links (current-buffer)))))
+                        (let ((predicate (or predicate #'identity)))
+                          (-first predicate (ref-man-web-get-all-links
+                                             (current-buffer) t)))))
 
-(defun ref-man-url-get-last-link-from-html-buffer (buf)
+(defun ref-man-url-get-last-link-from-html-buffer (buf &optional predicate)
   "Extract last link from an html response buffer BUF.
 The buffer is first rendered with `shr' and then searched for
-links."
+links.  With optional PREDICATE, return first link that satisfies
+predicate."
   (with-temp-shr-buffer buf
-                        (-last-item (ref-man-web-get-all-links
-                                     (current-buffer) nil nil))))
+                        (let ((predicate (or predicate #'identity)))
+                          (-last predicate (ref-man-web-get-all-links
+                                            (current-buffer) t)))))
 
 (defun ref-man-url-domain (url)
   "Get the domain name with protocol for URL."
@@ -324,12 +342,22 @@ first pdf link from the buffer."
          (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
            (when (and link (string-match-p "^http:\\|^https:" link)) link)))
         ((eq site 'aaai)
-         (let* ((buf (if (string-match-p "This page requires frames."
-                                         (with-current-buffer buf (buffer-string)))
-                         (url-retrieve-synchronously (ref-man-url-get-last-link-from-html-buffer buf) t)
-                       buf)))
-           (replace-regexp-in-string "/paper/view/" "/paper/viewFile/"
-                                     (ref-man-url-get-last-link-from-html-buffer buf))))
+         (let ((link (pcase (ref-man-url-get-all-links-from-html-buffer
+                             buf
+                             (lambda (x) (string-match-p (rx "http"
+                                                             (+? any)
+                                                             (or "article" "paper")
+                                                             "/" "view" (+ any))
+                                                         x)))
+                       (`(,x) x)
+                       (_ nil))))
+           (or link
+               (let ((buf (if (string-match-p "This page requires frames."
+                                              (with-current-buffer buf (buffer-string)))
+                              (url-retrieve-synchronously (ref-man-url-get-last-link-from-html-buffer buf) t)
+                            buf)))
+                 (replace-regexp-in-string "/paper/view/" "/paper/viewFile/"
+                                           (ref-man-url-get-last-link-from-html-buffer buf))))))
         ((eq site 'acm)
          (if (string-match-p "/doi/" url)
              (replace-regexp-in-string "/doi/" "/doi/pdf/" url)
@@ -427,6 +455,7 @@ ARGS is for compatibility and not used."
       ((string-match-p "papers.nips.cc\\|proceedings.neurips.cc" url) 'neurips)
       ((string-match-p "mlr.press" url) 'mlr)
       ((string-match-p "openaccess.thecvf.com" url) 'cvf)
+      ((string-match-p "ieeexplore.ieee.org" url) 'ieee)
       ((string-match-p "cv-foundation.org" url) 'old-cvf)
       ((string-match-p "aaai.org" url) 'aaai)
       ((string-match-p "acm.org" url) 'acm)
@@ -492,7 +521,8 @@ given is it called on the PDF URL."
            (helper (pcase site
                      ('arxiv #'ref-man-url-arxiv-pdf-link-helper)
                      ('acl #'ref-man-url-acl-pdf-link-helper)
-                     ('doi-cvpr #'ref-man-url-cvpr-pdf-link-helper)
+                     ('doi-cvpr #'ref-man-url-cvf-pdf-link-helper)
+                     ('ieee #'ref-man-url-cvf-pdf-link-helper)
                      (_ (-partial #'ref-man-url-get-pdf-link-helper site)))))
       (cond ((and helper (symbolp helper) callback)
              (let ((link (funcall helper url cbargs)))
@@ -588,23 +618,47 @@ given is it called on the PDF URL."
            (ref-man-url-get-supplementary-url-from-openreview-url url))
           (t url))))
 
-(defun ref-man-url-cvpr-pdf-link-helper (url &rest args)
-  "Get PDF URL for an arxiv url.
-ARGS is a plist with keywords :heading and optional :url and :year."
-  (when (and (plist-get args :heading)
-             (not (string-empty-p (plist-get args :heading))))
-    ;; TODO: Otherwise get title from DOI
-    (ref-man-python-get-cvpr-url (plist-get args :heading) url)))
+(defun ref-man-url-parse-cvf-venue (doi venue)
+  (cond ((and doi (string-match ".*\\(ICCV\\|CVPR\\).*" doi))
+         (match-string 1 doi))
+        (venue
+         (cond ((string-match ".*\\(ICCV\\|CVPR\\).*" venue)
+                (match-string 1 venue))
+               ((string-match-p ".*computer.*vision.*pattern.*recognition.*" venue)
+                "cvpr")
+               ((string-match-p ".*international.*conference.*computer.*vision.*" venue)
+                "iccv")
+               (t nil)))))
 
-(defun ref-man-python-get-cvpr-url (title &optional url year)
+(defun ref-man-url-cvf-pdf-link-helper (url &optional args)
+  "Get PDF URL for a CVF url.
+ARGS is a plist with keywords :heading :point :buffer"
+  (let* ((buf (plist-get args :buffer))
+         (heading (plist-get args :heading))
+         (pt (plist-get args :point))
+         (doi (with-current-buffer buf (org-entry-get pt "DOI")))
+         (venue (ref-man-url-parse-cvf-venue
+                 doi
+                 (with-current-buffer buf (org-entry-get pt "VENUE"))))
+         (year (with-current-buffer buf (org-entry-get pt "YEAR"))))
+    (when (and heading (not (string-empty-p heading)))
+      (when (string-match-p "ieeexplore.ieee.org" url)
+        (unless venue
+          (setq venue (read-from-minibuffer
+                       "Could not CVF determine venue. Enter: ")))
+        (if (string-empty-p venue)
+            (user-error "No venue given")
+          (ref-man-python-get-cvf-url heading venue url year))))))
+
+(defun ref-man-python-get-cvf-url (title venue &optional url year)
   "Get the cvpr url from python server for given TITLE if possible.
 Optional YEAR if not specified but can be extracted from a DOI
 URL.  If neither are given, then the pdf url for the longest regexp
 match for TITLE's first three words will be returned."
   (let* ((title (ref-man--remove-punc title t))
          (year (or year (and url (nth 1 (split-string (-last-item (split-string url "/" t)) "\\." t)))))
-         (buf (url-retrieve-synchronously (format "http://localhost:%s/get_cvpr_url?title=%s&year=%s"
-                                          ref-man-python-server-port title year)))
+         (buf (url-retrieve-synchronously (format "http://localhost:%s/get_cvf_url?title=%s&venue=%s&year=%s"
+                                                  ref-man-python-server-port title venue year)))
          (buf-string (with-current-buffer buf
                        (goto-char (point-min))
                        (re-search-forward "\r?\n\r?\n")

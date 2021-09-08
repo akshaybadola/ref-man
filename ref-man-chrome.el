@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 02 August 2021 15:11:23 PM IST>
+;; Time-stamp:	<Thursday 09 September 2021 01:22:52 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -446,7 +446,7 @@ it's non-nil, else `ref-man-org-links-file-path'."
         (t (debug))))
 
 (defun ref-man-chrome-import-everything (web-buf &optional org-buf update)
-  "Extract link, text and publication properties.
+  "Extract link, text and publication properties from *ref-man-web* buffer.
 Web buffer WEB-BUF is an `shr' buffer.  Optional ORG-BUF
 specifies the org buffer to insert the data.  If UPDATE is
 non-nil then update the current entry in the org buffer ORG-BUF

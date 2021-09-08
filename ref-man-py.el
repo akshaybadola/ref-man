@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 02 August 2021 15:11:46 PM IST>
+;; Time-stamp:	<Thursday 09 September 2021 01:23:15 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -24,7 +24,6 @@
 ;; GNU Emacs; see the file COPYING.  If not, write to the Free Software
 ;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
-
 ;;; Commentary:
 ;;
 ;; Functions for managing python virtualenv and processes for `ref-man'.  Has
@@ -34,17 +33,22 @@
 
 ;;; Code:
 
-(defcustom ref-man-python-server-port-start 9999
+(defcustom ref-man-py-executable ""
+  "Path to python executable to use for `ref-man'."
+  :type 'file
+  :group 'ref-man)
+
+(defcustom ref-man-py-server-port-start 9999
   "Server port on which to communicate with python server."
   :type 'integer
   :group 'ref-man)
 
-(defcustom ref-man-python-server-port 9999
+(defcustom ref-man-py-server-port 9999
   "Port on which to communicate with python server."
   :type 'integer
   :group 'ref-man)
 
-(defcustom ref-man-python-data-dir (expand-file-name "~/.ref-man/data/")
+(defcustom ref-man-py-data-dir (expand-file-name "~/.ref-man/data/")
   "Server port on which to communicate with python server."
   :type 'directory
   :group 'ref-man)
@@ -76,15 +80,18 @@ on the system."
 ;; NOTE: Internal variables
 (defvar ref-man-py-external-process-pid nil)
 
-(defun ref-man-py-create-venv (path)
-  "Create a new `ref-man' virtual env in directory PATH."
+(defun ref-man-py-create-venv (python path)
+  "Create a new `ref-man' virtual env in directory PATH.
+The python executable to use is defined by PYTHON."
   (if (and (string-match-p "no.*module.*virtualenv.*"
                            (shell-command-to-string
-                            (format "python3 -m virtualenv -p python3 %s" path)))
+                            (format "%s -m virtualenv -p %s %s"
+                                    python (f-filename (f-canonical python)) path)))
            (string-match-p "no.*module.*virtualenv.*"
                            (shell-command-to-string
-                            (format "/usr/bin/python3 -m virtualenv -p python3 %s" path))))
-      nil (message "Create venv in %s" path)))
+                            (format "%s -m virtualenv -p %s %s"
+                                    python (f-filename (f-canonical python)) path))))
+      nil (message "Create venv with %s in %s" (f-filename (f-canonical python)) path)))
 
 (defun ref-man-py-no-mod-in-venv-p (python)
   "Check if `ref-man' python environment has py module installed.
@@ -108,6 +115,12 @@ PYTHON is the path for python executable."
       (re-search-forward "__version__\\(.+?\\)=\\(.+?\\)\"\\(.+\\)\"")
       (substring-no-properties (match-string 3)))))
 
+(defun ref-man-py-venv-python-version ()
+  "Return version of python executable in `ref-man' virtualenv."
+  (cadr (split-string
+         (shell-command-to-string
+          (concat (path-join ref-man-home-dir "env" "bin" "python") " " "--version")))))
+
 (defun ref-man-py-env-needs-update-p ()
   "Check if `ref-man' module needs to be updated."
   (not (equal (ref-man-py-file-mod-version)
@@ -119,7 +132,7 @@ PYTHON is the path for python executable."
 (defun ref-man-py-env-uninstall-module (env)
   "Install the `ref-man' module in virtualenv ENV."
   (shell-command
-   (concat "source " (path-join env "bin" "activate") " && pip uninstall ref-man")
+   (concat "source " (path-join env "bin" "activate") " && pip uninstall -y ref-man")
    "*ref-man-uninstall-cmd*" "*ref-man-uninstall-cmd*"))
 
 (defun ref-man-py-env-install-module (env)
@@ -130,30 +143,42 @@ PYTHON is the path for python executable."
                    ref-man-home-dir))
    "*ref-man-install-cmd*" "*ref-man-install-cmd*"))
 
-;; TODO: Check python3 version > 3.6.9
+(defun ref-man-py-get-system-python ()
+  "Get system python3 executable."
+  (unless (or (not (string-empty-p ref-man-py-executable))
+              (executable-find "python3"))
+    (error "No `ref-man-py-executable' or python3 found in current paths.\n
+Either set `ref-man-py-executable' or add python3 path to the exec path"))
+  (or (unless (string-empty-p ref-man-py-executable)
+        ref-man-py-executable)
+      (executable-find "python3")))
+
 (defun ref-man-py-setup-env (&optional reinstall update)
   "Setup python virtualenv.
+
 Optional non-nil REINSTALL removes the virtualenv and installs
 everything again.  Optional non-nil UPDATE only updates the
 `ref-man' python module.  The directory is relative to `ref-man'
-install directory `ref-man-home-dir'.  With optional REINSTALL
-non-nil clean the venv and install all dependencies again."
-  (unless (executable-find "python3")
-    (error "No python3 found in current paths.\n
-If python3 is in some other path, add that path to the exec path"))
-  (let ((env (path-join ref-man-home-dir "env")))
+install directory `ref-man-home-dir'."
+  (let* ((python (ref-man-py-get-system-python))
+         (py-version (and python (shell-command-to-string (format "%s --version" python))))
+         (env (path-join ref-man-home-dir "env")))
+    (when (version< py-version "3.6.9")
+      (user-error "Your default python3 executable is < 3.6.9.
+`ref-man' requires at least 3.6.9.
+Please set `ref-man-py-executable' with a version of python >= 3.6.9"))
     (when (and reinstall (f-exists? env)
                (y-or-n-p (format "Clean and reinstall virtualenv %s? " env)))
       (f-delete env t))
     (unless (f-exists? env)
       (f-mkdir env)
-      (unless (ref-man-py-create-venv env)
+      (unless (ref-man-py-create-venv python env)
         (error "Could not install venv.\n
 Make sure package 'virtualenv' exists in current python environment")))
     (let* ((env-has-python (f-exists? (path-join env "bin" "python3")))
            (python (and env-has-python
                         (path-join env "bin" "python3"))))
-      (when (and (not python) (ref-man-py-create-venv env))
+      (when (and (not python) (ref-man-py-create-venv python env))
         (error "Could not install venv.\n
 Make sure package 'virtualenv' exists in current python environment"))
       (let* ((env-has-no-ref-man (ref-man-py-no-mod-in-venv-p python))
@@ -181,17 +206,17 @@ DATA-DIR is the server data directory.  PORT is the port to which
 the server binds.
 
 When called from `ref-man-py-start-server', DATA-DIR is set
-to `ref-man-python-data-dir' and the port
-`ref-man-python-server-port'.
+to `ref-man-py-data-dir' and the port
+`ref-man-py-server-port'.
 
 Optional arguments PROXY-PORT, PROXY-EVERYTHING-PORT, DOCS-DIR
 are specified for modularity and are set to `ref-man-proxy-port',
-nil, `ref-man-python-data-dir' respectively by
+nil, `ref-man-py-data-dir' respectively by
 `ref-man-py-start-server'."
   ;; NOTE: Hack so that process isn't returned
   (prog1
       (message (format "[ref-man] Starting python process on port: %s"
-                       ref-man-python-server-port))
+                       ref-man-py-server-port))
     (let ((python (path-join ref-man-home-dir "env" "bin" "python")))
       (condition-case nil
           (ref-man-py-setup-env))
@@ -218,7 +243,7 @@ nil, `ref-man-python-data-dir' respectively by
                                                          ref-man-public-links-cache-file))
                                             "--verbosity=debug"))))
         (message "Python process args are %s" args)
-        (apply #'start-process "ref-man-python-server" "*ref-man-python-server*"
+        (apply #'start-process "ref-man-server" "*ref-man-server*"
                python "-m" "ref_man" args)))))
 
 (defun ref-man-py-stop-server ()
@@ -226,7 +251,7 @@ nil, `ref-man-python-data-dir' respectively by
 This is sent via http and lets the server exit gracefully."
   (interactive)
   (let ((buf (url-retrieve-synchronously
-              (format "http://localhost:%s/shutdown" ref-man-python-server-port))))
+              (format "http://localhost:%s/shutdown" ref-man-py-server-port))))
     (with-current-buffer buf
       (goto-char (point-min))
       (re-search-forward "\r?\n\r?\n")
@@ -234,7 +259,7 @@ This is sent via http and lets the server exit gracefully."
 
 (defun ref-man-py-kill-internal-process ()
   "Kill the internal python process process by sending SIGKILL."
-  (signal-process (get-buffer "*ref-man-python-server*") 15))
+  (signal-process (get-buffer "*ref-man-server*") 15))
 
 (defun ref-man-py-kill-external-process ()
   "Kill the external python process process by sending SIGKILL."
@@ -244,7 +269,7 @@ This is sent via http and lets the server exit gracefully."
   "Check if python server is reachable."
   (condition-case nil
       (let ((buf (url-retrieve-synchronously
-                  (format "http://localhost:%s/version" ref-man-python-server-port) t)))
+                  (format "http://localhost:%s/version" ref-man-py-server-port) t)))
         (when buf
           (string-match-p "ref-man python server"
                           (with-current-buffer buf (buffer-string)))))
@@ -254,7 +279,7 @@ This is sent via http and lets the server exit gracefully."
   "Check if python server is running.
 Returns 'external or 'internal according to where the process is
 running if it's running else nil."
-  (cond ((get-buffer-process "*ref-man-python-server*")
+  (cond ((get-buffer-process "*ref-man-server*")
          (setq ref-man-py-external-process-pid nil)
          'internal)
         ((ref-man-py-external-process-p)
@@ -272,7 +297,7 @@ running if it's running else nil."
 
 (defun ref-man-py-external-process-p ()
   "Check for `server.py' python processes outside Emacs.
-In case a process is found, `ref-man-python-server-port' is set
+In case a process is found, `ref-man-py-server-port' is set
 to the port of that process and
 `ref-man-py-external-process-pid' is set to its pid."
   (let ((python-strings
@@ -280,7 +305,7 @@ to the port of that process and
     (cl-loop for x in python-strings
              do
              (when (and (string-match-p "port" x) (string-match-p "data-dir" x))
-               (setq ref-man-python-server-port
+               (setq ref-man-py-server-port
                      (string-to-number
                       (cadr (split-string
                              (car (split-string
@@ -292,7 +317,7 @@ to the port of that process and
   "Start the python server, unless already running.
 
 The server can be running outside Emacs also in which case
-`ref-man-python-server-port' is set to port.
+`ref-man-py-server-port' is set to port.
 
 See accompanying `server.py' for the server details.  The API and
 methods are still evolving but as of now it supports DBLP and
@@ -303,11 +328,11 @@ and consolidating.  It also maintains a local datastore."
   ;; FIXME: for 'internal-error and 'external-error
   (if (ref-man-py-server-running)
       (message (format "Found existing process running on port: %s"
-                       ref-man-python-server-port))
+                       ref-man-py-server-port))
     (message "No existing python process found")
-    (let ((port (find-open-port ref-man-python-server-port-start))
-          (data-dir ref-man-python-data-dir))
-      (setq ref-man-python-server-port port)
+    (let ((port (find-open-port ref-man-py-server-port-start))
+          (data-dir ref-man-py-data-dir))
+      (setq ref-man-py-server-port port)
       (ref-man-py-process-helper data-dir port))))
 
 (defun ref-man-py-restart-server ()

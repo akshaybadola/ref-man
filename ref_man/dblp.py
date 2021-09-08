@@ -1,10 +1,9 @@
-from typing import Tuple, Callable, Dict, List
-import logging
+from typing import Tuple, Callable, Dict, List, Optional, Union
 import json
 import requests
 import queue
 
-from .q_helper import QHelper
+from .q_helper import QHelper, ContentType
 
 
 class _DBLPHelper:
@@ -13,11 +12,12 @@ class _DBLPHelper:
 
     """
 
-    verbose = False
-    proxies = None
+    verbose: bool = False
+    proxies: Optional[Dict[str, str]] = None
 
     @classmethod
-    def dblp_fetch(cls, query: str, q: queue.Queue, ret_type: str = "json", verbose=False):
+    def dblp_fetch(cls, query: str, q: queue.Queue,
+                   ret_type: str = "json", verbose: bool = False):
         """Fetch :code:`query` from the dblp server and store the response in
         :class:queue.Queue :code:`q`.
 
@@ -39,7 +39,8 @@ class _DBLPHelper:
             q.put((query, "INVALID"))
 
     @classmethod
-    def _dblp_success(cls, query, response, content):
+    def _dblp_success(cls, query: str, response: requests.Response,
+                      content: ContentType) -> None:
         """Handle HTTP status 202 (success) for `query` from DBLP server.
 
         `response` is the response and `content` is the dictionary where all the
@@ -63,7 +64,8 @@ class _DBLPHelper:
             content[query] = ["NO_RESULT"]
 
     @classmethod
-    def _dblp_no_result(cls, query, response, content):
+    def _dblp_no_result(cls, query: str, response: requests.Response,
+                        content: ContentType) -> None:
         """Handle HTTP status 422 (no result) for `query` from DBLP server.
 
         `response` is the response and `content` is the dictionary where all the
@@ -74,7 +76,7 @@ class _DBLPHelper:
 
     @classmethod
     def _dblp_error(cls, query: str, response: requests.Response,
-                    content: Dict[str, List[str]]):
+                    content: ContentType) -> None:
         """Handle any other HTTP status (aside from 200 and 422) for `query` from DBLP
         server.
 
@@ -88,7 +90,8 @@ class _DBLPHelper:
             content[query] = [f"ERROR"]
 
 
-def dblp_helper(proxies=None, verbose=False) -> Tuple[Callable, QHelper]:
+def dblp_helper(proxies: Optional[Dict[str, str]] = None,
+                verbose: bool = False) -> Tuple[Callable, QHelper]:
     _DBLPHelper.proxies = proxies
     _DBLPHelper.verbose = verbose
     return _DBLPHelper.dblp_fetch, QHelper(_DBLPHelper._dblp_success,

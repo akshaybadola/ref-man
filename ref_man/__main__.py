@@ -10,6 +10,8 @@ def main():
     parser = argparse.ArgumentParser("ref-man")
     parser.add_argument("--no-threaded", dest="threaded", action="store_false",
                         help="Whether flask server should be threaded or not")
+    parser.add_argument("--host", "-h", default="localhost",
+                        help="host on which to bind the python server")
     parser.add_argument("--port", "-p", type=int, default=9999,
                         help="Port to bind to the python server")
     parser.add_argument("--proxy-port", dest="proxy_port", type=int, default=0,
@@ -44,7 +46,20 @@ def main():
         print(f"ref-man-server version {__version__}")
         sys.exit(0)
     from .server import Server
-    server = Server(args)
+    kwargs = {"host": args.host,
+              "port": args.port,
+              "proxy_port": args.proxy_port,
+              "proxy_everything": args.proxy_everything,
+              "proxy_everything_port": args.proxy_everything_port,
+              "data_dir": args.data_dir,
+              "local_pdfs_dir": args.local_pdfs_dir,
+              "remote_pdfs_dir": args.local_pdfs_dir,
+              "remote_links_cache": args.remote_links_cache,
+              "batch_size": args.batch_size,
+              "chrome_debugger_path": args.chrome_debugger_path,
+              "verbosity": args.verbosity,
+              "threaded": args.threaded}
+    server = Server(**kwargs)
     server.run()
 
 

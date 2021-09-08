@@ -1,20 +1,23 @@
+from typing import Callable, Dict, Union, List
 from queue import Queue
-from typing import Callable
 import requests
 
 
+ContentType = Dict[str, Union[Dict[str, Dict], List]]
+
+
 class QHelper:
-    def __init__(self, func_success: Callable[[str, requests.Response, bytes], None],
-                 func_no_result: Callable[[str, requests.Response, bytes], None],
-                 func_error: Callable[[str, requests.Response, bytes], None],
+    def __init__(self, func_success: Callable[[str, requests.Response, ContentType], None],
+                 func_no_result: Callable[[str, requests.Response, ContentType], None],
+                 func_error: Callable[[str, requests.Response, ContentType], None],
                  verbose: bool = False):
         self.func_success = func_success
         self.func_no_result = func_no_result
         self.func_error = func_error
         self.verbose = verbose
 
-    def __call__(self, q: Queue):
-        content = {}
+    def __call__(self, q: Queue) -> ContentType:
+        content: ContentType = {}
         while not q.empty():
             query, response = q.get()
             if response.status_code == 200:
@@ -28,11 +31,11 @@ class QHelper:
         return content
 
 
-def q_helper(func_success: Callable[[str, requests.Response, bytes], None],
-             func_no_result: Callable[[str, requests.Response, bytes], None],
-             func_error: Callable[[str, requests.Response, bytes], None],
-             q: Queue):
-    content = {}
+def q_helper(func_success: Callable[[str, requests.Response, ContentType], None],
+             func_no_result: Callable[[str, requests.Response, ContentType], None],
+             func_error: Callable[[str, requests.Response, ContentType], None],
+             q: Queue) -> ContentType:
+    content: ContentType = {}
     while not q.empty():
         query, response = q.get()
         if response.status_code == 200:

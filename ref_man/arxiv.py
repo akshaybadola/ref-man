@@ -66,7 +66,7 @@ def arxiv_get(arxiv_id: str) -> str:
 
 
 def _arxiv_success(query: str, response: requests.Response,
-                   content: Dict[str, Dict]):
+                   content: Dict[str, Dict[str, str]]):
     soup = BeautifulSoup(response.content, features="lxml")
     entry = soup.find("entry")
     abstract = entry.find("summary").text

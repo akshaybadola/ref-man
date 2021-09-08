@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 02 August 2021 15:11:46 PM IST>
+;; Time-stamp:	<Thursday 09 September 2021 01:23:11 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -74,8 +74,11 @@ Returns path concatenated with `ref-man-documents-dir'."
                              (concat "acm_" (mapconcat #'identity (-take-last 2 (split-string url "/")) "_") ".pdf"))
                             (t (concat "acm_"
                                        (mapconcat #'identity
-                                                  (-take-last 2 (split-string (-first-item
-                                                                               (split-string url "?")) "/")) "_") ".pdf"))))
+                                                  (-take-last 2
+                                                              (split-string
+                                                               (-first-item
+                                                                (split-string url "?"))
+                                                               "/")) "_") ".pdf"))))
                      (t (when (string-match-p "\\.pdf$" (car (url-path-and-query obj)))
                           (car (url-path-and-query obj))))))
          (file (and path (path-join ref-man-documents-dir (f-filename path)))))

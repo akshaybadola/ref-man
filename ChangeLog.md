@@ -81,3 +81,24 @@
 - Fixed `References` heading was being added each time even without any
   citations
 - Bibliography not in external files is now embedded in the yaml header itself.
+
+## [2021-08-02 Mon 15:03]
+- Added `ref-man-org-consolidate-drawers`, `ref-man-org-end-of-meta-data`,
+  `ref-man-org-text-bounds`, `ref-man-org-bibtex-kill-headline-as-yaml`,
+  `ref-man-org-delete-file-under-point`, `ref-man-org-update-from-from-crossref`,
+  `ref-man-maybe-set-arxiv-id` in `ref-man-core.el`.
+- Export functions are in new file `ref-man-export.el`.
+- Added python version check in `ref-man-py-setup-env`
+- Added fetcher for new version of AAAI site in
+  `ref-man-url-get-pdf-link-helper` and some other additions.
+- Added `ref-man-url-parse-cvf-venue` and `ref-man-url-cvf-pdf-link-helper`
+  in `ref-man-url.el`.
+- Changed Semantic Scholar function names, fetch and update are different
+  functions now and you can display selective information.
+- Fixed incorrect abstract formatting in `ref-man-org-insert-abstract` and it
+  can optionally keep current text in entry
+- Cleaned up initial server invocation from `ref_man.__main__.py`
+- Changed `/get_cvpr_url` to `/get_cvf_url` and fixed some issues
+- Added a lot of type annotations.
+- Version bump to `0.6.0`.
+- Py mod version bump to `0.3.2`.

@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 02 August 2021 15:11:30 PM IST>
+;; Time-stamp:	<Thursday 09 September 2021 01:22:58 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -73,7 +73,6 @@
 (require 'gscholar-bibtex)              ; NOTE: Maybe remove this eventually
 (require 'json)
 (require 'org)
-(require 'org-ref)                      ; loads doi-utils also
 (require 'org-element)
 (require 'seq)
 (require 'shr)
@@ -123,11 +122,6 @@
   :type 'boolean
   :group 'ref-man)
 
-(defcustom ref-man-org-blog-dir (expand-file-name "~/.ref-man/blog/")
-  "Directory where the org files corresponding to documents will be stored."
-  :type 'directory
-  :group 'ref-man)
-
 (defcustom ref-man-pandoc-executable "/usr/bin/pandoc"
   "`pandoc' executable to use"
   :type 'file
@@ -138,37 +132,6 @@
                                  (shell-command-to-string
                                   (format "%s --version" ref-man-pandoc-executable))))
   "The version of pandoc being used.")
-
-(defcustom ref-man-org-export-yaml-template "---
-title: %s
-author: Akshay Badola
-%s
-link-citations: true
-mathjax: %s
-csl: %s
----
-"
-  "Template for yaml header for `ref-man-org-docproc-export-article'"
-  :type 'string
-  :group 'ref-man)
-
-(defcustom ref-man-org-blog-export-yaml-template "---
-title: %s
-author: Akshay Badola
-%s
-link-citations: true
-mathjax: %s
-csl: %s
-date: %s
-category: %s
-tags: %s
-keywords: %s
-draft: true
----
-"
-  "Template for yaml header for blog for export with `ref-man-org-docproc-export-article'"
-  :type 'string
-  :group 'ref-man)
 
 (defvar ref-man-key-list
   '(authors title venue volume number pages year doi ee)
@@ -648,8 +611,8 @@ for the buffer."
 ;;        debugging here. status of course is sent automatically
 ;;
 ;; CHECK: This should be named differently perhaps.
-(defun ref-man--post-json-callback (status url callback)
-  "Callback to parse a response buffer for HTTP POST call with JSON data.
+(defun ref-man--parse-json-callback (status url callback)
+  "Callback to parse a response buffer as JSON.
 STATUS is HTTP status, URL the called url, and CALLBACK is the
 callback which will be called after parsing the JSON data."
   (goto-char (point-min))
@@ -674,15 +637,15 @@ QUERIES is a list of strings which is encoded as json.  The
 request is sent with content-type as application/json.
 
 CALLBACK is passed as an argument to
-`ref-man--post-json-callback' after the URL is retrieved.
-`ref-man--post-json-callback' decodes the JSON data to elisp
+`ref-man--parse-json-callback' after the URL is retrieved.
+`ref-man--parse-json-callback' decodes the JSON data to elisp
 structures and then calls CALLBACK on it."
   (let ((url-request-extra-headers
          `(("Content-Type" . "application/json")))
         (url-request-method "POST")
         (url-request-data
          (encode-coding-string (json-encode queries) 'utf-8)))
-    (url-retrieve url #'ref-man--post-json-callback
+    (url-retrieve url #'ref-man--parse-json-callback
                   (list url callback))))
 
 (defun ref-man--post-json-new (url encode-func args callback)
@@ -696,7 +659,7 @@ output must be a string.  CALLBACK is used in a similar way to
         (url-request-method "POST")
         (url-request-data
          (encode-coding-string (funcall encode-func args) 'utf-8)))
-    (url-retrieve url #'ref-man--post-json-callback
+    (url-retrieve url #'ref-man--parse-json-callback
                   (list url callback))))
 
 (defun ref-man--dblp-fetch-python-process-results (refs-list org-buf results)
@@ -704,7 +667,7 @@ output must be a string.  CALLBACK is used in a similar way to
 
 It's passed as an argument to `ref-man--post-json' but as a
 partial application with list of queries REFS-LIST and target
-buffer ORG-BUF fixed.  `ref-man--post-json-callback' processes
+buffer ORG-BUF fixed.  `ref-man--parse-json-callback' processes
 the HTTP response buffer, converts JSON data to elisp and then
 calls the partial function with sole argument RESULTS."
   ;; NOTE: Sometimes result is hash-table and sometime alist
@@ -802,7 +765,7 @@ all results."
                    all)))))
 
 ;; NOTE: Changed add-to-list to push
-;; TODO: Change to 
+;; TODO: Change to
 (defun ref-man--generate-key-str-from-science-parse ()
   "Generate a string alist from Science Parse data.
 Science Parse data is a hashtable, which is cleaned and the alist
@@ -879,26 +842,93 @@ buffer with that filename."
             (setq should-generate nil)))
         (ref-man--generate-org-buffer-content org-buf refs-list entry-alist visiting-filename)))))
 
-(defun ref-man-org-insert-abstract (abs &optional buf)
+;; TODO: Make sure the property drawer is the first thing after headline.  As of
+;;       now, it consolidates the drawers but only places them after the
+;;       property drawer. If there's text between heading and property drawer
+;;       itself then that's not moved.
+(defun ref-man-org-consolidate-drawers ()
+  "Place all drawers one after other with property drawer first."
+  (interactive)
+  (org-back-to-heading t)
+  (let ((beg (point))
+        (pblock (org-get-property-block))
+        (end (progn (outline-next-heading) (- (point) 1)))
+        blocks temp data)
+    (save-restriction
+      (save-excursion
+        (narrow-to-region beg end)
+        (goto-char (point-max))
+        (while (re-search-backward org-drawer-regexp nil t)
+          (if (equal (match-string 1) "END")
+              (push `(end . ,(point-at-eol)) blocks)
+            (push `(beg . ,(point-at-bol)) blocks)))
+        (when blocks
+          (if (ref-man-util-regions-contiguous-p blocks)
+              (1+ (cdr (-last-item blocks)))
+            (seq-do
+             (lambda (x)
+               (if (eq (car x) 'end)
+                   (push (cdr x) temp)
+                 (unless (string-match-p
+                          org-property-start-re
+                          (buffer-substring-no-properties (cdr x) (car temp)))
+                   (push (buffer-substring (cdr x) (car temp)) data)
+                   (delete-region (- (cdr x) 1) (car temp)))))
+             (reverse blocks))
+            (goto-char (cdr pblock))
+            (end-of-line)
+            (insert "\n")
+            (seq-do (lambda (x) (insert x)) data)
+            (1+ (point))))))))
+
+(defun ref-man-org-end-of-meta-data ()
+  "Go to end of all drawers and other metadata."
+  (let ((pt (ref-man-org-consolidate-drawers)))
+    (org-end-of-meta-data)
+    (if pt
+        (goto-char (max (point) pt))
+      ;; If no metadata just insert new line
+      (insert "\n"))))
+
+(defun ref-man-org-text-bounds ()
+  "Return bounds of text body if present in org subtree.
+
+Return value is a triple of '(beg end has-body) where beg is the
+point after metadata, end is the point at end of subtree and
+has-body indicates if any text is present."
+  (let* ((beg (point))
+         (end (progn
+                (outline-next-heading)
+                (point)))
+         (has-body (not (string-empty-p
+                         (string-trim
+                          (buffer-substring-no-properties beg end))))))
+    (list beg end has-body)))
+
+
+(defun ref-man-org-insert-abstract (abs &optional buf keep-current)
   "Insert abstract as text in entry after property drawer if it exists.
-ABS is the abstract string.  Insert to `current-buffer' if BUF is
-nil else to BUF."
+ABS is the abstract string.  Insert to `current-buffer' if
+optional BUF is nil else to BUF.  If optional KEEP-CURRENT is
+non-nil, keep the current text after the heading, otherwise
+delete."
   (unless buf (setq buf (current-buffer)))
   (with-current-buffer buf
-    (let ((pblock (org-get-property-block)))
-      (when pblock
-        (goto-char (cdr pblock))
-        (end-of-line)))
-    (let ((beg (point))
-          (end (progn
-                 (outline-next-heading)
-                 (point))))
-      (delete-region beg (- end 1))
-      (goto-char beg))
-    (insert "\n")
-    (org-indent-line)
-    (insert abs)
-    (fill-paragraph)))
+    (ref-man-org-end-of-meta-data)
+    (pcase-let ((`(,beg ,end ,has-body) (ref-man-org-text-bounds)))
+      (unless keep-current
+        (when (not (= beg end))
+          (delete-region beg (- end 1))))
+      (goto-char beg)
+      (insert (replace-regexp-in-string "\n" "" abs))
+      (when (and has-body keep-current)
+        (insert "\n"))
+      (goto-char beg)
+      (org-indent-line)
+      (fill-paragraph)
+      (forward-paragraph)
+      (when (org-at-heading-p)
+        (backward-char)))))
 
 (defun ref-man--org-bibtex-write-top-heading-from-assoc (entry)
   "Generate the top level org entry for the results org buffer.
@@ -1020,16 +1050,20 @@ after current."
       (org-insert-heading-after-current))
     (org-edit-headline (a-get entry 'title))
     ;; NOTE: insert heading only when not updating current heading
-    (when (assoc 'abstract entry)
-      (ref-man-org-insert-abstract (a-get entry 'abstract)))
-    (insert "\n")
-    (let ((author-str (mapconcat (lambda (x)
-                                   (a-get x 'name))
-                                 (a-get entry 'authors) ", ")))
-      (org-indent-line)
-      (insert (format "- Authors: %s" author-str))
-      (org-insert-item)
-      (insert (concat (a-get entry 'venue) ", " (format "%s" (a-get entry 'year))))
+    (when (a-get entry 'abstract)
+      (ref-man-org-insert-abstract (a-get entry 'abstract) nil t))
+    (pcase-let ((pt (point))
+                (`(,beg ,end ,has-text) (ref-man-org-text-bounds))
+                (author-str (mapconcat (lambda (x)
+                                         (a-get x 'name))
+                                       (a-get entry 'authors) ", ")))
+      (goto-char beg)
+      (unless has-text
+        (insert "\n")
+        (org-indent-line)
+        (insert (format "- Authors: %s" author-str))
+        (org-insert-item)
+        (insert (concat (a-get entry 'venue) ", " (format "%s" (a-get entry 'year)))))
       (org-insert-property-drawer)
       (cl-loop for ent in entry
             do
@@ -1239,7 +1273,22 @@ FILENAME where the suffix .bib is replaced with .org."
 Only for interactive use.  Same as
 `ref-man-org-bibtex-read-from-headline' except it returns nothing
 and kills the entry as bibtex."
+  (interactive)
   (ref-man-org-bibtex-read-from-headline t))
+
+(defun ref-man-org-bibtex-kill-headline-as-yaml ()
+  "Parse the headline at point, convert to yaml and append to `kill-ring'.
+Only for interactive use.  Same as
+`ref-man-org-bibtex-read-from-headline' except it returns nothing
+and kills the entry as yaml to be used with pandoc."
+  (interactive)
+  (let* ((bib (ref-man-org-bibtex-read-from-headline))
+         (yaml (replace-regexp-in-string
+                "^---\\|^nocite.*\\| +url: .+" ""
+                (shell-command-to-string (format "%s -s -f biblatex -t markdown <<<'%s'"
+                                                 ref-man-pandoc-executable
+                                                 bib)))))
+    (kill-new yaml)))
 
 (defun ref-man-org-publish-type (props-alist &optional allow-misc)
   "Get the correct published type for an org entry properties P-ASSOC alist."
@@ -1268,12 +1317,13 @@ and kills the entry as bibtex."
             (-last-item
              (split-string
               (car (url-path-and-query
-                    (url-generic-parse-url url))) "/"))))))
+                    (url-generic-parse-url url)))
+              "/"))))))
 
 (defun ref-man-org-bibtex-read-from-headline (&optional kill gdrive allow-misc)
   "Parse the headline at point and convert to a bib entry.
 The entry is appended to `ref-man-bibtex-save-ring'.  When
-optional KILL is non-nill, the entry is also added to `kill-ring'
+optional KILL is non-nil, the entry is also added to `kill-ring'
 with `kill-new'.
 
 When optional GDRIVE is non-nil include a (possible) gdrive link
@@ -1302,7 +1352,6 @@ property drawer, then the entry is exported as a \"@misc\" with a
                        (cons "doi"  (cdr (assoc "DOI" props)))
                        (cons "url" (or (cdr (assoc "URL" props))
                                        (cdr (assoc "PDF_URL" props))))
-                       (cons "url"  (cdr (assoc "URL" props)))
                        (cons "gdrive" (and (cdr (assoc "PDF_FILE" props))
                                          (gethash (replace-regexp-in-string
                                                    ref-man-org-file-link-re "\\2"
@@ -1400,6 +1449,7 @@ separate variable `ref-man-bibtex-save-ring' instead of `kill-ring'."
     (ref-man-org-bibtex-convert-bib-to-property
      bib-assoc (current-buffer) (point) t)))
 
+;; TODO: Ignores should be customizable
 (defun ref-man-org-bibtex-convert-bib-to-property (bib-alist &optional buf buf-point no-edit-headline)
   "Convert an alist BIB-ALIST parsed by bibtex to an org property drawer.
 With optional BUF, the headling at (point) is updated.  When
@@ -1565,6 +1615,25 @@ optional BIB-FILE, include that also."
                        (cons bib-file ref-man-bib-files)
                      ref-man-bib-files)))
     (concat "bibliography:\n" (mapconcat (lambda (x) (concat " - " x)) bib-files "\n"))))
+
+(defun ref-man-org-delete-file-under-point ()
+  "Delete file for link under point.
+When in org mode, delete the link text also."
+  (interactive)
+  (pcase-let* ((link (get-text-property (point) 'htmlize-link))
+               (context (org-element-context))
+               (`(,beg ,end) (if context (list (plist-get (cadr context) :begin)
+                                               (plist-get (cadr context) :end))
+                               (list nil nil)))
+               (uri (plist-get link :uri))
+               (uri (and link uri (f-exists? uri) uri)))
+    (if (not uri)
+        (message "Nothing to do here")
+      (f-delete uri)
+      (message "Deleted file %s" uri)
+      (if (and beg end)
+          (delete-region beg end)
+        (message "Could not delete the link text")))))
 
 (defun ref-man-org-clear-property-drawer (&optional org-buf pt)
   "Clear the property drawer at point in buffer ORG-BUF.
@@ -2094,7 +2163,8 @@ happen while inserting references in the buffer."
       (outline-previous-heading))
 ))
 
-(defun ref-man-insert-ss-data (ss-data &optional buf where ignore-errors)
+(defun ref-man-insert-ss-data-subr (ss-data &optional buf where ignore-errors only
+                                            no-abstract current)
   "Insert Semantic Scholar Data SS-DATA into an org buffer.
 
 If optional BUF is given then that is the target buffer, else
@@ -2109,15 +2179,22 @@ citations after that."
   (unless buf (setq buf (current-buffer)))
   (unless where (setq where (with-current-buffer buf (point))))
   ;; abstract should just be inserted as text
-  (let ((abs (a-get ss-data 'abstract)))
-    (when abs (ref-man-org-insert-abstract abs buf)))
-  (org-insert-heading-respect-content)
+  (unless no-abstract
+    (let ((abs (a-get ss-data 'abstract)))
+      (when abs (ref-man-org-insert-abstract abs buf))))
+  (unless current
+    (org-insert-heading-respect-content))
   (org-demote)                          ; demote only once
-  (ref-man--insert-refs-from-seq
-   (a-get ss-data 'references) "references" 'ss ignore-errors)
-  (org-insert-heading-respect-content)
-  (ref-man--insert-refs-from-seq
-   (a-get ss-data 'citations) "citations" 'ss ignore-errors)
+  (pcase only
+    ('refs (ref-man--insert-refs-from-seq
+            (a-get ss-data 'references) "references" 'ss ignore-errors))
+    ('cites (ref-man--insert-refs-from-seq
+             (a-get ss-data 'citations) "citations" 'ss ignore-errors))
+    (_ (ref-man--insert-refs-from-seq
+        (a-get ss-data 'references) "references" 'ss ignore-errors)
+       (org-insert-heading-respect-content)
+       (ref-man--insert-refs-from-seq
+        (a-get ss-data 'citations) "citations" 'ss ignore-errors)))
   (outline-up-heading 1)
   (org-hide-block-all))
 
@@ -2229,41 +2306,6 @@ bibtex entry can be parsed."
           (setq pt-max (- (point) 1))))
       (list pt-min pt-max))))
 
-(defun ref-man-org-export-blog-no-urls (&optional buffer)
-  (interactive)
-  (ref-man-org-docproc-export-article buffer 'blog t (not current-prefix-arg)))
-
-(defun ref-man-org-export-both-no-urls (&optional buffer)
-  (interactive)
-  (ref-man-org-docproc-export-article buffer 'both t (not current-prefix-arg)))
-
-(defun ref-man-org-export-html-no-urls (&optional buffer)
-  (interactive)
-  (ref-man-org-docproc-export-article buffer 'html t (not current-prefix-arg)))
-
-(defun ref-man-org-export-article-no-urls (&optional buffer type)
-  (interactive)
-  (ref-man-org-docproc-export-article buffer (or type (and current-prefix-arg 'html) 'pdf) t))
-
-(defun ref-man-org-export-to-md (&optional pre-export-func)
-  "Copy the org subtree to temp buffer and export to markdown.
-We replace all file links so that they'll be subbed with citation
-formats later.  Optional PRE-EXPORT-FUNC is called just before
-calling `org-export-to-buffer'."
-  (save-restriction
-    (let ((buf-string (progn (org-narrow-to-subtree)
-                             (buffer-string))))
-      (with-temp-buffer
-        (insert buf-string)
-        (org-mode)
-        (goto-char (point-min))
-        (while (re-search-forward org-link-bracket-re nil t nil)
-          (replace-match
-           (format "[[%s][%s]]" (replace-regexp-in-string "file:.+::" "" (match-string 1))
-                   (match-string 2))))
-        (when pre-export-func (funcall pre-export-func))
-        (org-export-to-buffer 'md "*temp-org-buf*" nil nil nil nil)))))
-
 (defun ref-man-org-ask-to-set-property (entry)
   "Subroutine for checking and entering blog metadata from properties drawer.
 ENTRY is the `org' entry at point."
@@ -2273,183 +2315,6 @@ ENTRY is the `org' entry at point."
                      (read-string (format "Enter the value for %s: " entry)))))
   (org-entry-get (point) entry))
 
-(defun ref-man-org-export-yaml-header (type title bib-file mathjax-path csl-file
-                                            &optional no-refs)
-  "Generate yaml metadata header for `ref-man-org-docproc-export-article'.
-TYPE is one of 'html 'pdf 'both 'blog, TITLE is the title of the
-article, BIB-FILE is the additional bibliography file for
-citations, MATHJAX-PATH is the path where Mathjax scripts would
-be located and CSL-FILE is the Citation Style File."
-  (let ((yaml-header ref-man-org-export-yaml-template)
-        (blog-header ref-man-org-blog-export-yaml-template))
-    (pcase type
-      ((or 'html 'pdf 'both)
-       (format yaml-header title (if no-refs ""
-                                   (ref-man-pandoc-bib-string bib-file))
-               mathjax-path csl-file))
-      ('blog (format blog-header title (ref-man-pandoc-bib-string bib-file)
-                     mathjax-path csl-file (time-stamp-string "%Y-%m-%d")
-                     (or (util/org-get-tree-prop "CATEGORY_ROOT" t)
-                         (downcase (ref-man-org-ask-to-set-property "BLOG_CATEGORY")))
-                     (or (org-get-tags nil t)
-                         (downcase (ref-man-org-ask-to-set-property "BLOG_TAGS")))
-                     (downcase (or (ref-man-org-ask-to-set-property "BLOG_KEYWORDS")
-                                   (ref-man-org-ask-to-set-property "BLOG_TAGS"))))))))
-
-(defun ref-man-org-docproc-export-references (bibtexs &optional tmp-bib-file no-gdrive)
-  "Export the references for docproc."
-  (when bibtexs
-    (with-temp-buffer
-      (insert (mapconcat (lambda (x) (nth 2 x)) bibtexs ""))
-      (unless no-gdrive
-        (goto-char (point-min))
-        ;; Replace "gdrive" with "issn" in bibs
-        (while (re-search-forward "gdrive=" nil t nil)
-          (replace-match "issn=")))
-      (if tmp-bib-file
-          (write-region (point-min) (point-max) tmp-bib-file)
-        (let ((cur (point-max)))
-          (goto-char cur)
-          (insert (replace-regexp-in-string
-                   "^---\\|^nocite.*" ""
-                   (shell-command-to-string (format "%s -s -f biblatex -t markdown <<<'%s'"
-                                                    ref-man-pandoc-executable
-                                                    (buffer-string)))))
-          (util/delete-blank-lines-in-region cur (point-max))
-          (buffer-substring-no-properties cur (point-max)))))))
-
-(defun ref-man-org-docproc-export-article (&optional buffer type no-urls no-gdrive with-toc)
-  "Export current org buffer subtree as an article.
-
-Export to markdown first and then use pandoc and `pndconf' or
-`docproc' whatever its name is.  When optional BUFFER is non-nil,
-export the full buffer.  Default is export the subtree.
-
-Optional TYPE specifies the output type, can be one of 'pdf,
-'html, 'both or 'blog.  'both means both PDF and HTML files will
-be generated as targets.  'blog puts additional metadata in the
-generated files.  See `ref-man-org-blog-export-yaml-template'.
-
-Optional non-nil NO-URLS means to not include URLs in generated
-bibliography, similar for NO-GDRIVE. Default is to include both
-URLS and GDRIVE links.  Optional non-nil WITH-TOC generates a TOC
-from `org-export'.  Usually we generate the TOC with pandoc."
-  (interactive)
-  (save-mark-and-excursion
-    (let* ((org-export-with-toc t)
-           (org-export-with-todo-keywords nil)
-           (org-export-with-tags nil)
-           (org-export-with-broken-links 'mark)
-           (org-export-with-timestamps nil)
-           (org-export-with-clocks nil)
-           (org-export-with-sub-superscripts nil)
-           (org-export-with-date nil)
-           (org-export-with-properties nil)
-           (org-export-with-latex nil)
-           (type (or type (and current-prefix-arg 'html) 'pdf))
-           (tmp-bib-file (unless (or (string= "2.14" ref-man-pandoc-version)
-                                     (string< "2.14" ref-man-pandoc-version))
-                           (make-temp-file "ref-bib-" nil ".bib")))
-           (docproc-dir "/home/joe/lib/docprocess/")
-           (csl-file (path-join docproc-dir (if no-urls
-                                                "/settings/csl/apsa-no-urls.csl"
-                                              "/settings/csl/apsa-urls.csl")))
-           (mathjax-path (path-join docproc-dir "/settings/MathJax"))
-           (pandocwatch (path-join docproc-dir "pandocwatch.py"))
-           (python "/usr/bin/python")
-           (title (substring-no-properties (org-get-heading t t t t)))
-           (md-file (path-join (pcase type
-                                 ('blog ref-man-org-blog-dir)
-                                 (_ docproc-dir))
-                               (concat (replace-regexp-in-string
-                                        " " "-"
-                                        (downcase (ref-man--remove-punc title t))) ".md")))
-           ;; (make-temp-file "ref-md-" nil ".md")
-           (out-file (pcase type
-                       ('pdf
-                        (path-join docproc-dir (concat (f-base md-file) "_files")
-                                   (concat (f-base md-file) ".pdf")))
-                       ('html (path-join docproc-dir (concat (f-base md-file) ".html")))
-                       (_ nil)))
-           (extra-opts (pcase type
-                         ('pdf " --template=settings/templates/default.latex")
-                         ('html "--template=settings/blog/html.template")
-                         (_ "")))
-           (yaml-header (ref-man-org-export-yaml-header type title tmp-bib-file
-                                                        mathjax-path csl-file))
-           (cmd "")
-           sections bibtexs refs-string)
-      (when (f-exists? md-file)
-        (unless (y-or-n-p (format "The file with name %s exists.  Replace? "
-                                  (f-filename md-file)))
-          (user-error "Aborted")))
-      (save-restriction
-        (unless buffer
-          (org-narrow-to-subtree)
-          (apply #'narrow-to-region (ref-man-org-get-bounds-before-references)))
-        (goto-char (point-min))
-        (setq sections (util/org-apply-to-subtree-headings
-                        (lambda () (concat "*" (org-get-heading t t t t))) t))
-        ;; Insert standard pandoc references to bibtexs
-        ;; TODO: Raise a `user-error' if error getting the bib from link
-        ;; Generate bibtexs from fuzzy links
-        (goto-char (point-min))
-        (while (re-search-forward util/org-text-link-re nil t nil)
-          (unless (member (match-string 1) sections)
-            (push (ref-man-org-get-bib-from-org-link t t) bibtexs)))
-        (setq refs-string (ref-man-org-docproc-export-references bibtexs tmp-bib-file no-gdrive))
-        (when refs-string
-          (setq yaml-header (concat (string-remove-suffix "---\n" yaml-header) refs-string "---\n")))
-        (goto-char (point-min))
-        (ref-man-org-export-to-md #'util/org-remove-all-time-stamps)
-        ;; (org-export-to-buffer 'md "*temp-org-buf*" nil nil nil nil)
-        (with-current-buffer "*temp-org-buf*"
-          (unless with-toc
-            (goto-char (point-min))
-            (let (toc-min toc-max)
-              (re-search-forward "# Table of Contents")
-              (beginning-of-line)
-              (setq toc-min (point))
-              (forward-paragraph 2)
-              (setq toc-max (point))
-              (delete-region toc-min toc-max)))
-          (goto-char (point-min))
-          (while (re-search-forward "\\[BROKEN LINK: \\(.+?\\)]" nil t) ; Insert links
-            (let ((path (string-remove-prefix "\\" (match-string 1))))
-              (replace-match (format "[@%s]" (car (a-get bibtexs path))))))
-          (goto-char (point-min))
-          (while (re-search-forward "\\\\(\\(.+\\)\\\\)" nil t)
-            (replace-match "$\\1$"))    ; Replace \(\) math format as pandoc doesn't work with that
-          (let ((case-fold-search nil)) ; remove snippets in parentheses marked TODO
-            (goto-char (point-min))
-            (while (re-search-forward "(.*TODO.*)" nil t)
-              (replace-match "")))
-          (when (string-match-p "\\[@[a-z0-9]+]" (buffer-string))
-            (goto-char (point-max))
-            (insert "\n\n# References\n"))
-          (goto-char (point-min))
-          (insert (concat yaml-header "\n"))
-          (write-region (point-min) (point-max) md-file)))
-      ;; When export type is `blog' then don't run `pandoc'
-      (unless (eq type 'blog)
-        (setq cmd (format "cd %s && %s %s -ro --extra-opts --input-files %s -g %s %s"
-                          docproc-dir
-                          python
-                          pandocwatch
-                          md-file
-                          (pcase type
-                            ('both "html,pdf")
-                            (_ type))
-                          extra-opts))
-        (message "Running command %s" cmd)
-        (shell-command cmd "*ref-man-export-article*")
-        ;; only delete the tmp-bib file if not 'blog
-        (delete-file tmp-bib-file))
-      ;; Only visit file if it's a single file
-      ;; For 'both generation there'll be two files
-      (if out-file
-          (find-file out-file)
-        (find-file md-file)))))
 
 ;; TODO: Send signal to flask server to update cache, though it'll be done next
 ;;       time it starts
@@ -2473,6 +2338,39 @@ from `org-export'.  Usually we generate the TOC with pandoc."
   (when (org-entry-get (point) "PAPERID")
     (delete-file (path-join ref-man-python-data-dir (org-entry-get (point) "PAPERID"))))
   (org-copy-subtree 1 t))
+
+(defun ref-man-org-update-from-from-crossref ()
+  (interactive)
+  (let* ((doi (org-entry-get (point) "DOI"))
+         (journal (org-entry-get (point) "JOURNAL"))
+         (url "https://api.crossref.org/works/%s/transform/application/x-bibtex")
+         (bib (when doi
+                (with-current-buffer (url-retrieve-synchronously (format url doi))
+                  (goto-char (point-min))
+                  (search-forward "@")
+                  (backward-char)
+                  (bibtex-parse-entry)))))
+    ;; Remove erroneous arxiv value as journal
+    (when (and journal (string= (downcase journal) "arxiv"))
+      (org-entry-delete (point) "JOURNAL")
+      (org-entry-delete (point) "VOLUME"))
+    (when bib
+      (cl-loop for ent in bib
+            do
+            (pcase ent
+              (`("abstract" . ,_))
+              (`("=type=" . ,_) (org-set-property "BTYPE" (ref-man--fix-curly (cdr ent))))
+              (`("=key=" . ,_) nil)     ; Ignore =key=
+              (`("timestamp" . ,_) nil)     ; Ignore timestamp
+              (`("url" . ,_) nil)     ; Ignore url
+              (`("author" . ,_) (org-set-property "AUTHOR" (ref-man--invert-accents
+                                                            (ref-man--replace-non-ascii
+                                                             (ref-man--trim-and-unquote
+                                                              (ref-man--fix-curly (cdr ent)))))))
+              (`(,_ . ,_) (org-set-property (upcase (car ent)) (ref-man--invert-accents
+                                                                (ref-man--replace-non-ascii
+                                                                 (ref-man--trim-and-unquote
+                                                                  (ref-man--fix-curly (cdr ent))))))))))))
 
 ;; TODO: Replace all property setters in this section with
 ;;       ref-man--insert-org-pdf-file-property
@@ -2547,38 +2445,73 @@ is from a recognized parseable host. As of now, only ArXiv"
         (kill-new (buffer-string))
         (message "Killed entry as org heading")))))
 
-(defun ref-man-fetch-and-update-ss-data-for-entry ()
-  "Force update and fetch Semantic Scholar data for org entry at point."
+(defun ref-man-update-entry-with-ss-data ()
+  "Update current entry with Semantic Scholar Data.
+
+The data is fetched if required from `semanticscholar.org' and
+the properties are updated. Citations and references are not
+displayed or inserted.  See `ref-man-fetch-ss-data-for-entry' for
+details."
   (interactive)
-  (ref-man-fetch-ss-data-for-entry nil nil t))
+  (ref-man-fetch-ss-data-for-entry t nil nil nil nil))
+
+(defun ref-man-insert-ss-data ()
+  "Insert Semantic Scholar Data for org entry at point.
+
+The data is fetched if required from `semanticscholar.org' and
+inserted in the current subtree.  If `current-prefix-arg' is non
+nil then insert only references. Useful when the number of
+citations are really high, e.g. above 1000. Default is to insert
+both References and Citations.  See `ref-man-fetch-ss-data-for-entry' for details."
+  (interactive)
+  (let ((only (pcase current-prefix-arg
+                ('(4) 'refs)
+                ('(16) 'cites)
+                (_ nil))))
+    (ref-man-fetch-ss-data-for-entry nil t nil t only)))
+
+(defun ref-man-display-ss-data ()
+  "Display Semantic Scholar Data for org entry at point.
+
+The data is fetched if required from `semanticscholar.org' and
+displayed in a new org buffer named \"*Semantic Scholar*\".  If
+`current-prefix-arg' is non nil then display only
+references. Useful when the number of citations are really high,
+e.g. above 1000. Default is to display both References and
+Citations.  See `ref-man-fetch-ss-data-for-entry' for details."
+  (interactive)
+  (let ((only (pcase current-prefix-arg
+                ('(4) 'refs)
+                ('(16) 'cites)
+                (_ nil))))
+    (ref-man-fetch-ss-data-for-entry nil t nil nil only)))
+
+(defun ref-man-update-ss-data-on-disk ()
+  "Fetch and force update Semantic Scholar data for org entry at point.
+See `ref-man-fetch-ss-data-for-entry' for details."
+  (interactive)
+  (ref-man-fetch-ss-data-for-entry nil nil t nil nil))
+
+(defvar ref-man-org-ss-data-insert-prefix-behaviour '(((4) . update) ((16) . display)))
 
 ;; CHECK: Should we update more than `arxivId'?
-(defun ref-man-fetch-ss-data-for-entry (&optional update display update-on-disk)
+(defun ref-man-fetch-ss-data-for-entry (update display update-on-disk current only)
   "Try to fetch the Semantic Scholar data for org entry at point.
 
-The data is cached on the disk and if the entry is already
-present, the cached entry is fetched.  With optional argument
-UPDATE-ON-DISK, force update the data in cache.
+When UPDATE is non-nil, update the current org entry.
 
-When called interactively, the default behaviour is to fetch the
-data and display in a new org buffer named \"*Semantic Scholar*\".
-When called from another function a non-nil DISPLAY will do the
-same.
+The data is cached on the disk and if the data for entry is
+already present, the cached entry is fetched.  With optional
+argument UPDATE-ON-DISK, force update the data in cache.
 
-When called interactively and with a `\\[universal-argument]' or
-non-nil UPDATE, only update the org entry from the Semantic
-Scholar database.  With two `\\[universal-argument]' `\\[universal-argument]',
-both update the entry and display the data."
-  (interactive)
-  (when (called-interactively-p 'any)
-    ;; CHECK: Why am I doing this let to meh?
-    (let ((cpa current-prefix-arg))
-      (cond ((and cpa (equal cpa '(4)))   ; update only
-             (setq update t))
-            ((and cpa (equal cpa '(16)))  ; both update and display
-             (setq update t)
-             (setq display t))
-            (t (setq display t)))))        ; by default only display
+When DISPLAY is non-nil display the data in a \"*Semantic
+Scholar*\" buffer.
+
+If CURRENT is non-nil then insert the data in current buffer
+instead of \"*Semantic Scholar*\".
+
+Argument ONLY controls whether to display only references or
+citations.  Can be one of 'refs 'cites."
   (if (eq major-mode 'org-mode)
       (progn
         (unless (org-at-heading-p)
@@ -2610,16 +2543,24 @@ both update the entry and display the data."
             (org-entry-put (point) "PAPERID" (a-get ss-data 'paperId))
             ;; NOTE: The data is inserted into a new buffer named "*Semantic Scholar*"
             (when display
-              (let ((buf (get-buffer-create "*Semantic Scholar*"))
+              (let ((buf (if current (current-buffer)
+                           (get-buffer-create "*Semantic Scholar*")))
                     (heading (org-get-heading nil t t t)))
                 (with-current-buffer buf
-                  (erase-buffer)
-                  (org-mode)
-                  (org-insert-heading)
-                  (insert heading)
-                  (forward-line)
-                  (ref-man-insert-ss-data ss-data buf nil t)
-                  (switch-to-buffer buf)))))))
+                  (if current
+                      (pcase-let ((`(,beg ,end ,has-body) (progn
+                                                            (ref-man-org-end-of-meta-data)
+                                                            (ref-man-org-text-bounds))))
+                        (goto-char end)
+                        (org-insert-heading)
+                        (ref-man-insert-ss-data-subr ss-data buf nil t only t t))
+                    (erase-buffer)
+                    (org-mode)
+                    (org-insert-heading)
+                    (insert heading)
+                    (forward-line)
+                    (ref-man-insert-ss-data-subr ss-data buf nil t only)
+                    (switch-to-buffer buf))))))))
     (message "[ref-man] Not in org-mode") nil))
 
 (defun ref-man--update-props-from-assoc (props-alist)
@@ -2647,7 +2588,7 @@ both update the entry and display the data."
     (end-of-line)
     (insert (a-get props-alist "TITLE")))
   (when (assoc "ABSTRACT" props-alist)
-    (ref-man-org-insert-abstract (a-get props-alist "ABSTRACT") (current-buffer)))
+    (ref-man-org-insert-abstract (a-get props-alist "ABSTRACT") (current-buffer) t))
   (when (and (not (string= (org-get-heading t t t t) (a-get props-alist "TITLE")))
              (y-or-n-p "Heading and Title differ. Update? "))
     (org-edit-headline (a-get props-alist "TITLE"))))
@@ -2761,9 +2702,16 @@ pagination of results isn't supported yet."
                (ref-man-safe-update-org-prop "PAPERID" id)))
             (t (message "[ref-man] Nothing from Semantic Scholar"))))))
 
+(defun ref-man-maybe-set-arxiv-id (pt url)
+  "Set ARXIVID If URL is an arxiv url at point PT."
+  (let ((id (ref-man-url-to-arxiv-id url)))
+    (when id
+      (org-entry-put pt "ARXIVID" id))))
+
 (defun ref-man-import-pdf-url-to-org-buffer (&optional url web-buf org-buf pt)
-"Before call should check the buffer as it can't be called if
-buffer is not gscholar"
+  "Import a pdf url, from a `ref-man-web' buffer to an org buffer `org-buf'.
+Optional arguments URL, WEB-BUF, ORG-BUF and PT if not given are
+inferred."
   (interactive)
   (save-excursion
     (let* ((pdf-url (or url (ref-man-web-get-previous-pdf-link (or web-buf (current-buffer)))))
@@ -2778,7 +2726,8 @@ buffer is not gscholar"
       (if (or (ref-man-url-downloadable-pdf-url-p pdf-url)
               (y-or-n-p (format "%s is not a valid PDF url. Add anyway? " pdf-url)))
           (with-current-buffer org-buf
-            (org-entry-put org-point "PDF_URL" pdf-url))
+            (org-entry-put org-point "PDF_URL" pdf-url)
+            (ref-man-maybe-set-arxiv-id org-point pdf-url))
         (message "[ref-man] Could not insert pdf url")))))
 
 (defun ref-man-org-set-insertion-point ()
@@ -3174,7 +3123,8 @@ property drawer as the URL property."
       ;; Remove the url args. Would be useless to keep
       (when (and url-prop (string-match-p "?.*" url-prop)
                  (not (string-match-p "openreview.net" url-prop))
-                 (not (string-match-p "acm.org" url-prop)))
+                 (not (string-match-p "acm.org" url-prop))
+                 (not (string-match-p "ieeexplore.ieee.org" url-prop)))
         (org-entry-put (point) "URL" (car (split-string url-prop "?"))))
       (unless url-prop
         (let* ((link (ref-man-org-get-first-link-from-org-heading))
@@ -3256,6 +3206,8 @@ property drawer as the URL property."
              (url-prop (ref-man--check-fix-url-property))
              ;; CHECK: Why's this not used?
              (pdf-url-prop (a-get props "PDF_URL"))
+             (alt-url-prop (a-get props "ALT_URL"))
+             (arxiv-url-prop (a-get props "ARXIV_URL"))
              (ssidtype-id (ref-man--ss-id))
              (pdf-file (ref-man--check-fix-pdf-file-property))
              (bib-prop (ref-man-parse-bib-property-key))

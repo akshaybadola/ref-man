@@ -2,7 +2,7 @@
 
 from setuptools import setup
 
-from ref_man.const import __version__
+from ref_man import __version__
 
 description = """ref-man server for network requests.
 
@@ -26,6 +26,7 @@ setup(
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
         "Natural Language :: English",
         "Topic :: Text Editors :: Emacs",
     ],
@@ -33,10 +34,10 @@ setup(
     include_package_data=True,
     python_requires=">=3.6.9",
     install_requires=["flask==1.1.2",
-                      "requests==2.24.0",
-                      "beautifulsoup4==4.9.1",
-                      "psutil==5.8.0",
-                      "common_pyutil @ git+https://github.com/akshaybadola/common-pyutil.git@master"],
+                      "requests>=2.24.0",
+                      "beautifulsoup4>=4.9.1",
+                      "psutil>=5.8.0",
+                      "common_pyutil>=0.7.2"],
     entry_points={
         'console_scripts': [
             'ref-man = ref_man:__main__.main',

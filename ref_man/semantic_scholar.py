@@ -1,16 +1,19 @@
-from typing import List, Dict, Any, Union, Optional
+from typing import Dict
 import os
 import json
 import requests
 from subprocess import Popen, PIPE
 import shlex
-import pathlib
+from pathlib import Path
 
+
+# TODO: I don't think the type for Cache is correct
+Cache = Dict[str, Dict[str, str]]
 
 assoc = [(x, i) for i, x in enumerate(["acl", "arxiv", "corpus", "doi"])]
 
 
-def load_ss_cache(data_dir):
+def load_ss_cache(data_dir: Path) -> Cache:
     """Load the ss_cache metadata from the disk.
 
     The cache is indexed as a file in `metadata` and the file data itself is
@@ -23,7 +26,7 @@ def load_ss_cache(data_dir):
     """
     with open(os.path.join(data_dir, "metadata")) as f:
         _cache = [*filter(None, f.read().split("\n"))]
-    ss_cache = {"acl": {}, "doi": {}, "arxiv": {}, "corpus": {}}
+    ss_cache: Cache = {"acl": {}, "doi": {}, "arxiv": {}, "corpus": {}}
     for _ in _cache:
         c = _.split(",")
         for key, ind in assoc:
@@ -35,7 +38,7 @@ def load_ss_cache(data_dir):
 
 # NOTE: There's a separate acl_id here, because SS allows query by acl_id but
 #       doesn't return it if it exists in the result.
-def save_data(data, data_dir, ss_cache, acl_id):
+def save_data(data: Dict[str, str], data_dir: Path, ss_cache: Cache, acl_id):
     """Save Semantic Scholar cache to disk.
 
     We read and write data for individual papers instead of one big json object.
@@ -66,8 +69,21 @@ def save_data(data, data_dir, ss_cache, acl_id):
     print("Updated metadata")
 
 
+# def semantic_scholar_sorted_citations(citations):
+#     return None
+
+
+# def semantic_scholar_two_hop_neighbour_graph(id_type: str, ID: str, k: int = 10):
+#     paper_details = semantic_scholar_paper_details()
+#     citations = semantic_scholar_sorted_citations(paper_details.citations)
+#     references = paper_details.references
+#     for cite in citations:
+#         ID = get_id_for_ref(cite)
+#         ref_details = semantic_scholar_paper_details("ss", ID)
+
+
 def semantic_scholar_paper_details(id_type: str, ID: str, data_dir: str,
-                                   ss_cache: Dict[str, Dict[str, Any]], force: bool):
+                                   ss_cache: Cache, force: bool):
     """Get semantic scholar paper details
 
     The Semantic Scholar cache is checked first and if it's a miss then the
@@ -123,30 +139,37 @@ def semantic_scholar_paper_details(id_type: str, ID: str, data_dir: str,
 class SemanticSearch:
     # Example params:
     #
-    def __init__(self, debugger_path: Union[pathlib.Path, str]):
-        self.default_params = {'queryString': '',
-                               'page': 1,
-                               'pageSize': 10,
-                               'sort': 'relevance',
-                               'authors': [],
-                               'coAuthors': [],
-                               'venues': [],
-                               'yearFilter': None,
-                               'requireViewablePdf': False,
-                               'publicationTypes': [],
-                               'externalContentTypes': [],
-                               'fieldsOfStudy': [],
-                               'useFallbackRankerService': False,
-                               'useFallbackSearchCluster': False,
-                               'hydrateWithDdb': True,
-                               'includeTldrs': False,
-                               'performTitleMatch': True,
-                               'includeBadges': False}
-        self.params = self.default_params.copy()
-        self.update_params(debugger_path)
+    # {'queryString': '', 'page': 1, 'pageSize': 10, 'sort': 'relevance',
+    #  'authors': [], 'coAuthors': [], 'venues': [], 'yearFilter': None,
+    #  'requireViewablePdf': False, 'publicationTypes': [], 'externalContentTypes': [],
+    #  'fieldsOfStudy': ['computer-science'], 'useFallbackRankerService': False,
+    #  'useFallbackSearchCluster': False, 'hydrateWithDdb': True, 'includeTldrs': False,
+    #  'performTitleMatch': True, 'includeBadges': False, 'tldrModelVersion': 'v2.0.0',
+    #  'getQuerySuggestions': False}
 
-    def update_params(self, debugger_path):
-        if debugger_path:
+    """Semantic Scholar Search Module
+
+    Args:
+        debugger_path: Optional path to a JS debugger file.
+                       Used for getting the arguments from Semantic Scholar Search
+                       API from a chrome debugger websocket.
+    """
+    def __init__(self, debugger_path: Path):
+        self.params_file = "ss_default.json"
+        with open(self.params_file) as f:
+            self.default_params = json.load(f)
+        self.params = self.default_params.copy()
+        if debugger_path.exists():
+            self.update_params(debugger_path)
+
+    def update_params(self, debugger_path: Path):
+        """Update the parameters for Semantic Scholar Search if possible
+
+        Args:
+            debugger_path: Optional path to a JS debugger file.
+
+        """
+        if debugger_path.exists():
             check_flag = False
             try:
                 import psutil
@@ -192,7 +215,12 @@ class SemanticSearch:
                                 self.params[k] = v
                             else:
                                 print(f"Could not update param {k}")
+                        self.params['queryString'] = ''
                         print(f"Updated params {self.params}")
+                        if new_params or not_params:
+                            with open(self.params_file, "w") as f:
+                                json.dump(self.params, f)
+                            print(f"Dumpted params to file {self.params_file}")
                     except Exception as e:
                         print(f"Error updating params {e}. Will use default params")
                         self.params = self.default_params.copy()
@@ -202,11 +230,18 @@ class SemanticSearch:
             print(f"Debug script path not given. Using default params")
 
     def semantic_scholar_search(self, query: str, cs_only: bool = False, **kwargs):
-        """Perform a search on semantic scholar and return the results in JSON format
-        By default the search is performed in Computer Science subjects
+        """Perform a search on semantic scholar and return the results.
 
-        pub_types can be ["Conference", "JournalArticle"]
-        yearFilter has to be a :class:`dict` of type {"max": 1995, "min": 1990}
+        The results are returned in JSON format.  By default the search is
+        performed in Computer Science subjects
+
+        Args:
+            query: The string to query
+            cs_only: Whether search only in Computer Science category
+            kwargs: Additional arguments to set for the search
+
+        :code:`publicationTypes` in :code:`kwargs` can be ["Conference", "JournalArticle"]
+        :code:`yearFilter` has to be a :class:`dict` of type {"max": 1995, "min": 1990}
 
         """
         params = self.params.copy()

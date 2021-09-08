@@ -1,5 +1,6 @@
-from typing import Callable, List, Dict, Union, Optional
+from typing import Callable, List, Dict, Optional
 import os
+from pathlib import Path
 import json
 import time
 import logging
@@ -156,65 +157,82 @@ class Server:
     We use a separate python process for efficient (and sometimes parallel)
     fetching of network requests.
 
-    FIXME: Should be keyword args instead
     Args:
-        args: :class:`types.SimpleNamespace` obtained from :class:`argparse.ArgumentParser`
+        host: host on which to bind
+        port: port on which to bind
+        proxy_port: Port for the proxy server. Used by :code:`fetch_proxy`, usually for PDFs.
+        proxy_everything: Whether to fetch all requests via proxy.
+        proxy_everything_port: Port for the proxy server on which everything is proxied.
+                               Used by supported methods.
+        data_dir: Directory where the Semantic Scholar Cache is stored.
+                  See :func:`load_ss_cache`
+        local_pdfs_dir: Local directory where the pdf files are stored.
+        remote_pdfs_dir: Remote directory where the pdf files are stored.
+        remote_links_cache: File mapping local pdfs to remote links.
+        batch_size: Number of parallel requests to send in case parallel requests is
+                    implemented for that method.
+        chrome_debugger_path: Path for the chrome debugger script.
+                              Used to validate the Semantic Scholar search api, as
+                              the params can change sometimes. If it's not given then
+                              default params are used and the user must update the params
+                              in case of an error.
+        verbosity: Verbosity control
+        threaded: Start the flask server in threaded mode. Defaults to :code:`True`.
 
-    host: host on which to bind
-    port: port on which to bind
-    batch_size: Number of parallel requests to send in case parallel requests is
-                implemented for that method
-    data_dir: Directory where the Semantic Scholar Cache is stored.
-              See :func:`load_ss_cache`
-    proxy_port: Port for the proxy server. Used by `fetch_proxy`, usually for PDFs.
-    proxy_everything: Whether to fetch all requests via proxy.
-    proxy_everything_port: Port for the proxy server on which everything is proxied.
-                           Used by supported methods.
-    chrome_debugger_path: Path for the chrome debugger script.
-                          Used to validate the Semantic Scholar search api, as
-                          the params can change sometimes. If it's not given then
-                          default params are used and the user must update the params
-                          in case of an error.
-    verbosity: Verbosity control
-    threaded: Start the flask server in threaded mode. Defaults to `True`.
+    :code:`remote_pdfs_dir` has to be an :code:`rclone` path and the pdf files from
+    :code:`local_pdfs_dir` is synced to that with :code:`rclone`.
 
     """
-    def __init__(self, args):
+    def __init__(self, host: str, port: int, proxy_port: int, proxy_everything: bool,
+                 proxy_everything_port: int, data_dir: Path, local_pdfs_dir: Path,
+                 remote_pdfs_dir: str, remote_links_cache: Path, batch_size: int,
+                 chrome_debugger_path: Path, verbosity: str, threaded: bool):
         self.host = "127.0.0.1"
-        self.port = args.port
-        self.batch_size = args.batch_size
-        self.data_dir = args.data_dir
-        self.proxy_port = args.proxy_port
-        self.proxy_everything = args.proxy_everything
-        self.proxy_everything_port = args.proxy_everything_port
-        self.chrome_debugger_path = args.chrome_debugger_path
-        self.verbosity = args.verbosity
-        self.threaded = args.threaded
+        self.port = port
+        self.batch_size = batch_size
+        self.data_dir = data_dir
+        self.proxy_port = proxy_port
+        self.proxy_everything = proxy_everything
+        self.proxy_everything_port = proxy_everything_port
+        self.chrome_debugger_path = chrome_debugger_path
+        self.config_dir = Path.home().joinpath(".config", "ref-man")
+        self.verbosity = verbosity
+        self.threaded = threaded
         # We set "error" to warning
         verbosity_levels = {"info", "error", "debug"}
         if self.verbosity not in verbosity_levels:
             self.verbosity = "info"
             self.logger = get_stream_logger("ref_man_logger", log_level=self.verbosity)
-            self.logger.warning(f"{args.verbosity} was not in known levels." +
+            self.logger.warning(f"{self.verbosity} was not in known levels." +
                                 f"Set to {self.verbosity}")
         else:
             self.logger = get_stream_logger("ref_man_logger", log_level=self.verbosity)
-            self.logger.debug(f"Log level is set to {args.verbosity}.")
+            self.logger.debug(f"Log level is set to {self.verbosity}.")
         # NOTE: This soup stuff should be separate buffer
-        cur_dir = os.path.dirname(os.path.abspath(__file__))
-        self.cvpr_files = [os.path.join(cur_dir, f) for f in os.listdir(cur_dir)
-                           if f.lower().startswith("cvpr")]
+        if not self.config_dir.exists():
+            os.makedirs(self.config_dir)
+        self.cvf_files = [os.path.join(self.config_dir, f)
+                          for f in os.listdir(self.config_dir)
+                          if re.match(r'^(cvpr|iccv)', f.lower())]
         self.soups = {}
-        for f in self.cvpr_files:
-            with open(f) as _f:
-                self.soups[f] = BeautifulSoup(_f.read(), features="lxml")
+        self.logger.debug(f"Loading CVF soups.")
+        for cvf in self.cvf_files:
+            match = re.match(r'^(cvpr|iccv)(.*?)([0-9]+)',
+                             Path(cvf).name, flags=re.IGNORECASE)
+            if match:
+                venue, _, year = map(str.lower, match.groups())
+                with open(cvf) as f:
+                    self.soups[(venue, year)] = BeautifulSoup(f.read(), features="lxml")
+            else:
+                self.logger.error(f"Could not load file {cvf}")
         self.logger.debug(f"Loaded conference files {self.soups.keys()}")
 
         self.ss_cache = load_ss_cache(self.data_dir)
         self.update_cache_run = None
-        if args.local_pdfs_dir and args.remote_pdfs_dir and args.remote_links_cache:
-            self.cache_helper = CacheHelper(args.local_pdfs_dir, args.remote_pdfs_dir,
-                                            args.remote_links_cache, self.logger)
+        if local_pdfs_dir and remote_pdfs_dir and remote_links_cache:
+            self.cache_helper: Optional[CacheHelper] =\
+                CacheHelper(local_pdfs_dir, remote_pdfs_dir,
+                            remote_links_cache, self.logger)
         else:
             self.cache_helper = None
             self.logger.warn("All arguments required for pdf cache not given.\n" +
@@ -479,39 +497,49 @@ class Server:
         def check_proxies():
             return self.check_proxies()
 
-        @app.route("/get_cvpr_url", methods=["GET"])
-        def get_cvpr_url():
+        @app.route("/get_cvf_url", methods=["GET"])
+        def get_cvf_url():
+            """Get CVPR or ICCV Pdf url.
+            """
             if "title" not in request.args:
                 return self.loge("Error. Title not in request")
             else:
-                try:
-                    if "year" in request.args:
-                        year = int(request.args["year"])
-                    else:
-                        year = None
-                except Exception:
-                    year = None
                 title = request.args["title"]
+            if "venue" not in request.args:
+                return self.loge("Error. Venue not in request")
+            else:
+                venue = request.args["venue"].lower()
+            try:
+                if "year" in request.args:
+                    year = request.args["year"]
+                else:
+                    year = None
+            except Exception:
+                year = None
             if year:
-                soups = self.soups[f"cvpr_{year}"].find_all("a")
+                soup_keys = [(v, y) for v, y in self.soups.keys() if v == venue and y == year]
             else:
-                soups = []
-                for v in self.soups.values():
-                    soups.extend(v.find_all("a"))
-            regexp = ".*" + ".*".join([*filter(None, title.split(" "))][:3])
-            matches = [(x, re.match(regexp.lower(), x["href"].lower()))
-                       for x in soups
-                       if "href" in x.attrs and x["href"].lower().endswith(".pdf")
-                       and re.match(regexp.lower(), x["href"].lower())]
-            if not matches:
-                return f"{title}"
-            elif len(matches) == 1:
-                href = matches[0][0]["href"]
+                soup_keys = [(v, y) for v, y in self.soups.keys() if v == venue]
+            soups = []
+            for k in soup_keys:
+                soups.extend(self.soups[k].find_all("a"))
+            if soups:
+                regexp = ".*" + ".*".join([*filter(None, title.split(" "))][:3])
+                matches = [(x, re.match(regexp.lower(), x["href"].lower()))
+                           for x in soups
+                           if "href" in x.attrs and x["href"].lower().endswith(".pdf")
+                           and re.match(regexp.lower(), x["href"].lower())]
+                if not matches:
+                    return f"{title}"
+                elif len(matches) == 1:
+                    href = matches[0][0]["href"]
+                else:
+                    matches.sort(lambda x: operator.abs(operator.sub(*x[1].span())))
+                    href = matches[-1][0]["href"]
+                href = os.path.join("https://openaccess.thecvf.com/", href)
+                return f"{title};{href}"
             else:
-                matches.sort(lambda x: operator.abs(operator.sub(*x[1].span())))
-                href = matches[-1][0]["href"]
-            href = os.path.join("https://openaccess.thecvf.com/", href)
-            return f"{title};{href}"
+                return f"{title} not found for {venue} in {year}"
 
         @app.route("/echo", methods=["GET"])
         def echo():

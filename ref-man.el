@@ -7,7 +7,7 @@
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Time-stamp:	<Monday 02 August 2021 15:11:10 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org-mode, eww
-;; Version:     0.5.0
+;; Version:     0.6.0
 ;; Package-Requires: ((a "0.1.1") (async "1.9.4") (org "9.2.3") (biblio-core "0.2.1") (gscholar-bibtex "0.3.1") (websocket "1.12") (dash "2.18.0") (bind-key "2.4") (org-ref "1.1.1"))
 
 ;; This file is *NOT* part of GNU Emacs.
