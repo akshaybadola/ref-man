@@ -186,7 +186,7 @@ class Server:
     def __init__(self, host: str, port: int, proxy_port: int, proxy_everything: bool,
                  proxy_everything_port: int, data_dir: Path, local_pdfs_dir: Path,
                  remote_pdfs_dir: str, remote_links_cache: Path, batch_size: int,
-                 chrome_debugger_path: Path, verbosity: str, threaded: bool):
+                 chrome_debugger_path: str, verbosity: str, threaded: bool):
         self.host = "127.0.0.1"
         self.port = port
         self.batch_size = batch_size
@@ -194,7 +194,7 @@ class Server:
         self.proxy_port = proxy_port
         self.proxy_everything = proxy_everything
         self.proxy_everything_port = proxy_everything_port
-        self.chrome_debugger_path = chrome_debugger_path
+        self.chrome_debugger_path = Path(chrome_debugger_path) if chrome_debugger_path else None
         self.config_dir = Path.home().joinpath(".config", "ref-man")
         self.verbosity = verbosity
         self.threaded = threaded
@@ -231,8 +231,7 @@ class Server:
         self.update_cache_run = None
         if local_pdfs_dir and remote_pdfs_dir and remote_links_cache:
             self.cache_helper: Optional[CacheHelper] =\
-                CacheHelper(local_pdfs_dir, remote_pdfs_dir,
-                            remote_links_cache, self.logger)
+                CacheHelper(local_pdfs_dir, Path(remote_pdfs_dir), remote_links_cache, self.logger)
         else:
             self.cache_helper = None
             self.logger.warn("All arguments required for pdf cache not given.\n" +

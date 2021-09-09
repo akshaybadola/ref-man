@@ -102,3 +102,6 @@
 - Added a lot of type annotations.
 - Version bump to `0.6.0`.
 - Py mod version bump to `0.3.2`.
+
+## [2021-09-09 Thu 19:23]
+- Bug fixes for regressions in ref-man-py.el and in cache.py

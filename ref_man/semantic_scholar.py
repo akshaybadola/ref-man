@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Optional
 import os
 import json
 import requests
@@ -154,12 +154,12 @@ class SemanticSearch:
                        Used for getting the arguments from Semantic Scholar Search
                        API from a chrome debugger websocket.
     """
-    def __init__(self, debugger_path: Path):
-        self.params_file = "ss_default.json"
+    def __init__(self, debugger_path: Optional[Path]):
+        self.params_file = Path(__file__).parent.joinpath("ss_default.json")
         with open(self.params_file) as f:
             self.default_params = json.load(f)
         self.params = self.default_params.copy()
-        if debugger_path.exists():
+        if debugger_path and debugger_path.exists():
             self.update_params(debugger_path)
 
     def update_params(self, debugger_path: Path):

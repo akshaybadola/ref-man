@@ -110,7 +110,7 @@ class CacheHelper:
                     link = "NOT_PRESENT"
                 else:
                     status = False
-                    link = "OTHER_ERROR"
+                    link = "OTHER_ERROR. {err.decode('utf-8')}"
             else:
                 link = out.decode("utf-8").replace("\n", "")
                 if link:

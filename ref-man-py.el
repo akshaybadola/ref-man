@@ -161,7 +161,7 @@ everything again.  Optional non-nil UPDATE only updates the
 `ref-man' python module.  The directory is relative to `ref-man'
 install directory `ref-man-home-dir'."
   (let* ((python (ref-man-py-get-system-python))
-         (py-version (and python (shell-command-to-string (format "%s --version" python))))
+         (py-version (and python (cadr (split-string (shell-command-to-string (format "%s --version" python))))))
          (env (path-join ref-man-home-dir "env")))
     (when (version< py-version "3.6.9")
       (user-error "Your default python3 executable is < 3.6.9.
