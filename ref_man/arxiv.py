@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 import json
 import requests
 from queue import Queue
@@ -9,7 +9,7 @@ from .q_helper import q_helper
 
 
 # TODO: There should be a cache of entries
-def dict_to_bibtex(bib_dict: Dict[str, str], json_out: bool = False):
+def dict_to_bibtex(bib_dict: Dict[str, str], json_out: bool = False) -> Optional[str]:
     temp = bib_dict.copy()
     if "author" in temp:
         k = "author"
@@ -60,13 +60,13 @@ def arxiv_get(arxiv_id: str) -> str:
                 "authors": [a.replace("\n", " ").strip() for a in authors], "year": date[:4],
                 "url": f"https://arxiv.org/abs/{arxiv_id}", "type": "article"}
     if bib_dict:
-        return dict_to_bibtex(bib_dict, True)
+        return dict_to_bibtex(bib_dict, True) or ""
     else:
         return json.dumps("ERROR RETRIEVING")
 
 
 def _arxiv_success(query: str, response: requests.Response,
-                   content: Dict[str, Dict[str, str]]):
+                   content: Dict[str, str]) -> None:
     soup = BeautifulSoup(response.content, features="lxml")
     entry = soup.find("entry")
     abstract = entry.find("summary").text
@@ -77,16 +77,17 @@ def _arxiv_success(query: str, response: requests.Response,
                 "authors": [a.replace("\n", " ").strip() for a in authors],
                 "year": date[:4],
                 "url": f"https://arxiv.org/abs/{query}", "type": "misc"}
-    content[query] = dict_to_bibtex(bib_dict)
+    content[query] = dict_to_bibtex(bib_dict) or ""
 
 
+# FIXME: content has mixed type Dict[str, List[str]] and Dict[str, str]
 def _arxiv_no_result(query: str, response: requests.Response,
-                     content: Dict[str, List[str]]):
+                     content: Dict[str, List[str]]) -> None:
     content[query] = ["NO_RESULT"]
 
 
 def _arxiv_error(query: str, response: requests.Response,
-                 content: Dict[str, List[str]]):
+                 content: Dict[str, List[str]]) -> None:
     content[query] = ["ERROR"]
 
 

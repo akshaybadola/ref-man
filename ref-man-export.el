@@ -441,6 +441,8 @@ from `org-export'.  Usually we generate the TOC with pandoc."
         (goto-char (point-min))
         (while (re-search-forward util/org-text-link-re nil t nil)
           ;; NOTE: Don't insert link if it's of an internal section
+          ;; FIXME: How to fix for dup titles if they are for different papers (and bibs)?
+          ;;        We should either report them as dups or store them with custom_ids
           (unless (member (match-string 1) sections)
             (let ((bib (ref-man-org-get-bib-from-org-link t t))
                   (title-keys (mapcar (lambda (x) (-take 2 x)) bibtexs)))
@@ -454,6 +456,8 @@ from `org-export'.  Usually we generate the TOC with pandoc."
                 (setf (nth 2 bib) (replace-regexp-in-string
                                    (string-remove-suffix "_a" (cadr bib))
                                    (cadr bib) (nth 2 bib))))
+              (when (string-prefix-p "#" (car bib))
+                (setf (car bib) (string-remove-prefix "#" (car bib))))
               (unless (member (cadr bib) (mapcar (lambda (x) (nth 1 x)) bibtexs))
                 (push bib bibtexs)))))
         (setq refs-string (ref-man-export-docproc-references bibtexs tmp-bib-file no-gdrive))

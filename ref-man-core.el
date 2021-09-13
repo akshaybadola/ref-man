@@ -161,8 +161,8 @@
 ;; from `ref-man'
 (defvar ref-man-home-dir)
 (defvar ref-man-science-parse-server-port)
-(defvar ref-man-python-data-dir)        ; from `ref-man-py'
-(defvar ref-man-python-server-port)      ; from `ref-man-py'
+(defvar ref-man-py-data-dir)        ; from `ref-man-py'
+(defvar ref-man-py-server-port)      ; from `ref-man-py'
 (defvar ref-man-public-links-cache)      ; from `ref-man-remote'
 (defvar ref-man-public-links-cache-file) ; from `ref-man-remote'
 ;; (declare-function 'string-match-p "subr")
@@ -540,7 +540,7 @@ database, the bibtex key (and file) becomes
     (cond ((not status)
            (ref-man-try-start-science-parse-server))
           ((eq status 'waiting)
-              (message (message "[ref-man] Waiting for Science Parse server to become ready.")))
+           (message "[ref-man] Waiting for Science Parse server to become ready."))
           (t
            (let*
                ((pdf-file-name (expand-file-name (buffer-file-name (current-buffer))))
@@ -709,8 +709,8 @@ calls the partial function with sole argument RESULTS."
       (kill-line)
       (delete-blank-lines)
       (save-buffer))
-    (message (format "Inserted %s references from DBLP, %s from SP"
-                     (- (length refs-list) (length na-results)) (length na-results)))))
+    (message "Inserted %s references from DBLP, %s from SP"
+             (- (length refs-list) (length na-results)) (length na-results))))
 
 ;; TODO: Need another function to fetch a search string at prompt and copy to kill ring
 (defun ref-man--dblp-fetch-python (refs-list org-buf)
@@ -725,7 +725,7 @@ and the entire process was very messy.  Parallel network calls in
 python are much easier and cleaner."
   ;; (setq ref-man--temp-ref nil)
   (let ((queries (mapcar 'car refs-list))
-        (url (format "http://localhost:%s/dblp" ref-man-python-server-port)))
+        (url (format "http://localhost:%s/dblp" ref-man-py-server-port)))
     ;; ;; NOTE: For `ref-man--post-json-new' encode-func has to be provided
     ;; ;;       Not using for now
     ;; (encode-func json-encode-list))
@@ -1266,7 +1266,7 @@ FILENAME where the suffix .bib is replaced with .org."
         (with-current-buffer org-buf
           (ref-man--insert-refs-from-seq
            entries nil 'bibtex)))
-    (message (format "[ref-man] File %s does not exist" filename))))
+    (message "[ref-man] File %s does not exist" filename)))
 
 (defun ref-man-org-bibtex-kill-headline-as-bibtex ()
   "Parse the headline at point, convert to a bib entry and append to `kill-ring'.
@@ -1403,7 +1403,7 @@ buffer."
                       (find-file-noselect bib-file-path))))
           (with-current-buffer buf
             (goto-char (point-min)) (insert result)
-            (message (concat "Inserted entry to " bib-file-name))))
+            (message "Inserted entry to %s" bib-file-name)))
       (kill-new result)
       (message "Inserted entry to kill ring"))))
 
@@ -1517,8 +1517,8 @@ buffer and sanitize the entry at point."
                   "No property drawer or missing properties. Fixed")
                  (t (with-current-buffer org-buf
                       (org-entry-get org-point "CUSTOM_ID"))))))
-      ('error (message (format "[ref-man] Caught exception: [%s]" ex))))
-    (message (concat "[ref-man] " retval))))
+      ('error (message "[ref-man] Caught exception: [%s]" ex)))
+    (message "[ref-man] %s" retval)))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END Org generation and insertion stuff ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1719,7 +1719,7 @@ which can be used to further add data to the org heading."
                   (insert (capitalize (symbol-name (car x))) ": " (replace-regexp-in-string "\n" " " (cdr x)))
                   (fill-paragraph))
                 metadata))
-      (message (concat "[ref-man] " (format "Imported entry \"%s\" into buffer <%s>" title (buffer-name org-buf))))
+      (message "[ref-man] Imported entry \"%s\" into buffer <%s>" title (buffer-name org-buf))
       ;; restore ref-man--org-gscholar-launch-point but return point
       (prog1 (list :buffer (current-buffer)
                    :heading (substring-no-properties (org-get-heading))
@@ -1764,7 +1764,7 @@ is meant to operate in batch mode."
           (buf-type (ref-man--check-response-buffer (current-buffer)))
           (heading (and args (plist-get args :heading))))
       (cond ((eq buf-type 'html)
-             (message (format "[ref-man] Got html buffer for url %s. Not saving file" url)))
+             (message "[ref-man] Got html buffer for url %s. Not saving file" url))
             ((eq buf-type 'pdf)
              (write-region (point) (point-max) file)
              (message "[ref-man] Saved %s" file))
@@ -1837,6 +1837,7 @@ Examine buffer for certain characters % and { as a heuristic."
             (t char)))))
 
 ;; FIXME: This should use `ref-man--fetch-from-pdf-url-new'
+;; NOTE: Used only by `ref-man--eww-pdf-download-callback'
 (defun ref-man--handle-json-response (json-data &optional storep)
   "Handle JSON response from `url-retrieve'.
 JSON-DATA is parsed and sent by `ref-man--eww-pdf-download-callback'.
@@ -1854,9 +1855,12 @@ redirect.  Optional argument STOREP is for batch mode."
              (unless storep (debug)))
             (t (message "[ref-man] handle-json-response, not sure what to do"))))))
 
+;; NOTE: Used by `ref-man--fetch-from-pdf-url' which is obsolete and
+;;       `ref-man-eww-download-pdf'.  `ref-man-eww-download-pdf' is used by a lot
+;;       of functions in `ref-man-web' so has to be fixed carefully.
 (defun ref-man--eww-pdf-download-callback (status url &optional view overwrite)
   "Callback for `url-retrieve' pdf download.
-STATUS is response status (I think).  URL is the url.
+STATUS is response status.  URL is the url that was fetched.
 
 With optional argument VIEW non-nil, view the pdf file also.
 OVERWRITE specifies to overwrite the target pdf file without
@@ -1866,7 +1870,7 @@ If `ref-man--org-gscholar-launch-buffer' is non-nil then PDF-FILE
 property in the property drawer for the org entry at point is
 inserted or updated.  See `ref-man--insert-org-pdf-file-property'."
   (if (plist-get status :error)
-      (message (format "[ref-man] Error occured while download %s" url))
+      (message "[ref-man] Error occured while download %s" url)
     (let ((file (ref-man-files-filename-from-url url))
           (buf-type (ref-man--check-response-buffer (current-buffer))))
       (goto-char (point-min))
@@ -2058,8 +2062,8 @@ Link is saved to URL property."
   "Fetch bibliography from an arxiv URL and return the buffer.
 This function uses arxiv api with python server as an intermediary."
   (let* ((arxiv-id (ref-man-url-to-arxiv-id url))
-         (bib-url (format "http://localhost:%s/arxiv?id=%s" ref-man-python-server-port arxiv-id)))
-    (message (format "[ref-man] Fetching for arxiv-id %s" arxiv-id))
+         (bib-url (format "http://localhost:%s/arxiv?id=%s" ref-man-py-server-port arxiv-id)))
+    (message "[ref-man] Fetching for arxiv-id %s" arxiv-id)
     (with-current-buffer
         (url-retrieve-synchronously bib-url)
       (goto-char (point-min))
@@ -2078,7 +2082,7 @@ This function uses arxiv api with python server as an intermediary."
                (url-retrieve-synchronously link)
              (ref-man--bib-buf-for-arxiv-api url))))
         (t
-         (message (format "[ref-man] No way to get bib buffer for %s" url))
+         (message "[ref-man] No way to get bib buffer for %s" url)
          nil)))
 
 (defun ref-man--ss-id ()
@@ -2148,7 +2152,7 @@ happen while inserting references in the buffer."
     ;; (outline-previous-heading)
 
     (if (not write-func)
-        (message (format "[ref-man] Illegal seqtype %s" seqtype))
+        (message "[ref-man] Illegal seqtype %s" seqtype)
       (when name
         (insert name))
       (org-insert-heading-respect-content)
@@ -2336,7 +2340,7 @@ ENTRY is the `org' entry at point."
     (delete-file (replace-regexp-in-string "\\[\\[\\(.+?\\)\\]\\(\\[*.*\\]*\\)\\]" "\\1"
                                            (org-entry-get (point) "PDF_FILE"))))
   (when (org-entry-get (point) "PAPERID")
-    (delete-file (path-join ref-man-python-data-dir (org-entry-get (point) "PAPERID"))))
+    (delete-file (path-join ref-man-py-data-dir (org-entry-get (point) "PAPERID"))))
   (org-copy-subtree 1 t))
 
 (defun ref-man-org-update-from-from-crossref ()
@@ -2375,7 +2379,6 @@ ENTRY is the `org' entry at point."
 ;; TODO: Replace all property setters in this section with
 ;;       ref-man--insert-org-pdf-file-property
 ;; TODO: Fix redundancies in bib fetching and pdf fetching
-;; FIXME: This should use `ref-man--fetch-from-pdf-url-new'
 (defun ref-man-try-fetch-bib-insert-as-org-heading (&optional fetch-pdf)
   "Fetches the bib from URL in properties of current heading and updates the heading"
   ;; NOTE: This is how it should be but for now only arxiv
@@ -2383,7 +2386,7 @@ ENTRY is the `org' entry at point."
   ;;        (bib-url (ref-man--try-get-bib-according-to-source url)))
   ;;   (if bib-url
   ;;       (ref-man-eww--browse-url bib-url nil (current-buffer))
-  ;;     (message (format "[ref-man] No bibtex URL in %s" url))))
+  ;;     (message "[ref-man] No bibtex URL in %s" url)))
   (interactive)
   (if (eq major-mode 'org-mode)
       (let* ((url (cdr (assoc "URL" (org-entry-properties))))
@@ -2397,11 +2400,11 @@ ENTRY is the `org' entry at point."
                                         (bibtex-parse-entry)))))
         (if bib-assoc
             (ref-man-org-bibtex-convert-bib-to-property bib-assoc (current-buffer) (point) nil)
-          (message (format "[ref-man] Could not parse bibtex from %s" url)))
+          (message "[ref-man] Could not parse bibtex from %s" url))
         (when (and fetch-pdf (ref-man-url-downloadable-pdf-url-p url))
-          (message (format "[ref-man] Fetching pdf for url %s" url))
+          (message "[ref-man] Fetching pdf for url %s" url)
           ;; CHECK: Is it possible to not fetch bib and pdf separately but simultaneously instead?
-          (ref-man--fetch-from-pdf-url url)))
+          (ref-man--fetch-from-pdf-url-new url)))
     (message "[ref-man] Not in org-mode")))
 
 ;; FIXME: This could be `let'
@@ -2523,7 +2526,7 @@ citations.  Can be one of 'refs 'cites."
                           (with-current-buffer
                               (url-retrieve-synchronously
                                (format "http://localhost:%s/semantic_scholar?id_type=%s&id=%s%s"
-                                       ref-man-python-server-port
+                                       ref-man-py-server-port
                                        (car idtype-id)
                                        (cdr idtype-id)
                                        (if update-on-disk "&force" ""))
@@ -2659,7 +2662,7 @@ pagination of results isn't supported yet."
     ;;       Should use jinja or lisp template
     (let* ((args (when args (string-join args "&")))
            (url (concat (format "http://localhost:%s/semantic_scholar_search?q=%s"
-                                ref-man-python-server-port search-string)
+                                ref-man-py-server-port search-string)
                         (if args (concat "&" args) "")))
            (buf (if args (ref-man--post-json-synchronous url args)
                   (url-retrieve-synchronously url)))
@@ -2796,12 +2799,12 @@ current headline.  Default is to insert a subheading."
       (ref-man-org-insert-link-as-headline org-buf link title metadata current))))
 
 (defun ref-man--download-pdf-redirect-new (callback url &optional args)
-  (message "%s" (concat "[ref-man] Fetching PDF from " url))
+  (message "[ref-man] Fetching PDF from %s" url)
   (let ((url (ref-man-url-maybe-proxy url)))
     (url-retrieve url callback (list url args))))
 
 (defun ref-man--download-pdf-redirect (callback url &optional point)
-  (message (concat "[ref-man] Fetching PDF from " url))
+  (message "[ref-man] Fetching PDF from %s" url)
   (let ((url (ref-man-url-maybe-proxy url)))
     (if point
         (url-retrieve url callback (list url point))
@@ -2842,6 +2845,7 @@ subtree will be updated later."
                    (ref-man--insert-org-pdf-file-property file))))))
     (message "[ref-man] Empty pdf url given")))
 
+;; NOTE: Used only by `ref-man--handle-json-response'
 (defun ref-man--fetch-from-pdf-url (url &optional storep)
   "Fetch pdf file if possible, from URL.
 Optional argument STOREP is for batch updates.  Store the
@@ -3003,7 +3007,7 @@ RETRIEVE-TITLE has no effect at the moment."
           ;;                          :heading (org-link-heading-search-string)
           ;;                          :status "NOT_PDF")
           ;;                    ref-man--subtree-list)
-          ;;            (message (concat "[ref-man] Browsing " url))
+          ;;            (message "[ref-man] Browsing %s" url)
           ;;            (eww-browse-url url)))
           ;;         ((not url)
           ;;          (if storep
@@ -3011,7 +3015,7 @@ RETRIEVE-TITLE has no effect at the moment."
           ;;                          :heading (org-link-heading-search-string)
           ;;                          :status "BAD_URL")
           ;;                    ref-man--subtree-list)
-          ;;            (message (concat "[ref-man] Bad URL " url))))
+          ;;            (message "[ref-man] Bad URL %s" url)))
           ;;         (t (message "[ref-man--try-fetch-pdf-from-url] Some strange error occured. Check"))))
           )
         (when (and retrieve-bib (not storep)) ; don't try retrieve bib when storep
@@ -3021,12 +3025,12 @@ RETRIEVE-TITLE has no effect at the moment."
           ;;        (let ((bib-url (ref-man--try-get-bib-according-to-source url)))
           ;;          (if bib-url
           ;;              (ref-man-eww--browse-url bib-url nil ref-man--org-gscholar-launch-buffer)
-          ;;            (message (format "[ref-man] No bibtex URL in %s" url)))))
+          ;;            (message "[ref-man] No bibtex URL in %s" url))))
           ;;       ((not url)
           ;;        (message "[ref-man] No URL given"))
           ;;       ((and url (not (ref-man-url-has-bib-url-p url)))
           ;;        (message "[ref-man] URL doesn't have a bib URL"))
-          ;;       (t (message (format "[ref-man] Some strange error occured for retrieve-bib in %s. Check" url))))
+          ;;       (t (message "[ref-man] Some strange error occured for retrieve-bib in %s. Check" url)))
           )
         (when retrieve-title
           ;; NOTE: Not worth it right now.
@@ -3316,10 +3320,10 @@ web buffer was called from an org buffer."
         (url (ref-man-url-maybe-proxy url)))
     (if file
         (if (y-or-n-p "File exists.  Download again? ")
-            (progn (message (format "Downloading %s" url))
+            (progn (message "Downloading %s" url)
                    (url-retrieve url #'ref-man--eww-pdf-download-callback (list url view t))) ; retrieve and view
           (when view (find-file-other-window file))) ; else view
-      (message (format "Downloading %s" url))
+      (message "Downloading %s" url)
       (url-retrieve url #'ref-man--eww-pdf-download-callback (list url view)))))
 
 ;; called from an org buffer
@@ -3423,8 +3427,8 @@ entry to kill ring."
          (buf-string (with-current-buffer source-buf (buffer-string))))
     (when org-buf
       (progn
-        (message (concat "[ref-man] Trying to insert into org buffer: "
-                         (buffer-name org-buf)))
+        (message "[ref-man] Trying to insert into org buffer: %s"
+                 (buffer-name org-buf))
         ;; NOTE: Sanitize entry *ONLY* at point
         (ref-man--sanitize-org-entry org-buf pt)
         (let ((bib-alist (with-current-buffer source-buf
@@ -3452,14 +3456,14 @@ entry to kill ring."
     (when bib-buf
       (with-current-buffer bib-buf (goto-char (point-min))
                            (insert buf-string))
-      (message (format "[ref-man] inserted bib entry into %s" bib-buf)))
+      (message "[ref-man] inserted bib entry into %s" bib-buf))
     ;; (when bib-buf
     ;;   (let* ((temp-bib-file-name (file-name-nondirectory ref-man-temp-bib-file-path))
     ;;          (buf (if (get-buffer temp-bib-file-name) (get-buffer temp-bib-file-name)
     ;;                 (find-file-noselect ref-man-temp-bib-file-path))))
     ;;     (with-current-buffer buf (goto-char (point-min))
     ;;                          (insert buf-string))
-    ;;     (message (concat "[ref-man] inserted bib entry into " temp-bib-file-name))))
+    ;;     (message "[ref-man] inserted bib entry into %s" temp-bib-file-name)))
     (when kill
       (kill-new buf-string))))
 

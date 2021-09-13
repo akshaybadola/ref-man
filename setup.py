@@ -28,6 +28,8 @@ setup(
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         "Natural Language :: English",
+        "Topic :: Education",
+        "Topic :: Scientific/Engineering",
         "Topic :: Text Editors :: Emacs",
     ],
     packages=["ref_man"],

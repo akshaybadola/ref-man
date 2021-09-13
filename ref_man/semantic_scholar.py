@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 import os
 import json
 import requests
@@ -32,13 +32,13 @@ def load_ss_cache(data_dir: Path) -> Cache:
         for key, ind in assoc:
             if c[ind]:
                 ss_cache[key][c[ind]] = c[-1]
-    print(f"Loaded cache with {sum(len(x) for x in ss_cache.values())} entries")
+    print(f"Loaded SS cache with {sum(len(x) for x in ss_cache.values())} entries")
     return ss_cache
 
 
 # NOTE: There's a separate acl_id here, because SS allows query by acl_id but
 #       doesn't return it if it exists in the result.
-def save_data(data: Dict[str, str], data_dir: Path, ss_cache: Cache, acl_id):
+def save_data(data: Dict[str, str], data_dir: Path, ss_cache: Cache, acl_id) -> None:
     """Save Semantic Scholar cache to disk.
 
     We read and write data for individual papers instead of one big json object.
@@ -83,7 +83,7 @@ def save_data(data: Dict[str, str], data_dir: Path, ss_cache: Cache, acl_id):
 
 
 def semantic_scholar_paper_details(id_type: str, ID: str, data_dir: str,
-                                   ss_cache: Cache, force: bool):
+                                   ss_cache: Cache, force: bool) -> Union[str, bytes]:
     """Get semantic scholar paper details
 
     The Semantic Scholar cache is checked first and if it's a miss then the
@@ -129,7 +129,7 @@ def semantic_scholar_paper_details(id_type: str, ID: str, data_dir: str,
             url = urls[id_type] + "?include_unknown_references=true"
             response = requests.get(url)
             if response.status_code == 200:
-                save_data(json.loads(response.content), data_dir, ss_cache, acl_id)
+                save_data(json.loads(response.content), Path(data_dir), ss_cache, acl_id)
                 return response.content  # already JSON
             else:
                 print(f"Server error. Could not fetch")
@@ -162,7 +162,7 @@ class SemanticSearch:
         if debugger_path and debugger_path.exists():
             self.update_params(debugger_path)
 
-    def update_params(self, debugger_path: Path):
+    def update_params(self, debugger_path: Path) -> None:
         """Update the parameters for Semantic Scholar Search if possible
 
         Args:
@@ -229,7 +229,8 @@ class SemanticSearch:
         else:
             print(f"Debug script path not given. Using default params")
 
-    def semantic_scholar_search(self, query: str, cs_only: bool = False, **kwargs):
+    def semantic_scholar_search(self, query: str, cs_only: bool = False, **kwargs) ->\
+            Union[str, bytes]:
         """Perform a search on semantic scholar and return the results.
 
         The results are returned in JSON format.  By default the search is

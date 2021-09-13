@@ -103,5 +103,8 @@
 - Version bump to `0.6.0`.
 - Py mod version bump to `0.3.2`.
 
-## [2021-09-09 Thu 19:23]
+## [2021-09-13 Mon 10:02]
 - Bug fixes for regressions in ref-man-py.el and in cache.py
+- Fixed `(message )` exprs.
+- Separated `ref_man/util.py`
+- Added more types in the python module.

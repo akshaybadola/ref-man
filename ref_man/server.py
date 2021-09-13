@@ -1,13 +1,8 @@
-from typing import Callable, List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import os
 from pathlib import Path
 import json
-import time
-import logging
 import requests
-from queue import Queue
-from threading import Thread, Event
-import flask
 from flask import Flask, request, Response
 from werkzeug import serving
 
@@ -18,6 +13,7 @@ from bs4 import BeautifulSoup
 from common_pyutil.log import get_stream_logger
 
 from .const import default_headers, __version__
+from .util import fetch_url_info, fetch_url_info_parallel, parallel_fetch, post_json_wrapper
 from .arxiv import arxiv_get, arxiv_fetch, arxiv_helper
 from .dblp import dblp_helper
 from .semantic_scholar import SemanticSearch, load_ss_cache, semantic_scholar_paper_details
@@ -25,130 +21,6 @@ from .cache import CacheHelper
 
 
 app = Flask(__name__)
-
-
-def fetch_url_info(url, headers, q=None):
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        soup = BeautifulSoup(response.content)
-        title = soup.find("title").text
-        if re.match("https{0,1}://arxiv.org.*", url):
-            title = soup.find(None, attrs={"class": "title"}).text.split(":")[1]
-            authors = soup.find(None, attrs={"class": "authors"}).text.split(":")[1]
-            abstract = soup.find(None, attrs={"class": "abstract"}).text.split(":")[1]
-            date = soup.find("div", attrs={"class": "dateline"}).text.lower()
-            pdf_url = url.replace("/abs/", "/pdf/")
-            if "last revised" in date:
-                date = date.split("last revised")[1].split("(")[0]
-            elif "submitted" in date:
-                date = date.split("submitted")[1].split("(")[0]
-            else:
-                date = None
-        else:
-            authors = None
-            abstract = None
-            date = None
-            pdf_url = None
-        retval = {"title": title and title.strip(),
-                  "authors": authors and authors.strip(),
-                  "date": date and date.strip(),
-                  "abstract": abstract and abstract.strip(),
-                  "pdf_url": pdf_url and pdf_url.strip()}
-    else:
-        retval = {"error": "error", "code": response.status_code}
-    if q is not None:
-        q.put((url, retval))
-    else:
-        return retval
-
-
-def parallel_fetch(urls: List[str], fetch_func: Callable[[str, Queue], None],
-                   batch_size: int):
-    def helper(q: Queue):
-        responses = {}
-        while not q.empty():
-            url, retval = q.get()
-            responses[url] = retval
-        return responses
-    j = 0
-    content = {}
-    while True:
-        _urls = urls[(batch_size * j): (batch_size * (j + 1))].copy()
-        if not _urls:
-            break
-        q: Queue = Queue()
-        threads = []
-        for url in _urls:
-            threads.append(Thread(target=fetch_func, args=[url, q]))
-            threads[-1].start()
-        for t in threads:
-            t.join()
-        content.update(helper(q))
-        j += 1
-
-
-def post_json_wrapper(request: flask.Request, fetch_func: Callable[[str, Queue], None],
-                      helper: Callable, batch_size: int, host: str,
-                      logger: logging.Logger):
-    """Helper function to parallelize the requests and gather them.
-
-    Args:
-        request: An instance :class:`~Flask.Request`
-        fetch_func: :func:`fetch_func` fetches the request from the server
-        helper: :func:`helper` validates and collates the results
-        batch_size: Number of simultaneous fetch requests
-        verbosity: verbosity level
-
-    """
-    if not isinstance(request.json, str):
-        data = request.json
-    else:
-        try:
-            data = json.loads(request.json)
-        except Exception:
-            return json.dumps("BAD REQUEST")
-    logger.info(f"Fetching {len(data)} queries from {host}")
-    verbose = True
-    j = 0
-    content: Dict[str, str] = {}
-    while True:
-        _data = data[(batch_size * j): (batch_size * (j + 1))].copy()
-        for k, v in content.items():
-            if v == ["ERROR"]:
-                _data.append(k)
-        if not _data:
-            break
-        q: Queue = Queue()
-        threads = []
-        for d in _data:
-            # FIXME: This should also send the logger instance
-            threads.append(Thread(target=fetch_func, args=[d, q],
-                                  kwargs={"verbose": verbose}))
-            threads[-1].start()
-        for t in threads:
-            t.join()
-        content.update(helper(q))
-        j += 1
-    return json.dumps(content)
-
-
-def check_proxy(proxies: Dict[str, str], flag: Event):
-    check_count = 0
-    while flag.is_set():
-        try:
-            response = requests.get("http://google.com", proxies=proxies,
-                                    timeout=1)
-            if response.status_code != 200:
-                flag.clear()
-            else:
-                check_count = 0
-        except requests.exceptions.Timeout:
-            check_count += 1
-            print(f"Proxy failed {check_count} times")
-        if check_count > 2:
-            flag.clear()
-        time.sleep(10)
-    print("Proxy failed. Exiting from check.")
 
 
 class Server:
@@ -230,37 +102,13 @@ class Server:
         self.ss_cache = load_ss_cache(self.data_dir)
         self.update_cache_run = None
         if local_pdfs_dir and remote_pdfs_dir and remote_links_cache:
-            self.cache_helper: Optional[CacheHelper] =\
+            self.pdf_cache_helper: Optional[CacheHelper] =\
                 CacheHelper(local_pdfs_dir, Path(remote_pdfs_dir), remote_links_cache, self.logger)
         else:
-            self.cache_helper = None
+            self.pdf_cache_helper = None
             self.logger.warn("All arguments required for pdf cache not given.\n" +
                              "Will not maintain remote pdf links cache.")
-
-        # TODO: Maybe start up the proxy from here
-        # TODO: Maybe ssh_socks proxy server should also be entirely in python
-        #       paramiko maybe? Or some tunnel library
-        # if self.proxy_port:
-        #     self.logger.info(f"Will redirect fetch_proxy to on {self.proxy_port}")
-        #     proxies = {"http": f"http://127.0.0.1:{self.proxy_port}",
-        #                "https": f"http://127.0.0.1:{self.proxy_port}"}
-        #     # flag = Event()
-        #     # flag.set()
-        #     # check_proxy_thread = Thread(target=check_proxy, args=[proxies, flag])
-        #     # check_proxy_thread.start()
-        # else:
-        #     proxies = None
-        # if self.proxy_everything_port:
-        #     self.logger.info(f"Will proxy everything on {self.proxy_everything_port}")
-        #     everything_proxies = {"http": f"http://127.0.0.1:{self.proxy_everything_port}",
-        #                           "https": f"http://127.0.0.1:{self.proxy_everything_port}"}
-        #     flag = Event()
-        #     flag.set()
-        #     check_proxy_thread = Thread(target=check_proxy, args=[proxies, flag])
-        #     check_proxy_thread.start()
-        # else:
-        #     everything_proxies = None
-
+        # NOTE: Checks only once for the proxy, see util.check_proxy for a persistent solution
         self.check_proxies()
         self.semantic_search = SemanticSearch(self.chrome_debugger_path)
         self.init_routes()
@@ -281,50 +129,48 @@ class Server:
         self.logger.error(msg)
         return msg
 
+    def check_proxies_subr(self, proxy_port: int, proxy_name: str) ->\
+            Tuple[bool, str, Dict[str, str]]:
+        status = False
+        proxies = {"http": f"http://127.0.0.1:{proxy_port}",
+                   "https": f"http://127.0.0.1:{proxy_port}"}
+        try:
+            response = requests.get("http://google.com", proxies=proxies,
+                                    timeout=1)
+            if response.status_code == 200:
+                msg = f"{proxy_name} seems to work"
+                self.logger.info(msg)
+                status = True
+            else:
+                msg = f"{proxy_name} seems reachable but wrong" +\
+                    f" status_code {response.status_code}"
+                self.logger.info(msg)
+        except requests.exceptions.Timeout:
+            msg = f"Timeout: Proxy for {proxy_name} not reachable"
+            self.logger.error(msg)
+        except requests.exceptions.ProxyError:
+            msg = f"ProxyError: Proxy for {proxy_name} not reachable. Will not proxy"
+            self.logger.error(msg)
+        return status, msg, proxies
+
     def check_proxies(self) -> str:
-        msgs = []
+        msgs: List[str] = []
+        self.proxies = None
+        self.everything_proxies = None
         if self.proxy_everything_port:
-            self.everything_proxies = None
-            everything_proxies = {"http": f"http://127.0.0.1:{self.proxy_everything_port}",
-                                  "https": f"http://127.0.0.1:{self.proxy_everything_port}"}
-            try:
-                response = requests.get("http://google.com", proxies=everything_proxies,
-                                        timeout=1)
-                if response.status_code == 200:
-                    msg = "Proxy everything seems to work"
-                    self.logger.info(msg)
-                else:
-                    msg = "Proxy everything seems reachable but wrong" +\
-                        f" status_code {response.status_code}"
-                    self.logger.info(msg)
-                self.logger.warning("Warning: proxy_everything is only implemented for DBLP.")
-                msg += "Warning: proxy_everything is only implemented for DBLP."
-                self.everything_proxies = everything_proxies
-            except requests.exceptions.Timeout:
-                msg = "Proxy for everything else not reachable"
-                self.logger.error(msg)
+            status, msg, proxies = self.check_proxies_subr(self.proxy_everything_port, "proxy everything")
             msgs.append(msg)
+            if status:
+                msg = "Warning: proxy_everything is only implemented for DBLP."
+                self.logger.warning(msg)
+                msgs.append(msg)
+                self.everything_proxies = proxies
         if self.proxy_port is not None:
-            self.proxies: Optional[Dict[str, str]] = None
-            proxies = {"http": f"http://127.0.0.1:{self.proxy_port}",
-                       "https": f"http://127.0.0.1:{self.proxy_port}"}
-            try:
-                response = requests.get("http://google.com", proxies=proxies,
-                                        timeout=1)
-                if response.status_code == 200:
-                    msg = f"Proxy {self.proxy_port} seems to work"
-                    self.logger.info(msg)
-                    self.proxies = proxies
-                else:
-                    msg = f"Proxy seems reachable but wrong status_code {response.status_code}"
-                    self.logger.info(msg)
-            except requests.exceptions.Timeout:
-                msg = "Timeout: Proxy not reachable. Will not proxy"
-                self.logger.error(msg)
-            except requests.exceptions.ProxyError:
-                msg = "ProxyError: Proxy not reachable. Will not proxy"
-                self.logger.error(msg)
+            proxy_name = f"Proxy with port: {self.proxy_port}"
+            status, msg, proxies = self.check_proxies_subr(self.proxy_port, proxy_name)
             msgs.append(msg)
+            if status:
+                self.proxies = proxies
         return "\n".join(msgs)
 
     def init_routes(self):
@@ -378,7 +224,7 @@ class Server:
                 return self.semantic_search.semantic_scholar_search(query, **kwargs)
 
         @app.route("/url_info", methods=["GET"])
-        def url_info():
+        def url_info() -> str:
             """Fetch info about a given url or urls based on certain rules."""
             if "url" in request.args and request.args["url"]:
                 url = request.args["url"]
@@ -389,7 +235,7 @@ class Server:
             else:
                 return json.dumps("NO URL or URLs GIVEN")
             if urls is not None:
-                return parallel_fetch(urls, fetch_url_info, self.batch_size)
+                return parallel_fetch(urls, fetch_url_info_parallel, self.batch_size)
             elif url is not None:
                 return json.dumps(fetch_url_info(url))
             else:
@@ -454,40 +300,40 @@ class Server:
 
         @app.route("/update_links_cache")
         def update_links_cache():
-            if not self.cache_helper:
+            if not self.pdf_cache_helper:
                 return self.loge("Cache helper is not available.")
             if not self.update_cache_run:
                 self.update_cache_run = True
-            if self.cache_helper.updating:
+            if self.pdf_cache_helper.updating:
                 return "Still updating cache from previous call"
-            files = self.cache_helper.cache_needs_updating
+            files = self.pdf_cache_helper.cache_needs_updating
             if files:
-                self.cache_helper.update_cache()
+                self.pdf_cache_helper.update_cache()
                 return self.logi(f"Updating cache for {len(files)} files")
             else:
                 return self.logi("Nothing to update")
 
         @app.route("/force_stop_update_cache")
         def foce_stop_update_cache():
-            if not self.cache_helper:
+            if not self.pdf_cache_helper:
                 return self.loge("Cache helper is not available.")
             if not self.update_cache_run:
                 return self.logi("Update cache was never called")
             else:
-                self.cache_helper.stop_update()
+                self.pdf_cache_helper.stop_update()
                 return self.logi("Sent signal to stop updating cache")
 
         @app.route("/cache_updated")
         def cache_updated():
-            if not self.cache_helper:
+            if not self.pdf_cache_helper:
                 return self.loge("Cache helper is not available.")
             if not self.update_cache_run:
                 return self.logi("Update cache was never called.")
-            elif self.cache_helper.updating:
+            elif self.pdf_cache_helper.updating:
                 return self.logi("Still updating cache")
-            elif self.cache_helper.finished:
+            elif self.pdf_cache_helper.finished:
                 return self.logi("Updated cache for all files")
-            elif self.cache_helper.finished_with_errors:
+            elif self.pdf_cache_helper.finished_with_errors:
                 return self.logi("Updated cache with errors.")
             else:
                 return self.logi("Nothing was updated in last call to update cache")
@@ -566,9 +412,9 @@ class Server:
 
         @app.route("/shutdown")
         def shutdown():
-            if self.cache_helper:
+            if self.pdf_cache_helper:
                 self.logd("Shutting down cache helper.")
-                self.cache_helper.shutdown()
+                self.pdf_cache_helper.shutdown()
             func = request.environ.get('werkzeug.server.shutdown')
             func()
             return self.logi("Shutting down")

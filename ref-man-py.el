@@ -33,7 +33,7 @@
 
 ;;; Code:
 
-(defcustom ref-man-py-executable ""
+(defcustom ref-man-py-executable nil
   "Path to python executable to use for `ref-man'."
   :type 'file
   :group 'ref-man)
@@ -60,7 +60,7 @@ go through this http proxy at localhost, specified by this port."
   :type 'integer
   :group 'ref-man)
 
-(defcustom ref-man-chrome-debug-script ""
+(defcustom ref-man-chrome-debug-script (path-join (f-dirname (f-this-file)) "debug_ss.js")
   "Path to the chrome debugger javascript file.
 The file contains code to get the Semantic Scholar Search
 params.  As they can change, we need to update them once the
@@ -68,7 +68,6 @@ server starts.  Requires some kind of chrome(ium) to be installed
 on the system."
   :type 'file
   :group 'ref-man)
-
 
 ;; NOTE: External variables
 (defvar ref-man-home-dir)               ; from `ref-man'
@@ -145,13 +144,10 @@ PYTHON is the path for python executable."
 
 (defun ref-man-py-get-system-python ()
   "Get system python3 executable."
-  (unless (or (not (string-empty-p ref-man-py-executable))
-              (executable-find "python3"))
+  (unless (or ref-man-py-executable (executable-find "python3"))
     (error "No `ref-man-py-executable' or python3 found in current paths.\n
 Either set `ref-man-py-executable' or add python3 path to the exec path"))
-  (or (unless (string-empty-p ref-man-py-executable)
-        ref-man-py-executable)
-      (executable-find "python3")))
+  (or ref-man-py-executable (executable-find "python3")))
 
 (defun ref-man-py-setup-env (&optional reinstall update)
   "Setup python virtualenv.
@@ -198,9 +194,7 @@ Make sure package 'virtualenv' exists in current python environment"))
 
 ;; TODO: Requests to python server should be dynamic according to whether I want
 ;;       to use proxy or not at that point
-(defun ref-man-py-process-helper (data-dir port &optional
-                                                proxy-port proxy-everything-port
-                                                docs-dir)
+(defun ref-man-py-process-helper (data-dir port &optional proxy-port docs-dir)
   "Start the python server.
 DATA-DIR is the server data directory.  PORT is the port to which
 the server binds.
@@ -217,15 +211,15 @@ nil, `ref-man-py-data-dir' respectively by
   (prog1
       (message (format "[ref-man] Starting python process on port: %s"
                        ref-man-py-server-port))
-    (let ((python (path-join ref-man-home-dir "env" "bin" "python")))
+    (let ((python (path-join ref-man-home-dir "env" "bin" "python"))
+          (proxy-port (or proxy-port ref-man-proxy-port)))
       (condition-case nil
           (ref-man-py-setup-env))
       (let ((args (-filter #'identity (list (format "--data-dir=%s" data-dir)
                                             (format "--port=%s" port)
-                                            (and ref-man-proxy-port "--proxy-everything")
-                                            (and ref-man-proxy-port
-                                                 (format "--proxy-everything-port=%s"
-                                                         ref-man-proxy-port))
+                                            (and proxy-port "--proxy-everything")
+                                            (and proxy-port
+                                                 (format "--proxy-everything-port=%s" proxy-port))
                                             (and ref-man-pdf-proxy-port
                                                  (format "--proxy-port=%s"
                                                          ref-man-pdf-proxy-port))

@@ -7,7 +7,7 @@
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Time-stamp:	<Thursday 09 September 2021 19:23:10 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org-mode, eww
-;; Version:     0.6.1
+;; Version:     0.6.2
 ;; Package-Requires: ((a "0.1.1") (async "1.9.4") (org "9.2.3") (biblio-core "0.2.1") (gscholar-bibtex "0.3.1") (websocket "1.12") (dash "2.18.0") (bind-key "2.4") (org-ref "1.1.1"))
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -102,6 +102,7 @@ See URL `https://github.com/allenai/science-parse' for details"
 (require 'ref-man-chrome)
 (require 'ref-man-remote)
 (require 'ref-man-py)
+(require 'ref-man-export)
 
 (defun ref-man-init-dirs ()
   (seq-do (lambda (x)
@@ -109,7 +110,7 @@ See URL `https://github.com/allenai/science-parse' for details"
               (make-directory x)))
           (list ref-man-data-root-dir ref-man-org-store-dir
                 ref-man-documents-dir ref-man-extra-documents-dirs
-                ref-man-python-data-dir)))
+                ref-man-py-data-dir)))
 (ref-man-init-dirs)
 
 (unless (ref-man-py-process-running)
