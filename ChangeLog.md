@@ -108,3 +108,7 @@
 - Fixed `(message )` exprs.
 - Separated `ref_man/util.py`
 - Added more types in the python module.
+
+## [2021-09-14 Tue 13:42]
+- Added a `ref-man-export-python-executable`. Fixed a couple of issues with
+  the customization executable and pandoc filters being in there.

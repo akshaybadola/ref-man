@@ -43,6 +43,8 @@
 ;;; Code:
 
 (require 'util)
+(require 'ox)
+(require 'yaml)
 (require 'ref-man-core)
 
 (defcustom ref-man-export-blog-dir (expand-file-name "~/.ref-man/blog/")
@@ -120,6 +122,11 @@ Should be an `alist' parseable by `yaml-encode'."
 
 (defcustom ref-man-export-csl-no-urls-file nil
   "Path to csl file which would not allow including urls."
+  :type 'file
+  :group 'ref-man)
+
+(defcustom ref-man-export-python-executable "/usr/bin/python3"
+  "Path to the python executable for calling `pndconf'."
   :type 'file
   :group 'ref-man)
 
@@ -373,8 +380,8 @@ from `org-export'.  Usually we generate the TOC with pandoc."
          (org-export-with-date nil)
          (org-export-with-properties nil)
          (org-export-with-latex nil)
-         (tmp-bib-file (unless (or (string= "2.14" ref-man-pandoc-version)
-                                   (string< "2.14" ref-man-pandoc-version))
+         (tmp-bib-file (unless (or (string= "2.14" (ref-man-pandoc-version))
+                                   (string< "2.14" (ref-man-pandoc-version)))
                          (make-temp-file "ref-bib-" nil ".bib")))
          (docproc-dir ref-man-export-docproc-dir)
          (csl-file (pcase (org-entry-get (point) "CSL")
@@ -385,7 +392,7 @@ from `org-export'.  Usually we generate the TOC with pandoc."
                      (csl (a-get (ref-man-export-csl-files) (downcase csl)))))
          (mathjax-path ref-man-export-mathjax-dir)
          (pandocwatch (path-join docproc-dir "pandocwatch.py"))
-         (python "/usr/bin/python")
+         (python ref-man-export-python-executable)
          (title (substring-no-properties (org-get-heading t t t t)))
          (md-file (path-join (pcase type
                                ('blog ref-man-export-blog-dir)
@@ -521,9 +528,16 @@ from `org-export'.  Usually we generate the TOC with pandoc."
                           (_ type))
                         extra-opts))
       (message "Running command %s" cmd)
-      (let ((msg (shell-command-to-string cmd))
-            (buf (get-buffer-create "*pandoc and latex output*"))
-            case-fold-search)
+      (let* ((process-environment (mapcar
+                                   (lambda (x) (split-string x "="))
+                                   process-environment))
+             (process-environment (mapcar (lambda (x) (string-join x "="))
+                                          (a-assoc process-environment "PATH"
+                                                   (list (concat (f-dirname ref-man-export-python-executable) ":"
+                                                                 (car (a-get process-environment "PATH")))))))
+             (msg (shell-command-to-string cmd))
+             (buf (get-buffer-create "*pandoc and latex output*"))
+             case-fold-search)
         (with-current-buffer buf
           (erase-buffer)
           (insert msg)

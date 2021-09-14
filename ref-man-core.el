@@ -127,12 +127,6 @@
   :type 'file
   :group 'ref-man)
 
-(defvar ref-man-pandoc-version (cadr
-                                (split-string
-                                 (shell-command-to-string
-                                  (format "%s --version" ref-man-pandoc-executable))))
-  "The version of pandoc being used.")
-
 (defvar ref-man-key-list
   '(authors title venue volume number pages year doi ee)
   "Only these keys from bibtex are retained (I think).")
@@ -203,6 +197,10 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START ref-man constants  ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun ref-man-pandoc-version ()
+  "The version of pandoc being used."
+  (cadr (split-string (shell-command-to-string (format "%s --version" ref-man-pandoc-executable)))))
 
 ;;
 ;; Constants. perhaps can name them better
