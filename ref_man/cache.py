@@ -162,6 +162,15 @@ class CacheHelper:
         else:
             self.logger.error("We are still updating")
 
+    def sync_from_remote(self) -> None:
+        self.logger.debug(f"Syncing remote {self.remote_dir} to {self.local_dir}")
+        try:
+            p = Popen(f"rclone -v sync {self.remote_dir} {self.local_dir}",
+                      shell=True, stdout=PIPE, stderr=PIPE)
+            out, err = p.communicate()
+        except Exception as e:
+            self.logger.error(f"Error occured {e}")
+
     def update_cache_helper(self, fix_files: List[str] = []) -> None:
         if not self.updating_ev.is_set():
             self.updating_ev.set()

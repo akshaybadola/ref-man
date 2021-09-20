@@ -66,7 +66,7 @@
 Maps files from `ref-man-documents-dir' to
 `ref-man-remote-documents-dir'.")
 
-(defvar ref-man-python-server-port)     ; from `ref-man-core'
+(defvar ref-man-py-server-port)     ; from `ref-man-py'
 
 (defun ref-man-remote-load-public-links-cache ()
   "Load the existing cache from disk if defined."
@@ -85,7 +85,7 @@ Maps files from `ref-man-documents-dir' to
 (defun ref-man-remote-check-cache-updated ()
   "Check from python server if cache is updated."
   (let* ((buf (url-retrieve-synchronously
-              (format "http://localhost:%s/cache_updated" ref-man-python-server-port) t))
+              (format "http://localhost:%s/cache_updated" ref-man-py-server-port) t))
          (buf-string (and buf (with-current-buffer buf (buffer-string)))))
     (cond ((string-match-p "updated cache with errors" buf-string)
            'updated-with-errors)
@@ -107,7 +107,7 @@ disk."
     ;; Else, update first
     (let ((buf (url-retrieve-synchronously
                 (format "http://localhost:%s/update_links_cache?local_dir=%s&remote_dir=%s&cache_file=%s"
-                        ref-man-python-server-port
+                        ref-man-py-server-port
                         ref-man-documents-dir
                         ref-man-remote-documents-dir
                         ref-man-public-links-cache-file)

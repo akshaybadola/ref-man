@@ -249,6 +249,11 @@ class Server:
                 url = request.args["url"]
             else:
                 return json.dumps("NO URL GIVEN or BAD URL")
+            keys = [*request.args.keys()]
+            # NOTE: Rest of the keys are part of the URL
+            if len(keys) > 1:
+                url = url + "&" + "&".join([f"{k}={v}" for k, v in request.args.items()
+                                            if k != "url"])
             # DEBUG code
             # if url == "https://arxiv.org/pdf/2006.01912":
             #     with os.path.expanduser("~/pdf_file.pdf", "rb") as f:

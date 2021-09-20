@@ -200,7 +200,9 @@
 
 (defun ref-man-pandoc-version ()
   "The version of pandoc being used."
-  (cadr (split-string (shell-command-to-string (format "%s --version" ref-man-pandoc-executable)))))
+  (cadr (split-string
+         (shell-command-to-string
+          (format "%s --version" ref-man-pandoc-executable)))))
 
 ;;
 ;; Constants. perhaps can name them better
@@ -2208,23 +2210,28 @@ non-nil and the bib string extracted with
 
 With optional non-nil ALLOW-MISC, headings which have been
 published as urls are also exported as \"@misc\".
+
+The values are returned as a list of '(path key bib).
 "
-  (if get-key
-      (list path (or (org-entry-get (point) "CUSTOM_ID")
-                     (when allow-misc
-                       (let ((url (or (org-entry-get (point) "URL")
-                                      (org-entry-get (point) "PDF_URL"))))
-                         (ref-man-key-from-url url))))
-            (and (or allow-misc (org-entry-get (point) "CUSTOM_ID"))
-                 (ref-man-org-bibtex-read-from-headline nil t allow-misc)))
-    (and (org-entry-get (point) "CUSTOM_ID")
-         (ref-man-org-bibtex-read-from-headline nil t allow-misc))))
+  (let* ((url (or (org-entry-get (point) "URL")
+                  (org-entry-get (point) "PDF_URL")))
+         (url-key (when url (ref-man-key-from-url url)))
+         (cid (org-entry-get (point) "CUSTOM_ID"))
+         (key (if allow-misc (or cid url-key) cid))
+         (bib (when key
+                (ref-man-org-bibtex-read-from-headline nil t allow-misc))))
+    (when bib
+      (if get-key (list key bib) bib))))
 
 (defun ref-man-org-get-bib-from-org-link (&optional get-key allow-misc)
   "Get a possible bibtex from an org link in text.
-The link must point to either an org heading, or a bibtex key in
-one of the bibliography files in `ref-man-bib-files' from which a
-bibtex entry can be parsed."
+The link must point to either an org heading or an org
+CUSTOM_ID.
+
+With optional non-nil GET-KEY return a list of '(path key bib).  Default is
+to return bib only.
+
+With optional non-nil ALLOW-MISC @misc bibs are also parsed."
   (save-excursion
     (save-restriction
       (widen)
@@ -2244,7 +2251,9 @@ bibtex entry can be parsed."
                (and (equal type "fuzzy")
                     (+ 2 (org-element-property :begin link)))
                t)                       ; don't change visibility around point
-              (ref-man-org-get-bib-from-org-link-subr path get-key allow-misc))
+              (if get-key
+                  (cons path (ref-man-org-get-bib-from-org-link-subr path get-key allow-misc))
+                (ref-man-org-get-bib-from-org-link-subr path get-key allow-misc)))
              ("file" (with-current-buffer (find-file-noselect path)
                        (let ((path (org-element-property :search-option link)))
                          (setq type (cond ((string-match-p "^#.+" path)
@@ -2253,7 +2262,9 @@ bibtex entry can be parsed."
                                            "fuzzy")
                                           (t (user-error "Unknown type of link %s" path))))
                          (org-link-search path nil t) ; don't change visibility around point
-                         (ref-man-org-get-bib-from-org-link-subr path get-key allow-misc)))))))))))
+                         (if get-key
+                             (cons path (ref-man-org-get-bib-from-org-link-subr path get-key allow-misc))
+                           (ref-man-org-get-bib-from-org-link-subr path get-key allow-misc))))))))))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END org utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

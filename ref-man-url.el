@@ -44,7 +44,7 @@ localhost specified by this port."
   :group 'ref-man)
 
 ;; NOTE: External variables
-(defvar ref-man-python-server-port)     ; from `ref-man-py'
+(defvar ref-man-py-server-port)     ; from `ref-man-py'
 (defvar ref-man-documents-dir)          ; from `ref-man-files'
 
 (defvar ref-man-url-supported-sites
@@ -105,7 +105,7 @@ localhost specified by this port."
 (defun ref-man-url-maybe-proxy (url)
   "Return proxy URL if `ref-man-pdf-proxy-port' is non-nil, else same URL."
   (let ((prefix (format "http://localhost:%s/fetch_proxy?url="
-                        ref-man-python-server-port)))
+                        ref-man-py-server-port)))
     (if (and ref-man-pdf-proxy-port (not (string-prefix-p "http://localhost" url)))
         (concat prefix url)
       url)))
@@ -114,7 +114,7 @@ localhost specified by this port."
 (defun ref-man-url-maybe-unproxy (url)
   "Remove proxy prefix and return URL if `ref-man-pdf-proxy-port' is non-nil, else same URL."
   (let ((prefix (format "http://localhost:%s/fetch_proxy?url="
-                        ref-man-python-server-port)))
+                        ref-man-py-server-port)))
     (if (and ref-man-pdf-proxy-port (string-prefix-p prefix url))
         (string-remove-prefix prefix url)
       url)))
@@ -648,9 +648,9 @@ ARGS is a plist with keywords :heading :point :buffer"
                        "Could not CVF determine venue. Enter: ")))
         (if (string-empty-p venue)
             (user-error "No venue given")
-          (ref-man-python-get-cvf-url heading venue url year))))))
+          (ref-man-py-get-cvf-url heading venue url year))))))
 
-(defun ref-man-python-get-cvf-url (title venue &optional url year)
+(defun ref-man-py-get-cvf-url (title venue &optional url year)
   "Get the cvpr url from python server for given TITLE if possible.
 Optional YEAR if not specified but can be extracted from a DOI
 URL.  If neither are given, then the pdf url for the longest regexp
@@ -658,7 +658,7 @@ match for TITLE's first three words will be returned."
   (let* ((title (ref-man--remove-punc title t))
          (year (or year (and url (nth 1 (split-string (-last-item (split-string url "/" t)) "\\." t)))))
          (buf (url-retrieve-synchronously (format "http://localhost:%s/get_cvf_url?title=%s&venue=%s&year=%s"
-                                                  ref-man-python-server-port title venue year)))
+                                                  ref-man-py-server-port title venue year)))
          (buf-string (with-current-buffer buf
                        (goto-char (point-min))
                        (re-search-forward "\r?\n\r?\n")

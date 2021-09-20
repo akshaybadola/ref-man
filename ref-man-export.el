@@ -347,28 +347,29 @@ be located and CSL-FILE is the Citation Style File."
     (deactivate-mark)))
 
 ;; TODO: Use a docproc server instead
+;; TODO: Use the pndconf cmdline instead
 (defun ref-man-export-docproc-article (buffer type &optional no-urls no-gdrive with-toc)
   "Export current org buffer subtree as an article.
 
 Export to markdown first and then use pandoc and `pndconf' or
-`docproc' whatever its name is.  When optional BUFFER is non-nil,
-export the full buffer.  Default is export the subtree.
+whatever its name is.
 
-Optional TYPE specifies the output type, can be one of 'paper,
+When argument BUFFER is non-nil, export the full buffer.  Default
+is to export the subtree.
+
+Argument TYPE specifies the output type, can be one of 'paper,
 'pdf, 'html, 'both or 'blog.  'both means both PDF and HTML files
-will be generated as targets.
-
-'paper implies that output type is latex and pdf, but that the
-first paragraph in the subtree is interpreted as the abstract
-automatically.
-
-Types 'blog and 'paper put additional metadata in the generated files.
+will be generated as targets.  Type 'paper implies that output
+type is latex and pdf, but that the first paragraph in the
+subtree is interpreted as the abstract automatically.  Types
+'blog and 'paper put additional metadata in the generated files.
 See `ref-man-export-blog-yaml-template'.
 
 Optional non-nil NO-URLS means to not include URLs in generated
-bibliography, similar for NO-GDRIVE. Default is to include both
-URLS and GDRIVE links.  Optional non-nil WITH-TOC generates a TOC
-from `org-export'.  Usually we generate the TOC with pandoc."
+bibliography, similar for NO-GDRIVE and gdrive links.  Default is
+to include both URLS and GDRIVE links.  Optional non-nil WITH-TOC
+generates a TOC from `org-export'.  Usually the TOC is generated
+with pandoc."
   (let* ((org-export-with-toc t)
          (org-export-with-todo-keywords nil)
          (org-export-with-tags nil)
@@ -451,22 +452,25 @@ from `org-export'.  Usually we generate the TOC with pandoc."
           ;; FIXME: How to fix for dup titles if they are for different papers (and bibs)?
           ;;        We should either report them as dups or store them with custom_ids
           (unless (member (match-string 1) sections)
-            (let ((bib (ref-man-org-get-bib-from-org-link t t))
+            (let ((el (org-element-context))
+                  (bib (ref-man-org-get-bib-from-org-link t t))
                   (title-keys (mapcar (lambda (x) (-take 2 x)) bibtexs)))
               ;; NOTE: Append _a to duplicate bibtex key
               ;; TODO: Fix dups for CUSTOM_ID across org buffer
-              (when (-any #'identity (mapcar (lambda (x) (and title-keys
-                                                              (string= (cadr x) (cadr bib))
-                                                              (not (string= (car x) (car bib)))))
-                                             title-keys))
-                (setf (cadr bib) (concat (cadr bib) "_a"))
-                (setf (nth 2 bib) (replace-regexp-in-string
-                                   (string-remove-suffix "_a" (cadr bib))
-                                   (cadr bib) (nth 2 bib))))
-              (when (string-prefix-p "#" (car bib))
-                (setf (car bib) (string-remove-prefix "#" (car bib))))
-              (unless (member (cadr bib) (mapcar (lambda (x) (nth 1 x)) bibtexs))
-                (push bib bibtexs)))))
+              (if (not (cadr bib))
+                  (warn "No bib found for %s" (car bib))
+                (when (-any #'identity (mapcar (lambda (x) (and title-keys
+                                                                (string= (cadr x) (cadr bib))
+                                                                (not (string= (car x) (car bib)))))
+                                               title-keys))
+                  (setf (cadr bib) (concat (cadr bib) "_a"))
+                  (setf (nth 2 bib) (replace-regexp-in-string
+                                     (string-remove-suffix "_a" (cadr bib))
+                                     (cadr bib) (nth 2 bib))))
+                (when (string-prefix-p "#" (car bib))
+                  (setf (car bib) (string-remove-prefix "#" (car bib))))
+                (unless (member (cadr bib) (mapcar (lambda (x) (nth 1 x)) bibtexs))
+                  (push bib bibtexs))))))
         (setq refs-string (ref-man-export-docproc-references bibtexs tmp-bib-file no-gdrive))
         (when refs-string
           (setq yaml-header (concat (string-remove-suffix "---\n" yaml-header) refs-string "---\n")))
@@ -494,8 +498,9 @@ from `org-export'.  Usually we generate the TOC with pandoc."
           ;; NOTE: Repace "BROKEN LINK"s with bibtexs
           (goto-char (point-min))
           (while (re-search-forward "\\[BROKEN LINK: \\(.+?\\)]" nil t) ; Insert links
-            (let ((path (string-remove-prefix "\\" (match-string 1))))
-              (replace-match (format "[@%s]" (car (a-get bibtexs path))))))
+            (let* ((path (string-remove-prefix "\\" (match-string 1)))
+                  (bib (car (a-get bibtexs path))))
+              (when bib (replace-match (format "[@%s]" bib)))))
           ;; NOTE: Replace \(\) math format as pandoc doesn't work with that
           (goto-char (point-min))
           (while (re-search-forward "\\\\(\\(.+\\)\\\\)" nil t)

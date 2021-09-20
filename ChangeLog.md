@@ -112,3 +112,11 @@
 ## [2021-09-14 Tue 13:42]
 - Added a `ref-man-export-python-executable`. Fixed a couple of issues with
   the customization executable and pandoc filters being in there.
+- Fixed `ref-man-org-get-bib-from-org-link` error if bib cannot be parsed. Now
+  it returns nil even if `get-key` is `t`. Earlier return '(path nil nil).
+- Fixed `ref-man-docproc-export-article` including [@nil] for bib when unable to
+  parse heading.
+- Added `citeseerx.ist.psu.edu` as a pdf source
+- Added function `sync_from_remote` in `ref_man.cache`.
+- Version bump to `0.6.4`
+- Py mod version bump to `0.3.4`
