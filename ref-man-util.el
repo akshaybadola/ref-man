@@ -46,36 +46,6 @@
     "through" "to" "too" "under" "up" "very" "was" "were"
     "what" "when" "where" "which" "who" "why" "will" "with"))
 
-(defvar ref-man-bibtex-ascii-accents
-  '(("í" . "{\\\\'i}")
-    ("æ" . "{\\\\ae}")
-    ("ć" . "{\\\\'c}")
-    ("é" . "{\\\\'e}")
-    ("ä" . "{\\\\\"a}")
-    ("è" . "{\\\\`e}")
-    ("à" . "{\\\\`a}")
-    ("á" . "{\\\\'a}")
-    ("ø" . "{\\\\o}")
-    ("ë" . "{\\\\\"e}")
-    ("ü" . "{\\\\\"u}")
-    ("ñ" . "{\\\\~n}")
-    ("ņ" . "{\\\\c{n}}")
-    ("ñ" . "{\\\\~n}")
-    ("å" . "{\\\\aa}")
-    ("ö" . "{\\\\\"o}")
-    ("á" . "{\\\\'a}")
-    ("í" . "{\\\\'i}")
-    ("ó" . "{\\\\'o}")
-    ("ó" . "{\\\\'o}")
-    ("ú" . "{\\\\'u}")
-    ("ú" . "{\\\\'u}")
-    ("ý" . "{\\\\'y}")
-    ("š" . "{\\\\v{s}}")
-    ("č" . "{\\\\v{c}}")
-    ("ř" . "{\\\\v{r}}")
-    ("š" . "{\\\\v{s}}")
-    ("İ" . "{\\\\.i}")))
-
 (defvar ref-man-bibtex-ascii-replacement-strings
   '(("í" . "{\\\\'i}")
     ("æ" . "{\\\\ae}")
@@ -88,6 +58,7 @@
     ("ø" . "{\\\\o}")
     ("ë" . "{\\\\\"e}")
     ("ü" . "{\\\\\"u}")
+    ("ń" . "{\\\\'n}")
     ("ñ" . "{\\\\~n}")
     ("ņ" . "{\\\\c{n}}")
     ("ñ" . "{\\\\~n}")
@@ -106,7 +77,18 @@
     ("š" . "{\\\\v{s}}")
     ("İ" . "{\\\\.i}")
     ("ğ" . "{\\\\u{g}}")
+    ("α" . "$\\\\alpha$")
+    ("β" . "$\\\\beta$")
+    ("γ" . "$\\\\gamma$")
+    ("ɣ" . "$\\\\gamma$")
     ("δ" . "$\\\\delta$")
+    ("η" . "$\\\\eta$")
+    ("µ" . "$\\\\mu$")
+    ("ɛ" . "$\\\\epsilon$")
+    ("λ" . "$\\\\lambda$")
+    ("π" . "$\\\\pi$")
+    ("∞" . "$\\\\infty$")
+    ("χ" . "$\\\\chi$")
     ("ç" . "{\\\\c{c}}")
     ("ß" . "{\\\\ss}")
     ("≤" . "$\\\\le$")
@@ -119,43 +101,32 @@
     ("×" . "$\\\\times$")
     ("°" . "$\\\\deg$")
     ("ş" . "{\\\\c{s}}")
-    ("γ" . "$\\\\gamma$")
-    ("ɣ" . "$\\\\gamma$")
     ("º" . "degc")
-    ("η" . "$\\\\eta$")
-    ("µ" . "$\\\\mu$")
-    ("α" . "$\\\\alpha$")
-    ("β" . "$\\\\beta$")
-    ("ɛ" . "$\\\\epsilon$")
     ("ⅵ" . "\textrm{vi}")
     ("ⅲ" . "\textrm{iii}")
     ("ⅴ" . "\textrm{v}")
-    ("λ" . "$\\\\lambda$")
-    ("π" . "$\\\\pi$")
-    ("∞" . "$\\\\infty$")
-    ("χ" . "$\\\\chi$")
+    ("Ⅵ" . "\textrm{VI}")
+    ("Ⅲ" . "\textrm{III}")
+    ("Ⅴ" . "\textrm{V}")
     ("∼" . "\\\\textasciitilde{}")
     ("‑" . "\\\\textemdash{}")
-    (" " . " ")
-    ("…" . "...")
     ("•" . "\\\\textbullet ")
+    ("‒" . "\\\\textemdash{}"))
+  "Replace non-ascii characters with escaped ones for latex rendering.
+The characters here directly borrowed from `org-ref'.
+See `org-ref-nonascii-latex-replacements'")
+
+(defvar ref-man-bibtex-non-invertible-ascii-replacements
+  '((" " . " ")
+    ("…" . "...")
     (" " . " ")
     (" " . " ")
     (" " . " ")
     ("–" . "-")
     ("−" . "-")
-    ("–" . "-")
-    ("—" . "-")
-    ("‒" . "\\\\textemdash{}")
     ("‘" . "'")
     ("’" . "'")
-    ("’" . "'")
-    ("“" . "\"")
-    ("’" . "'")
-    ("”" . "\""))
-  "Replace non-ascii characters with escaped ones for latex rendering.
-The characters here directly borrowed from `org-ref'.
-See `org-ref-nonascii-latex-replacements'")
+    ("”" . "\"")))
 
 (defun ref-man-pairs-to-alist (pairs)
   "Merge cons PAIRS into an alist with first elements as keys.
@@ -179,7 +150,8 @@ Example:
   (string-join (-remove #'string-empty-p
                         (mapcar (lambda (x)
                                   (string-remove-prefix "/" (string-remove-suffix "/" x)))
-                                elements)) "/"))
+                                elements))
+               "/"))
 
 (defun path-join (&rest elements)
   "Join ELEMENTS as a path, expects full paths."
@@ -276,7 +248,7 @@ also."
 Identical to `ref-man--trim-whitespace' but remove quotes also."
   (let ((str (replace-regexp-in-string "[ \t]+" " "
                                        (replace-regexp-in-string "\n" "" (string-trim str)))))
-    (replace-regexp-in-string "\"" "" str)))
+    (replace-regexp-in-string "\\(.*?\\)\"\\(.+?\\)\"\\(.*\\)" "\\1\\2\\3" str)))
 
 (defun ref-man--fix-curly (str)
   "Gets text between parentheses for {STR}."
@@ -290,7 +262,6 @@ Identical to `ref-man--trim-whitespace' but remove quotes also."
   "X is a stop word."
   (member x ref-man-stop-words))
 
-;; CHECK: Might be faster with a pcase
 (defun ref-man--transcribe (str change-list &optional inverse)
   "Transcribe non-ascii characters in STR to ASCII lookalikes.
 Argument CHANGE-LIST is an alist of regexps, `(A . B)' changes
@@ -298,17 +269,14 @@ from A to B.
 
 With optional non-nil INVERSE, do the opposite and change B to
 A."
-  (let ((content str)
-        (change-list (or change-list bibtex-autokey-transcriptions)))
-    (if inverse
-        (dolist (pattern change-list)
-          (setq content (replace-regexp-in-string (cdr pattern)
-                                                  (car pattern)
-                                                  content t)))
-      (dolist (pattern change-list)
-        (setq content (replace-regexp-in-string (car pattern)
-                                                (cdr pattern)
-                                                content t))))
+  (let* ((content str)
+         (change-list (or change-list bibtex-autokey-transcriptions))
+         (keys (if inverse (a-vals change-list) (a-keys change-list)))
+         (vals (if inverse (a-keys change-list) (a-vals change-list)))
+         (alist (-zip keys vals)))
+    (when (string-match-p (string-join keys "\\|") str)
+        (pcase-dolist (`(,a . ,b) alist)
+          (setq content (replace-regexp-in-string a b content t))))
     content))
 
 (defun ref-man-util-regions-contiguous-p (regions)
@@ -375,7 +343,8 @@ replacements are a union of both above alists.
 With non-nil optional INVERSE, perform the inverse replacement
 from the alist."
   (ref-man--transcribe str (or (and (boundp 'org-ref-nonascii-latex-replacements)
-                                    (-union ref-man-bibtex-ascii-replacement-strings
+                                    (-union (-concat ref-man-bibtex-ascii-replacement-strings
+                                                     ref-man-bibtex-non-invertible-ascii-replacements)
                                             org-ref-nonascii-latex-replacements))
                                ref-man-bibtex-ascii-replacement-strings)
                        inverse))
@@ -392,7 +361,7 @@ If DIR is not given it defaults to `ref-man-documents-dir'."
   "Replace escaped ascii characters in STR with non-ascii characters.
 
 Performs inverse of `ref-man--replace-non-ascii'."
-  (ref-man--transcribe str ref-man-bibtex-ascii-accents t))
+  (ref-man--transcribe str ref-man-bibtex-ascii-replacement-strings t))
 
 (defun ref-man-save-headings-before-pdf-file-open (arg)
   "Add advice to save headings and paths before calling `org-open-at-point'.

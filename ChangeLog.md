@@ -120,3 +120,14 @@
 - Added function `sync_from_remote` in `ref_man.cache`.
 - Version bump to `0.6.4`
 - Py mod version bump to `0.3.4`
+
+## [2021-09-21 Tue 03:14]
+- Removed `ref-man-bibtex-ascii-accents` and separated
+  `ref-man-bibtex-non-invertible-ascii-replacements` from
+  `ref-man-bibtex-ascii-replacement-strings`.
+- Cleaned up `ref-man--transcribe` a bit.
+- Wrote utility functions `ref-man-org-bibtex-transform-author-bib-to-org`
+  and `ref-man-org-bibtex-transform-author-org-to-bib`.
+- Removed obsolete proxychains string.
+- Replaced README.md with README.org
+- Version bump from now on will be automatic with every push.

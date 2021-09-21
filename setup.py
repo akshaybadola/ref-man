@@ -13,7 +13,7 @@ description = """ref-man server for network requests.
 setup(
     name="ref-man",
     version=__version__,
-    description="Ref Man Python Server",
+    description="Ref Man Python Module",
     long_description=description,
     url="https://github.com/akshaybadola/ref-man",
     author="Akshay Badola",

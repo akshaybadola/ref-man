@@ -168,6 +168,7 @@ Should be an `alist' parseable by `yaml-encode'."
   (concat "--template=" (a-get (ref-man-export-templates)
                                (or (org-entry-get (point) "TEMPLATE") "blog"))))
 
+;; NOTE: For customization of filtering various org elements
 (org-export-define-derived-backend 'ref-md 'html
   :filters-alist '((:filter-parse-tree . org-md-separate-elements))
   :menu-entry
@@ -265,7 +266,9 @@ be located and CSL-FILE is the Citation Style File."
   "Export the references for docproc."
   (when bibtexs
     (with-temp-buffer
-      (insert (mapconcat (lambda (x) (nth 2 x)) bibtexs ""))
+      (insert (mapconcat (lambda (x)
+                           (ref-man--replace-non-ascii (nth 2 x)))
+                         bibtexs ""))
       (unless no-gdrive
         (goto-char (point-min))
         ;; Replace "gdrive" with "issn" in bibs
@@ -324,30 +327,35 @@ be located and CSL-FILE is the Citation Style File."
       (ref-man-export-docproc-article buffer 'paper t t))))
 
 (defun ref-man-org-export-table-to-latex ()
+  "Export an org or table mode table in region to latex."
   (interactive)
-  (save-excursion
-    (save-restriction
-      (let ((org-export-with-broken-links 'mark)
-            org-export-show-temporary-export-buffer)
-        (org-mark-element)
-        (narrow-to-region (region-beginning) (region-end))
-        (org-export-to-buffer 'latex "*Latex Export*" nil nil nil nil)
-        (with-current-buffer "*Latex Export*"
-          (goto-char (point-min))
-          (re-search-forward (rx "\\begin{tabular}"))
-          (beginning-of-line)
-          (kill-new (concat "\\begin{minipage}{\\linewidth}\n"
-                            "\\captionof{table}{CAPTION} \\label{}\n"
-                            (buffer-substring-no-properties (point)
-                                                            (progn (re-search-forward (rx "\\end{tabular}"))
-                                                                   (point)))
-                            "\n\\end{minipage}\n"))
-          (kill-buffer (current-buffer))))))
+  (if (region-active-p)
+      (save-excursion
+        (save-restriction
+          (let ((org-export-with-broken-links 'mark)
+                org-export-show-temporary-export-buffer)
+            (org-mark-element)
+            (narrow-to-region (region-beginning) (region-end))
+            (org-export-to-buffer 'latex "*Latex Export*" nil nil nil nil)
+            (with-current-buffer "*Latex Export*"
+              (goto-char (point-min))
+              (re-search-forward (rx "\\begin{tabular}"))
+              (beginning-of-line)
+              (kill-new (concat "\\begin{minipage}{\\linewidth}\n"
+                                "\\captionof{table}{CAPTION} \\label{}\n"
+                                (buffer-substring-no-properties (point)
+                                                                (progn (re-search-forward (rx "\\end{tabular}"))
+                                                                       (point)))
+                                "\n\\end{minipage}\n"))
+              (kill-buffer (current-buffer))))))
+    (message "Table must be in active region for export."))
   (when mark-active
     (deactivate-mark)))
 
 ;; TODO: Use a docproc server instead
 ;; TODO: Use the pndconf cmdline instead
+;; TODO: Export can take a while and it would be better to do
+;;       it in an async process.
 (defun ref-man-export-docproc-article (buffer type &optional no-urls no-gdrive with-toc)
   "Export current org buffer subtree as an article.
 
@@ -499,7 +507,7 @@ with pandoc."
           (goto-char (point-min))
           (while (re-search-forward "\\[BROKEN LINK: \\(.+?\\)]" nil t) ; Insert links
             (let* ((path (string-remove-prefix "\\" (match-string 1)))
-                  (bib (car (a-get bibtexs path))))
+                   (bib (car (a-get bibtexs path))))
               (when bib (replace-match (format "[@%s]" bib)))))
           ;; NOTE: Replace \(\) math format as pandoc doesn't work with that
           (goto-char (point-min))
@@ -521,7 +529,7 @@ with pandoc."
           (insert (concat yaml-header "\n"))
           (write-region (point-min) (point-max) md-file))))
     (unless (eq type 'blog)
-      (setq cmd (format "cd %s && %s %s --pandoc-path %s -ro --extra-opts --input-files %s -g %s %s"
+      (setq cmd (format "cd %s && %s %s --pandoc-path %s -ro --input-files %s -g %s %s"
                         docproc-dir
                         python
                         pandocwatch
