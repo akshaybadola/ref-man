@@ -131,3 +131,12 @@
 - Removed obsolete proxychains string.
 - Replaced README.md with README.org
 - Version bump from now on will be automatic with every push.
+
+## [2021-09-24 Fri 12:22]
+- Moved `ref-man-org-delete-file-under-point` to util and created an alias
+- Renamed `ref-man--bibtex-parse-buffer` to `ref-man-bibtex-parse-buffer`
+- Added functionality to retrieve pdf if arxivid is present in org property drawer
+- Fixed a bug in export template in `ref-man-export`
+- Separated the reference parsing mechanism in `ref-man-export`
+- Fixed an issue with wrong abstract being inserted when no abstract is there.
+- Added `ref-man-file-fuzzy-link-re` in `ref-man-util`

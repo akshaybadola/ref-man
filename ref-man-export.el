@@ -158,7 +158,7 @@ Should be an `alist' parseable by `yaml-encode'."
 ;; TODO: This should be a macro
 (defun ref-man-export-pdf-template ()
   (concat "--template=" (a-get (ref-man-export-templates)
-                               (or (org-entry-get (point) "TEMPLATE")) "latex")))
+                               (or (org-entry-get (point) "TEMPLATE") "latex"))))
 
 (defun ref-man-export-paper-template ()
   (concat "--template=" (a-get (ref-man-export-templates)
@@ -225,12 +225,13 @@ calling `org-export-to-buffer'."
                           (buffer-string)
                         (org-narrow-to-subtree)
                         (buffer-string)))
+          (link-re ref-man-file-fuzzy-link-re)
           org-export-show-temporary-export-buffer)
       (with-temp-buffer
         (insert buf-string)
         (org-mode)
         (goto-char (point-min))
-        (while (re-search-forward org-link-bracket-re nil t nil)
+        (while (re-search-forward link-re nil t nil)
           (replace-match
            (format "[[%s][%s]]" (replace-regexp-in-string "file:.+::" "" (match-string 1))
                    (match-string 2))))
@@ -262,8 +263,14 @@ be located and CSL-FILE is the Citation Style File."
                      (downcase (or (ref-man-org-ask-to-set-property "BLOG_KEYWORDS")
                                    (ref-man-org-ask-to-set-property "BLOG_TAGS"))))))))
 
-(defun ref-man-export-docproc-references (bibtexs &optional tmp-bib-file no-gdrive)
-  "Export the references for docproc."
+(defun ref-man-export-bibtexs (bibtexs &optional tmp-bib-file no-gdrive)
+  "Export the references from BIBTEXS.
+BIBTEXS is a string of bibliography entries.
+
+If optional TMP-BIB-FILE is given then write to that file.
+Default is to export the BIBTEXS string as yaml metadata which is
+read by `pandoc'.  Optional NO-GDRIVE implies to remove the
+gdrive keys if present."
   (when bibtexs
     (with-temp-buffer
       (insert (mapconcat (lambda (x)
@@ -274,9 +281,9 @@ be located and CSL-FILE is the Citation Style File."
         ;; Replace "gdrive" with "issn" in bibs
         (while (re-search-forward "gdrive=" nil t nil)
           (replace-match "issn=")))
-      ;; NOTE: Write to a temp file if \' accents are present
       (cond (tmp-bib-file
              (write-region (point-min) (point-max) tmp-bib-file))
+            ;; NOTE: Write to a temp file if \' accents are present
             ((string-match-p "'" (buffer-string))
              (let ((temp-file (make-temp-file ".tmp-bib"))
                    (cur (point-max)))
@@ -329,7 +336,7 @@ be located and CSL-FILE is the Citation Style File."
 (defun ref-man-org-export-table-to-latex ()
   "Export an org or table mode table in region to latex."
   (interactive)
-  (if (region-active-p)
+  (if t
       (save-excursion
         (save-restriction
           (let ((org-export-with-broken-links 'mark)
@@ -351,6 +358,50 @@ be located and CSL-FILE is the Citation Style File."
     (message "Table must be in active region for export."))
   (when mark-active
     (deactivate-mark)))
+
+(defun ref-man-export-parse-references (type)
+  "Parse the references from org text.
+Search for all org links of type (or 'fuzzy 'custom-id 'http) and
+gather the heading to which the link points to, if it can be
+parsed as bibtex."
+  (save-excursion
+    (goto-char (point-min))
+    ;; NOTE: If not paper, then collect subtree headings as sections,
+    ;;       else buffer headings
+    (let ((sections (if (eq type 'paper)
+                        (util/org-apply-to-buffer-headings
+                         (lambda () (concat "*" (org-get-heading t t t t))))
+                      (util/org-apply-to-subtree-headings
+                       (lambda () (concat "*" (org-get-heading t t t t))) t)))
+          bibtexs)
+      ;; Insert standard pandoc references to bibtexs
+      ;; NOTE: Generate bibtexs from fuzzy links
+      ;; TODO: Raise a `user-error' if error getting the bib from link
+      (goto-char (point-min))
+      (while (re-search-forward util/org-text-link-re nil t nil)
+        ;; NOTE: Don't insert link if it's of an internal section
+        ;; FIXME: How to fix for dup titles if they are for different papers (and bibs)?
+        ;;        We should either report them as dups or store them with custom_ids
+        (unless (member (match-string 1) sections)
+          (let ((bib (ref-man-org-get-bib-from-org-link t t))
+                (title-keys (mapcar (lambda (x) (-take 2 x)) bibtexs)))
+            ;; NOTE: Append _a to duplicate bibtex key
+            ;; TODO: Fix dups for CUSTOM_ID across org buffer
+            (if (not (cadr bib))
+                (warn "No bib found for %s" (car bib))
+              (when (-any #'identity (mapcar (lambda (x) (and title-keys
+                                                              (string= (cadr x) (cadr bib))
+                                                              (not (string= (car x) (car bib)))))
+                                             title-keys))
+                (setf (cadr bib) (concat (cadr bib) "_a"))
+                (setf (nth 2 bib) (replace-regexp-in-string
+                                   (string-remove-suffix "_a" (cadr bib))
+                                   (cadr bib) (nth 2 bib))))
+              (when (string-prefix-p "#" (car bib))
+                (setf (car bib) (string-remove-prefix "#" (car bib))))
+              (unless (member (cadr bib) (mapcar (lambda (x) (nth 1 x)) bibtexs))
+                (push bib bibtexs))))))
+      bibtexs)))
 
 ;; TODO: Use a docproc server instead
 ;; TODO: Use the pndconf cmdline instead
@@ -425,7 +476,7 @@ with pandoc."
                                                            mathjax-path csl-file))
          (cmd "")
          (no-confirm (org-entry-get (point) "NO_CONFIRM"))
-         abstract sections bibtexs refs-string)
+         abstract bibtexs refs-string)  ; had sections
     (when (and (f-exists? md-file) (not no-confirm))
       (unless (y-or-n-p (format "The file with name %s exists.  Replace? "
                                 (f-filename md-file)))
@@ -439,47 +490,49 @@ with pandoc."
         (when (eq type 'paper)
           (goto-char (point-min))
           (ref-man-org-end-of-meta-data)
-          (pcase-let ((`(,beg ,end ,has-body) (ref-man-org-text-bounds)))
-            (when has-body
-              (setq abstract (buffer-substring-no-properties beg end)))
-            (narrow-to-region end (point-max))))
-        (goto-char (point-min))
+          (unless (org-at-heading-p)
+            (pcase-let ((`(,beg ,end ,has-body) (ref-man-org-text-bounds)))
+              (when has-body
+                (setq abstract (buffer-substring-no-properties beg end)))
+              (narrow-to-region end (point-max)))))
+        ;; (goto-char (point-min))
         ;; NOTE: If not paper, then collect subtree headings as sections,
         ;;       else buffer headings
-        (setq sections (if (eq type 'paper)
-                           (util/org-apply-to-buffer-headings
-                            (lambda () (concat "*" (org-get-heading t t t t))))
-                         (util/org-apply-to-subtree-headings
-                          (lambda () (concat "*" (org-get-heading t t t t))) t)))
+        ;; (setq sections (if (eq type 'paper)
+        ;;                    (util/org-apply-to-buffer-headings
+        ;;                     (lambda () (concat "*" (org-get-heading t t t t))))
+        ;;                  (util/org-apply-to-subtree-headings
+        ;;                   (lambda () (concat "*" (org-get-heading t t t t))) t)))
         ;; Insert standard pandoc references to bibtexs
         ;; NOTE: Generate bibtexs from fuzzy links
         ;; TODO: Raise a `user-error' if error getting the bib from link
-        (goto-char (point-min))
-        (while (re-search-forward util/org-text-link-re nil t nil)
-          ;; NOTE: Don't insert link if it's of an internal section
-          ;; FIXME: How to fix for dup titles if they are for different papers (and bibs)?
-          ;;        We should either report them as dups or store them with custom_ids
-          (unless (member (match-string 1) sections)
-            (let ((el (org-element-context))
-                  (bib (ref-man-org-get-bib-from-org-link t t))
-                  (title-keys (mapcar (lambda (x) (-take 2 x)) bibtexs)))
-              ;; NOTE: Append _a to duplicate bibtex key
-              ;; TODO: Fix dups for CUSTOM_ID across org buffer
-              (if (not (cadr bib))
-                  (warn "No bib found for %s" (car bib))
-                (when (-any #'identity (mapcar (lambda (x) (and title-keys
-                                                                (string= (cadr x) (cadr bib))
-                                                                (not (string= (car x) (car bib)))))
-                                               title-keys))
-                  (setf (cadr bib) (concat (cadr bib) "_a"))
-                  (setf (nth 2 bib) (replace-regexp-in-string
-                                     (string-remove-suffix "_a" (cadr bib))
-                                     (cadr bib) (nth 2 bib))))
-                (when (string-prefix-p "#" (car bib))
-                  (setf (car bib) (string-remove-prefix "#" (car bib))))
-                (unless (member (cadr bib) (mapcar (lambda (x) (nth 1 x)) bibtexs))
-                  (push bib bibtexs))))))
-        (setq refs-string (ref-man-export-docproc-references bibtexs tmp-bib-file no-gdrive))
+        ;; (goto-char (point-min))
+        ;; (while (re-search-forward util/org-text-link-re nil t nil)
+        ;;   ;; NOTE: Don't insert link if it's of an internal section
+        ;;   ;; FIXME: How to fix for dup titles if they are for different papers (and bibs)?
+        ;;   ;;        We should either report them as dups or store them with custom_ids
+        ;;   (unless (member (match-string 1) sections)
+        ;;     (let ((el (org-element-context))
+        ;;           (bib (ref-man-org-get-bib-from-org-link t t))
+        ;;           (title-keys (mapcar (lambda (x) (-take 2 x)) bibtexs)))
+        ;;       ;; NOTE: Append _a to duplicate bibtex key
+        ;;       ;; TODO: Fix dups for CUSTOM_ID across org buffer
+        ;;       (if (not (cadr bib))
+        ;;           (warn "No bib found for %s" (car bib))
+        ;;         (when (-any #'identity (mapcar (lambda (x) (and title-keys
+        ;;                                                         (string= (cadr x) (cadr bib))
+        ;;                                                         (not (string= (car x) (car bib)))))
+        ;;                                        title-keys))
+        ;;           (setf (cadr bib) (concat (cadr bib) "_a"))
+        ;;           (setf (nth 2 bib) (replace-regexp-in-string
+        ;;                              (string-remove-suffix "_a" (cadr bib))
+        ;;                              (cadr bib) (nth 2 bib))))
+        ;;         (when (string-prefix-p "#" (car bib))
+        ;;           (setf (car bib) (string-remove-prefix "#" (car bib))))
+        ;;         (unless (member (cadr bib) (mapcar (lambda (x) (nth 1 x)) bibtexs))
+        ;;           (push bib bibtexs))))))
+        (setq bibtexs (ref-man-export-parse-references type))
+        (setq refs-string (ref-man-export-bibtexs bibtexs tmp-bib-file no-gdrive))
         (when refs-string
           (setq yaml-header (concat (string-remove-suffix "---\n" yaml-header) refs-string "---\n")))
         (when abstract

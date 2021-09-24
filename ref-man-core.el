@@ -906,7 +906,6 @@ has-body indicates if any text is present."
                           (buffer-substring-no-properties beg end))))))
     (list beg end has-body)))
 
-
 (defun ref-man-org-insert-abstract (abs &optional buf keep-current)
   "Insert abstract as text in entry after property drawer if it exists.
 ABS is the abstract string.  Insert to `current-buffer' if
@@ -1232,7 +1231,7 @@ conform with all the org writing functions."
           (`("=key=" . ,_) (org-set-property "CUSTOM_ID" (ref-man--fix-curly (cdr ent))))
           (`(,_ . ,_) (org-set-property (upcase (car ent)) (ref-man--fix-curly (cdr ent)))))))
 
-(defun ref-man--bibtex-parse-buffer (buf)
+(defun ref-man-bibtex-parse-buffer (buf)
   "Parse a bibtex buffer BUF and return results."
   (let (entries)
     (with-current-buffer buf
@@ -1261,7 +1260,7 @@ FILENAME where the suffix .bib is replaced with .org."
                 (ref-man--create-org-buffer
                  (replace-regexp-in-string
                   "\\.[a-z0-9]*$" ".org" filename))))
-             (entries (ref-man--bibtex-parse-buffer (find-file-noselect filename 'nowarn))))
+             (entries (ref-man-bibtex-parse-buffer (find-file-noselect filename 'nowarn))))
         ;; (setq org-bibtex-entries nil)
         ;; (org-bibtex-read-buffer (find-file-noselect filename 'nowarn))
         (with-current-buffer org-buf
@@ -1625,24 +1624,8 @@ optional BIB-FILE, include that also."
     (concat "bibliography:\n"
             (mapconcat (lambda (x) (concat " - " x)) bib-files "\n"))))
 
-(defun ref-man-org-delete-file-under-point ()
-  "Delete file for link under point.
-When in org mode, delete the link text also."
-  (interactive)
-  (pcase-let* ((link (get-text-property (point) 'htmlize-link))
-               (context (org-element-context))
-               (`(,beg ,end) (if context (list (plist-get (cadr context) :begin)
-                                               (plist-get (cadr context) :end))
-                               (list nil nil)))
-               (uri (plist-get link :uri))
-               (uri (and link uri (f-exists? uri) uri)))
-    (if (not uri)
-        (message "Nothing to do here")
-      (f-delete uri)
-      (message "Deleted file %s" uri)
-      (if (and beg end)
-          (delete-region beg end)
-        (message "Could not delete the link text")))))
+(defalias 'ref-man-org-delete-file-under-point 'util/org-delete-file-under-point)
+(defalias 'ref-man-org-move-file-under-point 'util/org-move-file-under-point)
 
 (defun ref-man-org-clear-property-drawer (&optional org-buf pt)
   "Clear the property drawer at point in buffer ORG-BUF.
@@ -3207,15 +3190,11 @@ property drawer as the URL property."
       (org-delete-property "FILE_NAME"))
     pdf-file))
 
-(defun ref-man--check-for-duplicates ()
-  "Check what for duplicates?")
-
-
 ;; TODO: Link (arxiv, ACL, DOI) to SS_IDs for papers also, minimize redundancy
 ;;       NOTE: Perhaps maintain a python cache for that
 ;; TODO: I have not incorporated dblp extracted entries as they refer
 ;;       to DOIs or direct arxiv links. Have to fix that.
-;; TODO: If the pdf is extracted from a site like cvf, or nips
+;; TODO: If the pdf is extracted from a site like cvf, or neurips
 ;;       or whatever, the corresponding bibtex should also be
 ;;       extracted and stored from the website itself.
 ;; TODO: What if entry exists but the file doesn't?
@@ -3267,6 +3246,10 @@ property drawer as the URL property."
                             ((and (not pdf-file) (or pdf-url-prop url-prop))
                              (setq retrieve-pdf t)
                              "[ref-man] No pdf file in properties. Will fetch PDF from URL")
+                            ((ref-man-url-from-arxiv-id)
+                             (setq url-prop (ref-man-url-from-arxiv-id))
+                             (setq retrieve-pdf t)
+                             "[ref-man] Will fetch PDF file from Arxiv")
                             ((and (not pdf-file) (not (or pdf-url-prop url-prop)))
                              "[ref-man] Nothing to be done here for pdf file"))
                       "\n[ref-man] "

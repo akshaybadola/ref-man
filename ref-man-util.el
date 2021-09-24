@@ -128,6 +128,11 @@ See `org-ref-nonascii-latex-replacements'")
     ("’" . "'")
     ("”" . "\"")))
 
+(defvar ref-man-file-fuzzy-link-re
+  (rx "[" "[" (group (seq (regexp "file.+?::\\*") (+? any))) "]"
+      "[" (group (+? any)) "]" "]")
+  "Orgy fuzzy link with file prefix.")
+
 (defun ref-man-pairs-to-alist (pairs)
   "Merge cons PAIRS into an alist with first elements as keys.
 
