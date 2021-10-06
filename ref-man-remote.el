@@ -45,7 +45,9 @@
   (require 'ref-man-util))
 
 (defcustom ref-man-remote-documents-dir ""
-  "Remote documents dir which will sync with `ref-man-documents-dir'."
+  "Remote rclone documents dir which will sync with `ref-man-documents-dir'.
+
+Should be a valid rclone remote directory which is writable."
   :type 'string
   :group 'ref-man)
 
@@ -57,14 +59,15 @@
 
 (defcustom ref-man-public-links-cache-file
   (expand-file-name "~/.ref-man/remote-links-cache")
-  "Cache of public links to remote documents for sharing easily."
+  "Cache of public links to remote documents for sharing easily.
+This file maps files from `ref-man-documents-dir' to
+`ref-man-remote-documents-dir'."
   :type 'file
   :group 'ref-man)
 
 (defvar ref-man-public-links-cache nil
   "Hash table mapping local files to remote cache.
-Maps files from `ref-man-documents-dir' to
-`ref-man-remote-documents-dir'.")
+Hash table used to sync wtih `ref-man-public-links-cache-file'.")
 
 (defvar ref-man-py-server-port)     ; from `ref-man-py'
 
@@ -79,7 +82,8 @@ Maps files from `ref-man-documents-dir' to
                 (puthash (car split) (cadr split) ref-man-public-links-cache)))
             (split-string (with-current-buffer
                               (find-file-noselect ref-man-public-links-cache-file)
-                            (buffer-string)) "\n" t))
+                            (buffer-string))
+                          "\n" t))
     (message "[ref-man] Loaded remote links cache from disk.")))
 
 (defun ref-man-remote-check-cache-updated ()

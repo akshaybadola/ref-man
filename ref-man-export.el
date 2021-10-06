@@ -95,7 +95,8 @@ keywords: %s
 draft: true
 ---
 "
-  "Template for yaml header for blog for export with `ref-man-export-docproc-article'"
+  "Template for yaml header for blog for export.
+Used with `ref-man-export-docproc-article'"
   :type 'string
   :group 'ref-man)
 
@@ -130,7 +131,23 @@ Should be an `alist' parseable by `yaml-encode'."
   :type 'file
   :group 'ref-man)
 
-(defvar ref-man-export-md-buffer-name " *ref-man-export-md-buf*")
+(defvar ref-man-export-temp-org-buf " *ref-man-export-org-buf*"
+  "Intermediate org buffer for preprocessing while exporting.")
+
+(defvar ref-man-export-temp-md-buf " *ref-man-export-md-buf*"
+  "Markdown buffer name where org buffer is exported.")
+
+(defvar ref-man-export-pre-export-md-functions
+  '(ref-man-replace-multiple-spaces-with-a-single-space)
+  "Functions to run on org buffer just before export to markdown.
+
+Functions added to this hook should run with no arguments on the
+current buffer.  The functions would manipulate the org buffer
+accordingly and must preserve the org buffer structure.
+
+The default value is
+`ref-man-replace-multiple-spaces-with-a-single-space' which is a
+clean up function replacing multiple spaces with a single space.")
 
 (defcustom ref-man-export-pdflatex-env-vars ""
   "Environment variables for pdflatex."
@@ -215,7 +232,7 @@ Should be an `alist' parseable by `yaml-encode'."
     (:md-footnotes-section nil nil org-md-footnotes-section)
     (:md-headline-style nil nil org-md-headline-style)))
 
-(defun ref-man-export-org-to-md (&optional pre-export-func subtree)
+(defun ref-man-export-org-to-md (&optional subtree)
   "Copy the org buffer to temp buffer and export to markdown.
 We replace all file links so that they'll be subbed with citation
 formats later.  Optional PRE-EXPORT-FUNC is called just before
@@ -225,18 +242,19 @@ calling `org-export-to-buffer'."
                           (buffer-string)
                         (org-narrow-to-subtree)
                         (buffer-string)))
-          (link-re ref-man-file-fuzzy-link-re)
+          (link-re ref-man-file-fuzzy-custid-link-re)
           org-export-show-temporary-export-buffer)
-      (with-temp-buffer
+      (with-current-buffer (get-buffer-create ref-man-export-temp-org-buf)
+        (erase-buffer)
         (insert buf-string)
         (org-mode)
         (goto-char (point-min))
-        (while (re-search-forward link-re nil t nil)
-          (replace-match
-           (format "[[%s][%s]]" (replace-regexp-in-string "file:.+::" "" (match-string 1))
-                   (match-string 2))))
-        (when pre-export-func (funcall pre-export-func))
-        (org-export-to-buffer 'ref-md ref-man-export-md-buffer-name nil nil nil nil)))))
+        (while (re-search-forward link-re nil t)
+          (pcase-let ((`(,a ,b) (list (match-string 1) (match-string 2))))
+            (replace-match
+             (format "[[%s][%s]]" (replace-regexp-in-string "file:.+::" "" a) b))))
+        (run-hook-with-args 'ref-man-export-pre-export-md-functions)
+        (org-export-to-buffer 'ref-md ref-man-export-temp-md-buf nil nil nil nil)))))
 
 (defun ref-man-export-generate-yaml-header (type title bib-file mathjax-path csl-file
                                             &optional no-refs)
@@ -359,25 +377,27 @@ gdrive keys if present."
   (when mark-active
     (deactivate-mark)))
 
-(defun ref-man-export-parse-references (type)
+(defun ref-man-export-parse-references (type &optional no-warn-types)
   "Parse the references from org text.
 Search for all org links of type (or 'fuzzy 'custom-id 'http) and
 gather the heading to which the link points to, if it can be
-parsed as bibtex."
+parsed as bibtex.
+
+If a bibtex cannot be found for an org link a warning is raised.
+To suppress the warning for given link types, optional
+NO-WARN-TYPES can be passed as a list of (string) link types."
   (save-excursion
     (goto-char (point-min))
-    ;; NOTE: If not paper, then collect subtree headings as sections,
-    ;;       else buffer headings
+    ;; NOTE: If not paper, then collect subtree headings as sections, else
+    ;;       buffer headings, as the buffer is already narrowed to DOC_ROOT.
     (let ((sections (if (eq type 'paper)
                         (util/org-apply-to-buffer-headings
                          (lambda () (concat "*" (org-get-heading t t t t))))
                       (util/org-apply-to-subtree-headings
                        (lambda () (concat "*" (org-get-heading t t t t))) t)))
           bibtexs)
-      ;; Insert standard pandoc references to bibtexs
-      ;; NOTE: Generate bibtexs from fuzzy links
-      ;; TODO: Raise a `user-error' if error getting the bib from link
       (goto-char (point-min))
+      ;; NOTE: Generate bibtexs from fuzzy links ONLY
       (while (re-search-forward util/org-text-link-re nil t nil)
         ;; NOTE: Don't insert link if it's of an internal section
         ;; FIXME: How to fix for dup titles if they are for different papers (and bibs)?
@@ -388,7 +408,10 @@ parsed as bibtex."
             ;; NOTE: Append _a to duplicate bibtex key
             ;; TODO: Fix dups for CUSTOM_ID across org buffer
             (if (not (cadr bib))
-                (warn "No bib found for %s" (car bib))
+                (let* ((link (org-element-context))
+                       (link-type (org-element-property :type link)))
+                  (unless (member link-type no-warn-types)
+                    (warn "No bib found for %s" (car bib))))
               (when (-any #'identity (mapcar (lambda (x) (and title-keys
                                                               (string= (cadr x) (cadr bib))
                                                               (not (string= (car x) (car bib)))))
@@ -429,17 +452,18 @@ bibliography, similar for NO-GDRIVE and gdrive links.  Default is
 to include both URLS and GDRIVE links.  Optional non-nil WITH-TOC
 generates a TOC from `org-export'.  Usually the TOC is generated
 with pandoc."
-  (let* ((org-export-with-toc t)
-         (org-export-with-todo-keywords nil)
-         (org-export-with-tags nil)
-         (org-export-with-broken-links 'mark)
-         (org-export-with-timestamps nil)
+  (let* ((org-export-with-broken-links 'mark) ; mark broken links and they'll be replaced with citations
          (org-export-with-clocks nil)
-         (org-export-with-tables nil)
-         (org-export-with-sub-superscripts nil)
          (org-export-with-date nil)
+         (org-export-with-drawers nil)
+         (org-export-with-latex nil)    ; Ignore latex and pandoc will handle it
          (org-export-with-properties nil)
-         (org-export-with-latex nil)
+         (org-export-with-sub-superscripts nil)
+         (org-export-with-tables nil)
+         (org-export-with-tags nil)
+         (org-export-with-timestamps nil)
+         (org-export-with-todo-keywords nil)
+         (org-export-with-toc t)
          (tmp-bib-file (unless (or (string= "2.14" (ref-man-pandoc-version))
                                    (string< "2.14" (ref-man-pandoc-version)))
                          (make-temp-file "ref-bib-" nil ".bib")))
@@ -475,6 +499,7 @@ with pandoc."
          (yaml-header (ref-man-export-generate-yaml-header type title tmp-bib-file
                                                            mathjax-path csl-file))
          (cmd "")
+         (bib-no-warn-types '((blog . ("http" "https"))))
          (no-confirm (org-entry-get (point) "NO_CONFIRM"))
          abstract bibtexs refs-string)  ; had sections
     (when (and (f-exists? md-file) (not no-confirm))
@@ -495,43 +520,7 @@ with pandoc."
               (when has-body
                 (setq abstract (buffer-substring-no-properties beg end)))
               (narrow-to-region end (point-max)))))
-        ;; (goto-char (point-min))
-        ;; NOTE: If not paper, then collect subtree headings as sections,
-        ;;       else buffer headings
-        ;; (setq sections (if (eq type 'paper)
-        ;;                    (util/org-apply-to-buffer-headings
-        ;;                     (lambda () (concat "*" (org-get-heading t t t t))))
-        ;;                  (util/org-apply-to-subtree-headings
-        ;;                   (lambda () (concat "*" (org-get-heading t t t t))) t)))
-        ;; Insert standard pandoc references to bibtexs
-        ;; NOTE: Generate bibtexs from fuzzy links
-        ;; TODO: Raise a `user-error' if error getting the bib from link
-        ;; (goto-char (point-min))
-        ;; (while (re-search-forward util/org-text-link-re nil t nil)
-        ;;   ;; NOTE: Don't insert link if it's of an internal section
-        ;;   ;; FIXME: How to fix for dup titles if they are for different papers (and bibs)?
-        ;;   ;;        We should either report them as dups or store them with custom_ids
-        ;;   (unless (member (match-string 1) sections)
-        ;;     (let ((el (org-element-context))
-        ;;           (bib (ref-man-org-get-bib-from-org-link t t))
-        ;;           (title-keys (mapcar (lambda (x) (-take 2 x)) bibtexs)))
-        ;;       ;; NOTE: Append _a to duplicate bibtex key
-        ;;       ;; TODO: Fix dups for CUSTOM_ID across org buffer
-        ;;       (if (not (cadr bib))
-        ;;           (warn "No bib found for %s" (car bib))
-        ;;         (when (-any #'identity (mapcar (lambda (x) (and title-keys
-        ;;                                                         (string= (cadr x) (cadr bib))
-        ;;                                                         (not (string= (car x) (car bib)))))
-        ;;                                        title-keys))
-        ;;           (setf (cadr bib) (concat (cadr bib) "_a"))
-        ;;           (setf (nth 2 bib) (replace-regexp-in-string
-        ;;                              (string-remove-suffix "_a" (cadr bib))
-        ;;                              (cadr bib) (nth 2 bib))))
-        ;;         (when (string-prefix-p "#" (car bib))
-        ;;           (setf (car bib) (string-remove-prefix "#" (car bib))))
-        ;;         (unless (member (cadr bib) (mapcar (lambda (x) (nth 1 x)) bibtexs))
-        ;;           (push bib bibtexs))))))
-        (setq bibtexs (ref-man-export-parse-references type))
+        (setq bibtexs (ref-man-export-parse-references type (a-get bib-no-warn-types type)))
         (setq refs-string (ref-man-export-bibtexs bibtexs tmp-bib-file no-gdrive))
         (when refs-string
           (setq yaml-header (concat (string-remove-suffix "---\n" yaml-header) refs-string "---\n")))
@@ -543,9 +532,9 @@ with pandoc."
                                     (yaml-encode ref-man-export-research-article-args)
                                     "\n---\n")))
         (goto-char (point-min))
-        ;; NOTE: export to markdown in ref-man-export-md-buffer-name
-        (ref-man-export-org-to-md #'util/org-remove-all-time-stamps)
-        (with-current-buffer ref-man-export-md-buffer-name
+        ;; NOTE: export to markdown in ref-man-export-temp-md-buf
+        (ref-man-export-org-to-md)
+        (with-current-buffer ref-man-export-temp-md-buf
           ;; NOTE: Remove TOC if asked
           (unless with-toc
             (goto-char (point-min))

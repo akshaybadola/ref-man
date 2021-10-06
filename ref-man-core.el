@@ -104,7 +104,7 @@
 
 (defcustom ref-man-bib-files nil
   "List of `bibtex' files to search for references while generating articles."
-  :type 'list
+  :type '(repeat string)
   :group 'ref-man)
 
 (defcustom ref-man-temp-bib-file-path (expand-file-name "~/.ref-man/.temp.bib")
@@ -834,6 +834,7 @@ buffer with that filename."
           (setq open-file t)))
       (let ((org-buf (ref-man--create-org-buffer (concat filename ".org")))
             should-generate)
+        ;; FIXME: Why's should-generate a lexical variable and then set to t?
         (setq should-generate t)
         (when open-file
           (with-current-buffer org-buf
@@ -972,6 +973,7 @@ a reference, it's inserted as is prefixed with \"na_\"."
            (month (cons "month" (when (gethash "month" hash) (format "%s" (gethash "month" hash)))))
            (venue (cons "venue" (when (gethash "venue" hash)
                                   (replace-in-string (gethash "venue" hash) ",$" ""))))
+           ;; FIXME: Why's this commented out? and where's na generated now?
            ;; (key (mapconcat (lambda (x) (replace-in-string (downcase x) " " ""))
            ;;                 (list "na" "_"
            ;;                       (let ((first-author (split-string (car (gethash "authors" hash)) " ")))
@@ -1046,14 +1048,25 @@ semanticscholar data also.  The default is to insert a new entry
 after current."
   ;; NOTE: insert only when title exists
   (when (a-get entry 'title)
+    ;; NOTE: insert heading only when not updating current heading
     (unless update-current
       (org-insert-heading-after-current))
     (org-edit-headline (a-get entry 'title))
-    ;; NOTE: insert heading only when not updating current heading
-    (when (a-get entry 'abstract)
-      (ref-man-org-insert-abstract (a-get entry 'abstract) nil t))
-    (pcase-let ((pt (point))
-                (`(,beg ,end ,has-text) (ref-man-org-text-bounds))
+    (let* ((pblock (org-get-property-block))
+           (text-bounds (and pblock (save-excursion
+                                      (list (progn (goto-char (cdr pblock))
+                                                   (end-of-line)
+                                                   (point))
+                                            (progn (outline-next-heading)
+                                                   (- (point) 1))))))
+           (text (and text-bounds (apply #'buffer-substring-no-properties text-bounds)))
+           (splits (and text (split-string text "^ +- "))))
+      ;; NOTE: - Authors on the second split implies abstract already present
+      (when (and (not (and splits (string-prefix-p "Authors" (nth 1 splits))))
+                 (a-get entry 'abstract))
+        (ref-man-org-insert-abstract (a-get entry 'abstract) nil t)))
+    ;; FIXME: beg is same as current point
+    (pcase-let ((`(,beg ,_ ,has-text) (ref-man-org-text-bounds))
                 (author-str (mapconcat (lambda (x)
                                          (a-get x 'name))
                                        (a-get entry 'authors) ", ")))
@@ -1295,7 +1308,7 @@ and kills the entry as yaml to be used with pandoc."
   (let ((venue (a-get props-alist "VENUE"))
         (booktitle (a-get props-alist "BOOKTITLE"))
         (journal (a-get props-alist "JOURNAL"))
-        (type (a-get props-alist "TYPE")))
+        (type (or (a-get props-alist "TYPE") (a-get props-alist "BTYPE"))))
     (cond ((and type (string= (downcase type) "book"))
            "book")
           ((and journal (not (string-match-p "arxiv\\|corr" journal)))
@@ -1337,7 +1350,8 @@ property drawer, then the entry is exported as a \"@misc\" with a
       (let* ((props (org-entry-properties))
              (bib-str (list
                        (cons "type" (concat "@" (ref-man-org-publish-type props allow-misc)))
-                       (cons "key"  (cdr (assoc "CUSTOM_ID" props)))
+                       (cons "key"  (or (cdr (assoc "CUSTOM_ID" props))
+                                        (ref-man-parse-bib-property-key)))
                        (cons "title"  (cdr (assoc "TITLE" props)))
                        (cons "author"  (cdr (assoc "AUTHOR" props)))
                        (cons "journal"  (cdr (assoc "JOURNAL" props)))
@@ -1359,6 +1373,9 @@ property drawer, then the entry is exported as a \"@misc\" with a
                                                   ref-man-public-links-cache)))
                        (cons "publisher"  (cdr (assoc "PUBLISHER" props)))
                        (cons "organization"  (cdr (assoc "ORGANIZATION" props)))))
+             (bib-str (if (a-get bib-str "key") bib-str
+                        (user-error "Could not generate key for \"%s\""
+                                    (org-get-heading t t t t))))
              (bib-str (if (and gdrive (assoc "gdrive" bib-str))
                           bib-str (delq (assoc "gdrive" bib-str) bib-str)))
              (bib-str (if (and allow-misc (a-get bib-str "url")
@@ -2194,7 +2211,7 @@ citations after that."
   (outline-up-heading 1)
   (org-hide-block-all))
 
-(defun ref-man-org-get-bib-from-org-link-subr (path get-key &optional allow-misc)
+(defun ref-man-org-get-bib-from-org-link-subr (get-key &optional allow-misc)
   "Subroutine to get a bib string from an org heading.
 The return value is a list with PATH, a bibkey if GET-KEY is
 non-nil and the bib string extracted with
@@ -2203,8 +2220,7 @@ non-nil and the bib string extracted with
 With optional non-nil ALLOW-MISC, headings which have been
 published as urls are also exported as \"@misc\".
 
-The values are returned as a list of '(path key bib).
-"
+The values are returned as a list of '(path key bib)."
   (let* ((url (or (org-entry-get (point) "URL")
                   (org-entry-get (point) "PDF_URL")))
          (url-key (when url (ref-man-key-from-url url)))
@@ -2244,8 +2260,8 @@ With optional non-nil ALLOW-MISC @misc bibs are also parsed."
                     (+ 2 (org-element-property :begin link)))
                t)                       ; don't change visibility around point
               (if get-key
-                  (cons path (ref-man-org-get-bib-from-org-link-subr path get-key allow-misc))
-                (ref-man-org-get-bib-from-org-link-subr path get-key allow-misc)))
+                  (cons path (ref-man-org-get-bib-from-org-link-subr get-key allow-misc))
+                (ref-man-org-get-bib-from-org-link-subr get-key allow-misc)))
              ("file" (with-current-buffer (find-file-noselect path)
                        (let ((path (org-element-property :search-option link)))
                          (setq type (cond ((string-match-p "^#.+" path)
@@ -2255,8 +2271,8 @@ With optional non-nil ALLOW-MISC @misc bibs are also parsed."
                                           (t (user-error "Unknown type of link %s" path))))
                          (org-link-search path nil t) ; don't change visibility around point
                          (if get-key
-                             (cons path (ref-man-org-get-bib-from-org-link-subr path get-key allow-misc))
-                           (ref-man-org-get-bib-from-org-link-subr path get-key allow-misc))))))))))))
+                             (cons path (ref-man-org-get-bib-from-org-link-subr get-key allow-misc))
+                           (ref-man-org-get-bib-from-org-link-subr get-key allow-misc))))))))))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END org utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -2539,9 +2555,6 @@ citations.  Can be one of 'refs 'cites."
           (unless ss-data
             (message "[ref-man] Could not retrieve Semantic Scholar data for entry"))
           (when (and ss-data update)
-            ;; (when (a-get 'ss-data arxivId)
-            ;;   (org-entry-put (point) "ARXIVID" (a-get 'ss-data arxivId))
-            ;;   (org-entry-put (point) "URL" (ref-man-url-from-arxiv-id)))
             (ref-man--org-bibtex-write-ref-from-ss-ref ss-data nil t))
           (when ss-data
             (message "[ref-man] Inserting Semantic Scholar Data")
@@ -2553,9 +2566,7 @@ citations.  Can be one of 'refs 'cites."
                     (heading (org-get-heading nil t t t)))
                 (with-current-buffer buf
                   (if current
-                      (pcase-let ((`(,beg ,end ,has-body) (progn
-                                                            (ref-man-org-end-of-meta-data)
-                                                            (ref-man-org-text-bounds))))
+                      (pcase-let ((`(,_ ,end ,_) (util/org-heading-and-body-bounds)))
                         (goto-char end)
                         (org-insert-heading)
                         (ref-man-insert-ss-data-subr ss-data buf nil t only t t))
@@ -2886,27 +2897,19 @@ subtree will be updated later."
               :status status)
         ref-man--subtree-list))
 
-;; CHECK: Curious thing is, pdf retrieval is async and bib retrieval isn't I
-;;        should make it uniform
-;; NOTE: Adding update heading also if heading is null
-;; NOTE: This is only called by `ref-man-try-fetch-and-store-pdf-in-org-entry'
-;;
-;; FIXME: Can this bet `let'
-(defvar ref-man--fetched-url-title)
-(defvar ref-man--fetched-url-buffers nil
-  "Internal variable to hold fetched (url . buffer) pairs.")
-(defvar ref-man--fetching-url-buffers nil
-  "Internal variable to hold (url . buffer) pairs being fetched right now.")
 
-;; FIXME: This should not really depend on the mode and the buffer should be
-;;        sent from the interactive function
-;; TODO: What if the buffer gets killed before the pdf/bib is fetched?
 (defun ref-man-try-fetch-pdf-from-url (org-buf pt heading url pdf-url
                                                &optional retrieve-pdf retrieve-bib
                                                          retrieve-title storep)
   "Try and fetch pdf and bib entry from URL.
 
-Can only retrieve from specific urls.  Optional STOREP specifies
+We Can only retrieve from specific sites.  See
+`ref-man-url-get-pdf-link-helper' for a list of supported sites.
+
+PT, HEADING, URL, PDF-URL are `point', org heading and url and
+pdf url in org entry properties respectively.
+
+Optional STOREP specifies
 whether to store the retrieved data to org file or not.
 
 If at least one of two optional arguments RETRIEVE-PDF or
@@ -2916,22 +2919,89 @@ buffer to insert the data is set by
 `ref-man--org-gscholar-launch-buffer'.
 
 RETRIEVE-TITLE has no effect at the moment."
+  (if (eq major-mode 'org-mode)
+      (progn
+        (when retrieve-pdf
+          (let (maybe-pdf-url)
+            (setq maybe-pdf-url (cond (pdf-url
+                                       (ref-man--fetch-from-pdf-url-new
+                                        pdf-url (list :buffer org-buf
+                                                      :point pt
+                                                      :heading heading))
+                                       pdf-url)
+                                      ((and url (ref-man-url-downloadable-pdf-url-p url))
+                                       (ref-man--fetch-from-pdf-url-new
+                                        url (list :buffer org-buf :point pt
+                                                  :heading heading))
+                                       url)
+                                      (t (ref-man-url-get-pdf-url-according-to-source
+                                          url #'ref-man--fetch-from-pdf-url-new
+                                          (list :buffer org-buf :point pt
+                                                :heading heading))
+                                         url)))
+            ;; FIXME: Subtree list needn't exist. Pass org heading (and point)
+            ;;        to fetch-from-pdf-url callback
+            (when storep
+              (ref-man--update-subtree-list maybe-pdf-url "fetching"))))
+        (when (and retrieve-bib (not storep)) ; don't try retrieve bib when storep
+          (message "[ref-man] NOT Retrieving bib entry"))
+        (when retrieve-title
+          ;; NOTE: Not worth it right now.
+          (message "[ref-man] Let's see if we can insert heading"))
+        (when (and (not retrieve-bib) (not retrieve-pdf))
+          (message "[ref-man] Nothing to do")))
+    (message "[ref-man] Not in org mode")))
 
-  ;; NOTE: Here I'll have to write rules to fetch pdfs from different urls,
-  ;;       e.g. arxiv.org, nips, cvpr, iccv, aaai, tacl, aclweb, pmlr (jmlr,
-  ;;       icml) Should it just return a downloadable link or download the file
-  ;;       itself?
 
-  ;; NOTE: I've commented the following out here as I'm trying to reduce
-  ;;       dependence on global variables. These should only be used when
-  ;;       calling from non org modes.
-  ;;
-  ;; (if (eq major-mode 'org-mode)
-  ;;     (progn
-  ;;       (setq ref-man--org-gscholar-launch-buffer (current-buffer))
-  ;;       (setq ref-man--org-gscholar-launch-point (point)))
-  ;;   (setq ref-man--org-gscholar-launch-buffer nil)
-  ;;   (setq ref-man--org-gscholar-launch-point nil)) ; needn't be at heading
+;; NOTE: The following comments and code were for additions to
+;;       `ref-man-try-fetch-pdf-from-url' however a lot of functionality from
+;;       that has been subsumed by semantic scholar routines. Headings, bibs can
+;;       be fetched from there and crossref via DOI is a more reliable source of
+;;       bibtex.
+;;
+;;       Of course the original pages are good sources but parsing all
+;;       of them may be overkill.
+;;
+;;       The reason they all were in one function was because I wanted to make
+;;       all the network calls simultaneously to avoid overhead.
+;;       
+;;       SHOULD REWRITE all of this.
+
+
+;; CHECK: Curious thing is, pdf retrieval is async and bib retrieval isn't I
+;;        should make it uniform
+;; NOTE: Adding update heading also if heading is nil
+;; NOTE: This is only called by `ref-man-try-fetch-and-store-pdf-in-org-entry'
+;;
+;; FIXME: Can this bet `let'
+(defvar ref-man--fetched-url-title)
+(defvar ref-man--fetched-url-buffers nil
+  "Internal variable to hold fetched (url . buffer) pairs.")
+(defvar ref-man--fetching-url-buffers nil
+  "Internal variable to hold (url . buffer) pairs being fetched right now.")
+
+;; TODO: What if the buffer gets killed before the pdf/bib is fetched?
+(defun ref-man-try-fetch-pdf-from-url-alt (org-buf pt heading url pdf-url
+                                               &optional retrieve-pdf retrieve-bib
+                                                         retrieve-title storep)
+  "Try and fetch pdf and bib entry from URL.
+
+We Can only retrieve from specific sites.  See
+`ref-man-url-get-pdf-link-helper' for a list of supported sites.
+
+PT, HEADING, URL, PDF-URL are `point', org heading and url and
+pdf url in org entry properties respectively.
+
+Optional STOREP specifies
+whether to store the retrieved data to org file or not.
+
+If at least one of two optional arguments RETRIEVE-PDF or
+RETRIEVE-BIB are non-nil then the corresponding pdf and/or bibtex
+entry are/is fetched and stored if the option is given.  Org
+buffer to insert the data is set by
+`ref-man--org-gscholar-launch-buffer'.
+
+RETRIEVE-TITLE has no effect at the moment."
 
   ;; NOTE: prefetch url
   ;;
@@ -3169,7 +3239,9 @@ property drawer as the URL property."
             (let ((key (ref-man--build-bib-key-from-plist
                         (list :title title :author author :year year))))
               (if (called-interactively-p 'any)
-                  (kill-new key)
+                  (if current-prefix-arg
+                      (org-entry-put (point) "CUSTOM_ID" key)
+                    (kill-new key))
                 key))
           (error (message "Could not parse as bibtex\ntitle: %s, author: %s, year: %s"
                           title author year)
@@ -3199,9 +3271,10 @@ property drawer as the URL property."
 ;;       extracted and stored from the website itself.
 ;; TODO: What if entry exists but the file doesn't?
 ;; TODO: What if the buffer gets killed before the pdf/bib is fetched?
-(defun ref-man-try-fetch-and-store-pdf-in-org-entry (&optional storep)
-  "Try to fetch and store pdf for current entry in an org buffer."
-  (interactive)
+(defun ref-man-try-fetch-and-store-pdf-in-org-entry (&optional interactivep)
+  "Try to fetch and store pdf for current entry in an org buffer.
+Optional INTERACTIVEP is to check the `interactive' call."
+  (interactive "p")
   (org-insert-property-drawer)
   (if (eq major-mode 'org-mode)
       (let* ((buf (current-buffer))
@@ -3209,8 +3282,8 @@ property drawer as the URL property."
              (heading (org-get-heading t t t t))
              (props (org-entry-properties))
              (url-prop (ref-man--check-fix-url-property))
-             ;; CHECK: Why's this not used?
              (pdf-url-prop (a-get props "PDF_URL"))
+             ;; CHECK: Why're alt-url and arxiv-url not used?
              (alt-url-prop (a-get props "ALT_URL"))
              (arxiv-url-prop (a-get props "ARXIV_URL"))
              (ssidtype-id (ref-man--ss-id))
@@ -3222,16 +3295,19 @@ property drawer as the URL property."
         (when ssidtype-id
           ;; TODO: if ssidtype-id then check if SS has paper
           )
-        ;; TODO: Use helm instead of prefixes
-        ;;       Actually Should use `hydra' but that should be for everything
+        ;; TODO: Use `hydra' instead of prefixes
         ;; FIXME: Make sure pdf file exists on disk, else remove prop
-        ;; FIXME: Maybe check for :link property from text but MEH! NOTE: Not sure about this
+        ;; FIXME: Maybe check for :link property from text but MEH!
+        ;; NOTE: Not sure about this
         (let ((meh current-prefix-arg))
           (cond ((and meh (equal meh '(4)))   ; update only
                  ;; Do something
                  ))
           )
         ;; CHECK: storep signifies to store the filename in PDF_FILE property?
+        ;;
+        ;; TODO: arxiv-url and any other alt-urls should be sent separately to the subroutine
+        ;;       We can also try them in sequence
         (setq msg-str
               (concat msg-str
                       (cond ((and pdf-file (or pdf-url-prop url-prop))
@@ -3274,11 +3350,11 @@ property drawer as the URL property."
                             ((and (not headingp) (not url-prop))
                              (setq retrieve-title nil)
                              "No heading and no URL. What to do?!!"))))
-        (unless storep
+        (when interactivep
           (message msg-str))
         (when (or retrieve-pdf retrieve-bib)
           (ref-man-try-fetch-pdf-from-url buf pt heading url-prop pdf-url-prop retrieve-pdf
-                                          retrieve-bib retrieve-title storep)))
+                                          retrieve-bib retrieve-title interactivep)))
     (message "[ref-man] Not in org-mode") nil))
 
 ;; FIXED: Since the retrieval is now async, if I move to another
@@ -3395,8 +3471,9 @@ a) org-gscholar-launch-buffer is checked for the entry"
 
 (defun ref-man--at-bib-heading-p ()
   (let ((props (org-entry-properties)))
-    (and (org-at-heading-p) (assoc "BTYPE" props) (assoc "CUSTOM_ID" props) t)))
-
+    (and (org-at-heading-p)
+         (or (assoc "TYPE" props) (assoc "BTYPE" props))
+         (assoc "CUSTOM_ID" props))))
 
 ;; FIXME: This function looks a bit redundant. It searches on gscholar but I've
 ;;        incorporated additional sources. It's sort of a last resort right now
@@ -3482,10 +3559,12 @@ entry to kill ring."
   (if (org-at-heading-p)
       (let (heading-has-children)
         (when heading-has-children
-
+          ;; TODO:
           ;; Import heading to bib buffer
           ;; Descend into subtree
           ;; On all children do recursive call to self
+          ;; NOTE: Actually it should just be:
+          ;; (outline-next-heading) (ref-man-org-bibtex-read-from-headline)
           ))
     (message "[ref-man] Not at heading"))                             ; HERE
   (when (ref-man--at-bib-heading-p)

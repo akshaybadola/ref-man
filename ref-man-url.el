@@ -277,7 +277,8 @@ predicate."
   (string-join
    (-take (1+ (-find-index (lambda (x) (string-match-p "\\." x))
                            (split-string url "/")))
-          (split-string url "/")) "/"))
+          (split-string url "/"))
+   "/"))
 
 (defun ref-man-url-get-absolute-path (url link)
   "Get absolute path for a LINK and parent URL."
@@ -295,11 +296,11 @@ predicate."
                (when (string-suffix-p "/" url)
                  (setq count (+ 1 count)))
                (string-join (-concat (-take (- (length usplits) count) usplits)
-                                     (-drop count lsplits)) "/"))))))
+                                     (-drop count lsplits))
+                            "/"))))))
 
 ;; NOTE: This is equivalent to run-hook-with-args-until-success
-;; TODO: This should be a pcase for brevity
-;; The list of `site's should be separate
+;; TODO: This should be a pcase for brevity. The list of `site's should be separate
 (defun ref-man-url-get-pdf-link-helper (site url buf &optional status)
   "Helper function to get pdf link from URL given type of SITE.
 BUF is the html buffer retrieved from URL.  Optional status is a
@@ -645,7 +646,7 @@ ARGS is a plist with keywords :heading :point :buffer"
       (when (string-match-p "ieeexplore.ieee.org" url)
         (unless venue
           (setq venue (read-from-minibuffer
-                       "Could not CVF determine venue. Enter: ")))
+                       "Could not determine CVF venue. Enter: ")))
         (if (string-empty-p venue)
             (user-error "No venue given")
           (ref-man-py-get-cvf-url heading venue url year))))))

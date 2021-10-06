@@ -34,7 +34,11 @@
 ;;; Code:
 
 (defcustom ref-man-py-executable nil
-  "Path to python executable to use for `ref-man'."
+  "Path to python executable to use for `ref-man'.
+
+Note that this corresponds to the python executable used to setup
+the virtual environment and should be a valid python executable
+with version > 3.6.9."
   :type 'file
   :group 'ref-man)
 
@@ -194,7 +198,8 @@ Make sure package 'virtualenv' exists in current python environment"))
 
 ;; TODO: Requests to python server should be dynamic according to whether I want
 ;;       to use proxy or not at that point
-(defun ref-man-py-process-helper (data-dir port &optional proxy-port docs-dir)
+;; CHECK: What's docs dir for and why's it not used?
+(defun ref-man-py-process-helper (data-dir port &optional proxy-port)
   "Start the python server.
 DATA-DIR is the server data directory.  PORT is the port to which
 the server binds.

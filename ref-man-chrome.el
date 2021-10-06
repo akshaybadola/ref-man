@@ -62,7 +62,7 @@
   :type 'directory
   :group 'ref-man)
 
-(defcustom ref-man-chrome-command nil
+(defcustom ref-man-chrome-command ""
   "The chromium executable to use.
 If this is non-nil then `ref-man-chrome--which-chromium' always
 returns its value instead of searching for the chromium
@@ -456,7 +456,9 @@ instead of inserting a subheading."
      web-buf
      (lambda (args)
        (let* ((insert-data (funcall func args))
+              ;; FIXME: Why isn't this (or org-buf (plist-get insert-data :buffer))
               (org-buf (plist-get insert-data :buffer))
+              ;; CHECK: Why isn't heading used?
               (heading (plist-get insert-data :heading))
               (pt (plist-get insert-data :point)))
          ;; TODO: Should be a generic bibtex function, extract-bibtex-from-neurips
@@ -536,7 +538,7 @@ instead."
 Like `eww-browse-with-external-browser' and in fact calls that
 function."
   (interactive)
-  (eww-browse-with-external-browser ref-man-chrome--page-url))
+  (eww-browse-with-external-browser (or url ref-man-chrome--page-url)))
 
 (defun ref-man-chrome-download-pdf (&optional view)
   "Download the pdf for current google scholar entry.
@@ -829,6 +831,7 @@ default."
   (let ((headless (and headless (pcase headless (1 nil) (_ t))))
         (port (ref-man-chrome--find-open-port))
         (data-dir ref-man-chrome-user-data-dir)
+        ;; CHECK: Why isn't this used? I think it was moved to `ref-man-chrome--process-helper'
         (chromium (or (and (processp (ref-man-chrome--chromium-running)) 'internal)
                       (and (integerp (ref-man-chrome--chromium-running)) 'external))))
     (setq ref-man-chrome--chromium-port port)

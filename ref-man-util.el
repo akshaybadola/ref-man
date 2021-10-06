@@ -129,9 +129,19 @@ See `org-ref-nonascii-latex-replacements'")
     ("”" . "\"")))
 
 (defvar ref-man-file-fuzzy-link-re
-  (rx "[" "[" (group (seq (regexp "file.+?::\\*") (+? any))) "]"
+  (rx "[" "[" (group (seq (regexp "file.+?::") "*" (+? nonl))) "]"
       "[" (group (+? any)) "]" "]")
-  "Orgy fuzzy link with file prefix.")
+  "Org fuzzy link with file prefix.")
+
+(defvar ref-man-file-custid-link-re
+  (rx "[" "[" (group (regexp "file.+?::#[a-zA-Z0-9_-]+?")) "]"
+      "[" (group (+? any)) "]" "]")
+  "Org custom-id link with file prefix.")
+
+(defvar ref-man-file-fuzzy-custid-link-re
+  (rx "[" "[" (group (seq (regexp "file.+?::") (or "*" "#") (+? nonl))) "]"
+      "[" (group (+? any)) "]" "]")
+  "Org custom-id link with file prefix.")
 
 (defun ref-man-pairs-to-alist (pairs)
   "Merge cons PAIRS into an alist with first elements as keys.
@@ -367,6 +377,13 @@ If DIR is not given it defaults to `ref-man-documents-dir'."
 
 Performs inverse of `ref-man--replace-non-ascii'."
   (ref-man--transcribe str ref-man-bibtex-ascii-replacement-strings t))
+
+(defun ref-man-replace-multiple-spaces-with-a-single-space ()
+  "Replace multiple spaces with a single space unless indentation."
+  (goto-char (point-min))
+  (while (re-search-forward "[ \t]\\{2,\\}" nil t)
+    (unless (save-match-data (looking-back "^[ \t]+"))
+      (replace-match " "))))
 
 (defun ref-man-save-headings-before-pdf-file-open (arg)
   "Add advice to save headings and paths before calling `org-open-at-point'.
