@@ -2557,10 +2557,11 @@ citations.  Can be one of 'refs 'cites."
           (when (and ss-data update)
             (ref-man--org-bibtex-write-ref-from-ss-ref ss-data nil t))
           (when ss-data
-            (message "[ref-man] Inserting Semantic Scholar Data")
+            (message "[ref-man] Fetched Semantic Scholar Data")
             (org-entry-put (point) "PAPERID" (a-get ss-data 'paperId))
             ;; NOTE: The data is inserted into a new buffer named "*Semantic Scholar*"
             (when display
+              (message "[ref-man] Preparing Semantic Scholar Data for display")
               (let ((buf (if current (current-buffer)
                            (get-buffer-create "*Semantic Scholar*")))
                     (heading (org-get-heading nil t t t)))
@@ -2576,6 +2577,7 @@ citations.  Can be one of 'refs 'cites."
                     (insert heading)
                     (forward-line)
                     (ref-man-insert-ss-data-subr ss-data buf nil t only)
+                    (message "[ref-man] Displaying Semantic Scholar Data")
                     (switch-to-buffer buf))))))))
     (message "[ref-man] Not in org-mode") nil))
 

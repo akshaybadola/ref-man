@@ -171,6 +171,15 @@ class CacheHelper:
         except Exception as e:
             self.logger.error(f"Error occured {e}")
 
+    def copy_from_remote(self) -> None:
+        self.logger.debug(f"Syncing remote {self.remote_dir} to {self.local_dir}")
+        try:
+            p = Popen(f"rclone -v copy --no-update-modtime {self.remote_dir} {self.local_dir}",
+                      shell=True, stdout=PIPE, stderr=PIPE)
+            out, err = p.communicate()
+        except Exception as e:
+            self.logger.error(f"Error occured {e}")
+
     def update_cache_helper(self, fix_files: List[str] = []) -> None:
         if not self.updating_ev.is_set():
             self.updating_ev.set()
@@ -196,7 +205,7 @@ class CacheHelper:
                     break
                 self.get_link(f, cache_dict, warnings)
             self.logger.info(f"Writing {len(cache_dict) - init_cache_size} links to {self.cache_file}")
-            shutil.copyfile(self.cache_file, self.cache_file + ".bak")
+            shutil.copyfile(str(self.cache_file), str(self.cache_file) + ".bak")
             with open(self.cache_file, "w") as cf:
                 write_list = [";".join(c) for c in cache_dict.items()]
                 cf.write("\n".join(write_list))
