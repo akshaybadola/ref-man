@@ -149,19 +149,22 @@ See `org-ref-nonascii-latex-replacements'")
 The head of the list is the associative element.
 
 Example:
-    (pairs-to-alist '((a b) (b c d) (a d) (e f)))
+    (pairs-to-alist '((a b) (b c d) (a d) (e . f)))
      => '((a b d) (b c d) (e f))"
   (when (and (consp pairs) (a-assoc pairs))
     (let (newlist)
       (seq-do (lambda (x)
                 (if (a-has-key newlist (car x))
-                    (setq newlist (a-update newlist (car x) (lambda (y) (push (cdr x) y))))
-                  (push (list (car x) (cdr x)) newlist)))
+                    (if (consp (cdr x))
+                        (setf (alist-get (car x) newlist) (-concat (alist-get (car x) newlist) (cdr x)))
+                      (push (cdr x) (alist-get (car x) newlist)))
+                  (push x newlist)))
               pairs)
       newlist)))
 
 (defun url-join (&rest elements)
   "Join ELEMENTS with a single \"/\", like a url."
+  (declare (pure t) (side-effect-free t))
   (string-join (-remove #'string-empty-p
                         (mapcar (lambda (x)
                                   (string-remove-prefix "/" (string-remove-suffix "/" x)))
@@ -170,6 +173,7 @@ Example:
 
 (defun path-join (&rest elements)
   "Join ELEMENTS as a path, expects full paths."
+  (declare (pure t) (side-effect-free t))
   (concat "/" (mapconcat (lambda (x)
                            (string-remove-prefix "/" (string-remove-suffix "/" x)))
                          elements "/")))
@@ -177,11 +181,13 @@ Example:
 (defun dir-equal-p (dir-a dir-b)
   "Return non-nil if full paths for DIR-A and DIR-B are equal.
 They need not exist."
+  (declare (pure t) (side-effect-free t))
   (string= (string-remove-suffix "/" (expand-file-name dir-a))
            (string-remove-suffix "/" (expand-file-name dir-b))))
 
 ;; TODO: Document this
 (defun max-ind (seq)
+  (declare (pure t) (side-effect-free t))
   (let* ((max-ind--max-val 0) (max-ind--temp-ind -1) (max-ind--max 0))
     (cl-loop for x in seq
           do
@@ -267,14 +273,17 @@ Identical to `ref-man--trim-whitespace' but remove quotes also."
 
 (defun ref-man--fix-curly (str)
   "Gets text between parentheses for {STR}."
+  (declare (pure t) (side-effect-free t))
   (string-remove-suffix "}" (string-remove-prefix "{" str)))
 
 (defun ref-man--bibtex-key-p (item)
   "ITEM is a bibtex key."
+  (declare (pure t) (side-effect-free t))
   (string= (car item) "=key="))
 
 (defun ref-man--stop-word-p (x)
   "X is a stop word."
+  (declare (pure t) (side-effect-free t))
   (member x ref-man-stop-words))
 
 (defun ref-man--transcribe (str change-list &optional inverse)
@@ -296,6 +305,7 @@ A."
 
 (defun ref-man-util-regions-contiguous-p (regions)
   "Return t if list of REGIONS are contiguous."
+  (declare (pure t) (side-effect-free t))
   (let ((flag t)
         temp)
     (seq-do (lambda (x)

@@ -771,6 +771,7 @@ all results."
   "Generate a string alist from Science Parse data.
 Science Parse data is a hashtable, which is cleaned and the alist
 returned."
+  (declare (pure t) (side-effect-free t))
   (let ((key-str nil))
          (when (gethash "authors" ref-man--science-parse-data)
            (push (cons "authors" (list (mapconcat (lambda (x) (gethash "name" x))
@@ -882,6 +883,13 @@ buffer with that filename."
             (insert "\n")
             (seq-do (lambda (x) (insert x)) data)
             (1+ (point))))))))
+
+(defun ref-man-org-up-heading ()
+  "Like `outline-up-heading' but go back to DOC_ROOT with \\[universal-argument]."
+  (interactive)
+  (if current-prefix-arg
+      (goto-char (util/org-get-tree-prop "DOC_ROOT"))
+    (outline-up-heading 1)))
 
 (defun ref-man-org-end-of-meta-data ()
   "Go to end of all drawers and other metadata."
@@ -2966,7 +2974,7 @@ RETRIEVE-TITLE has no effect at the moment."
 ;;
 ;;       The reason they all were in one function was because I wanted to make
 ;;       all the network calls simultaneously to avoid overhead.
-;;       
+;;
 ;;       SHOULD REWRITE all of this.
 
 

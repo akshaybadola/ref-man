@@ -1,4 +1,4 @@
-;;; ref-man-export.el --- Core Components for `ref-man'. ;;; -*- lexical-binding: t; -*-
+;;; ref-man-export.el --- Document export and publishing functionality for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2018,2019,2020,2021
 ;; Akshay Badola
@@ -153,6 +153,22 @@ clean up function replacing multiple spaces with a single space.")
   "Environment variables for pdflatex."
   :type 'string
   :group 'ref-man)
+
+(defcustom ref-man-export-no-confirm-overwrite nil
+  "Do not confirm to overwrite markdown file.
+This variable controls the global confirmation behaviour, while
+for individual documents it can be set as NO_CONFIRM `nil' or `t'
+in the properties drawer of the subtree."
+  :type 'boolean
+  :group 'ref-man)
+
+;; TEST
+;; (with-current-buffer "test.org"
+;;   (let ((ref-man-export-no-confirm-overwrite t))
+;;     (pcase (org-entry-get (point) "NO_CONFIRM" nil t)
+;;       ("t" t)
+;;       ("nil" nil)
+;;       (_ ref-man-export-no-confirm-overwrite))))
 
 (defun ref-man-export-templates ()
   "Get templates as an alist from `ref-man-export-pandoc-templates-dir'."
@@ -349,6 +365,7 @@ gdrive keys if present."
       (user-error "For generation of a research article, a DOC_ROOT must be specified."))
     (save-excursion
       (goto-char doc-root)
+      (message "Exporting to PDF...")
       (ref-man-export-docproc-article buffer 'paper t t))))
 
 (defun ref-man-org-export-table-to-latex ()
@@ -426,7 +443,7 @@ NO-WARN-TYPES can be passed as a list of (string) link types."
                 (push bib bibtexs))))))
       bibtexs)))
 
-;; TODO: Use a docproc server instead
+;; TODO: Use a pndconf server instead
 ;; TODO: Use the pndconf cmdline instead
 ;; TODO: Export can take a while and it would be better to do
 ;;       it in an async process.
@@ -468,6 +485,7 @@ with pandoc."
                                    (string< "2.14" (ref-man-pandoc-version)))
                          (make-temp-file "ref-bib-" nil ".bib")))
          (docproc-dir ref-man-export-docproc-dir)
+         (config-file (path-join docproc-dir "config.ini"))
          (csl-file (pcase (org-entry-get (point) "CSL")
                      ('nil
                       (if no-urls
@@ -475,7 +493,8 @@ with pandoc."
                         ref-man-export-csl-urls-file))
                      (csl (a-get (ref-man-export-csl-files) (downcase csl)))))
          (mathjax-path ref-man-export-mathjax-dir)
-         (pandocwatch (path-join docproc-dir "pandocwatch.py"))
+         (pandocwatch "-m pndconf")
+         ;; (pandocwatch (path-join docproc-dir "pandocwatch.py"))
          (python ref-man-export-python-executable)
          (title (substring-no-properties (org-get-heading t t t t)))
          (md-file (path-join (pcase type
@@ -500,7 +519,10 @@ with pandoc."
                                                            mathjax-path csl-file))
          (cmd "")
          (bib-no-warn-types '((blog . ("http" "https"))))
-         (no-confirm (org-entry-get (point) "NO_CONFIRM"))
+         (no-confirm (pcase (org-entry-get (point) "NO_CONFIRM" nil t)
+                       ("t" t)
+                       ("nil" nil)
+                       (_ ref-man-export-no-confirm-overwrite)))
          abstract bibtexs refs-string)  ; had sections
     (when (and (f-exists? md-file) (not no-confirm))
       (unless (y-or-n-p (format "The file with name %s exists.  Replace? "
@@ -571,10 +593,11 @@ with pandoc."
           (insert (concat yaml-header "\n"))
           (write-region (point-min) (point-max) md-file))))
     (unless (eq type 'blog)
-      (setq cmd (format "cd %s && %s %s --pandoc-path %s -ro --input-files %s -g %s %s"
+      (setq cmd (format "cd %s && %s %s -c %s --pandoc-path %s -ro --input-files %s -g %s %s"
                         docproc-dir
                         python
                         pandocwatch
+                        config-file
                         ref-man-pandoc-executable
                         md-file
                         (pcase type

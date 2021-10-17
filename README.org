@@ -3,190 +3,214 @@
   :CUSTOM_ID: reference-manager
   :END:
 
-Emacs library and plugin to manage documents, primarily academic publications.
-It can manage files on disk, index them as org entries and convert to/from
-bibtex, fetch pdf and bibliography from external sources and automate many other
-tasks.
+  Emacs library and plugin to manage documents, primarily academic publications.
+  It can manage files on disk, index them as org entries and convert to/from
+  bibtex, fetch pdf and bibliography from external sources and automate many other
+  tasks.
 
 * Features
   :PROPERTIES:
   :CUSTOM_ID: features
   :END:
 
-This project has now grown into a monolith and I'm refactoring it slowly
-to decouple the features. These features are useful but not entirely
-stable at present.
+  This project has now grown into a monolith and I'm refactoring it slowly
+  to decouple the features. These features are useful but not entirely
+  stable at present.
 
 ** Bibliography and file management
    :PROPERTIES:
    :CUSTOM_ID: bibliography-and-file-management
    :END:
 
-- Conversion from and to =org= property drawer to =bibtex= format
-  - Import and export from =.bib= files
-  - Sanitization and auto generation of keys
-- Fetching of bibliography data from multiple sources and storing in org
-  entries
-  1. DBLP
-  2. Semantic Scholar
-  3. Crossref
-  4. Google Scholar
-- Fetching of pdfs from supported sources and storage in a dedicated
-  directory See =ref-man-url-get-pdf-link-helper= in =ref-man-url.el=.
+   - Conversion from and to =org= property drawer to =bibtex= format
+     - Import and export from =.bib= files
+     - Sanitization and auto generation of keys
+   - Fetching of bibliography data from multiple sources and storing in org
+     entries
+     1. DBLP
+     2. Semantic Scholar
+     3. Crossref
+     4. Google Scholar
+   - Fetching of pdfs from supported sources and storage in a dedicated
+     directory See =ref-man-url-get-pdf-link-helper= in =ref-man-url.el=.
 
-I've used a separate python module for network access with threading as
-it's more efficient to do so. The communication is done via an http
-server.
+   I've used a separate python module for network access with threading as
+   it's more efficient to do so. The communication is done via an http
+   server.
 
 ** Reading and Navigation
    :PROPERTIES:
    :CUSTOM_ID: reading-and-navigation
    :END:
 
-Org headings serve as publication titles. For any notes one can simply
-store them with the corresponding org headings. However for linking and
-citations there are also some utility functions:
+   Org headings serve as publication titles. For any notes one can simply
+   store them with the corresponding org headings. However for linking and
+   citations there are also some utility functions:
 
-- Parsing of org headlines with filters in specified buffers into a
-  cache.
-- Insertion of link to any heading with =ido=
-- Search and removal of duplicate headings.
+   - Parsing of org headlines with filters in specified buffers into a
+     cache.
+   - Insertion of link to any heading with =ido=
+   - Search and removal of duplicate headings.
 
 ** Research sources and Exploration
    :PROPERTIES:
    :CUSTOM_ID: research-sources-and-exploration
    :END:
 
-Currently two sources for exploration, search and archival are
-supported.
+   Currently two sources for exploration, search and archival are
+   supported.
 
 *** Google Scholar
     :PROPERTIES:
     :CUSTOM_ID: google-scholar
     :END:
 
-One can browse Google Scholar in a dedicated buffer derived from /eww/
-with custom functions and keybindings for:
+    One can browse Google Scholar in a dedicated buffer derived from /eww/
+    with custom functions and keybindings for:
 
-1. Easy navigation, filtering by date.
-2. Import google scholar entry at point to org headline with metadata.
-   - With optional fetching of PDF simultaneously
-3. Import bibtex for google scholar entry at point.
-4. Rendering via /chromium/ debugger to avoid "prove you're not a
-   robot".
+    1. Easy navigation, filtering by date.
+    2. Import google scholar entry at point to org headline with metadata.
+       - With optional fetching of PDF simultaneously
+    3. Import bibtex for google scholar entry at point.
+    4. Rendering via /chromium/ debugger to avoid "prove you're not a
+       robot".
 
 *** Semantic Scholar
     :PROPERTIES:
     :CUSTOM_ID: semantic-scholar
     :END:
 
-We can also use [[https://www.semanticscholar.org][Semantic Scholar]].
-The module can search Semantic Scholar with a search string, or lookup
-the SS database through their API.
+    We can also use [[https://www.semanticscholar.org][Semantic Scholar]].
+    The module can search Semantic Scholar with a search string, or lookup
+    the SS database through their API.
 
-1. Search in Semantic Scholar and insert entry as org headline
-2. Lookup an entry in Semantic Scholar database from any of the
-   supported lookup types (arxiv, doi etc.)
-3. Fetch the entry metadata and store in a cache
-4. Parse the metadata and display in a separate org buffer with more
-   details:
-   - Abstract
-   - Other Semantic Scholar metrics like =isInfluential=
-   - All the parsed references from the metadata
-   - All the papers which have cited that particular paper
+    1. Search in Semantic Scholar and insert entry as org headline
+    2. Lookup an entry in Semantic Scholar database from any of the
+       supported lookup types (arxiv, doi etc.)
+    3. Fetch the entry metadata and store in a cache
+    4. Parse the metadata and display in a separate org buffer with more
+       details:
+       - Abstract
+       - Other Semantic Scholar metrics like =isInfluential=
+       - All the parsed references from the metadata
+       - All the papers which have cited that particular paper
 
-Since we can see all the references and citations of that paper in a
-single org buffer, we can view/download any references from the paper
-with ease without constantly having to go to the back of the paper. We
-can also fetch the PDF (if the source is supported by the module) and
-quickly check that paper also.
+    Since we can see all the references and citations of that paper in a
+    single org buffer, we can view/download any references from the paper
+    with ease without constantly having to go to the back of the paper. We
+    can also fetch the PDF (if the source is supported by the module) and
+    quickly check that paper also.
 
-In addition, with all the papers which have cited the paper one is
-reading also present, a quick bird's eye view of the state of the art is
-possible and more recent interesting publications can also be downloaded
-quickly.
+    In addition, with all the papers which have cited the paper one is
+    reading also present, a quick bird's eye view of the state of the art is
+    possible and more recent interesting publications can also be downloaded
+    quickly.
 
 **** Science Parse
      :PROPERTIES:
      :CUSTOM_ID: science-parse
      :END:
 
-Semantic Scholar uses [[https://github.com/allenai/science-parse][science parse]] to parse the PDFs' metadata. They provide
-the full model on that link and one can also run that service locally in case
-one comes across a pdf not in their database.
+     Semantic Scholar uses [[https://github.com/allenai/science-parse][science parse]] to parse the PDFs' metadata. They provide
+     the full model on that link and one can also run that service locally in case
+     one comes across a pdf not in their database.
 
-*** Document preparation and publishing
-    :PROPERTIES:
-    :CUSTOM_ID: document-preparation-and-publishing
-    :END:
+** Notes Taking
+   :PROPERTIES:
+   :CUSTOM_ID: notest-taking
+   :END:
+   We support Zettelkasten style note taking with easy insertion of links to
+   other documents via Ido. The ~ref~'s are cached and are easy to insert. A
+   user can easily link any other ~ref~ and when exporting, mailing or
+   publishing, they can be fetched and exported alongside if required.
 
-Since we can embed Math markup, images, tables and links in the org
-buffer, it can be exported to a fairly functional document. I've used a
-pandoc backend for easy export to multiple formats.
+   Aside from ~ref~'s we can also export other notes and any other hyperlinks
+   that org supports.
 
-**** Features
-     :PROPERTIES:
-     :CUSTOM_ID: features-1
-     :END:
+** Document preparation and publishing
+   :PROPERTIES:
+   :CUSTOM_ID: document-preparation-and-publishing
+   :END:
 
-1. Automatic conversion of links in text to citations
-   - A bibliography section is added automatically at the end if
-     required.
-2. Custom flags and switches for pandoc via its yaml header
-3. Automatic insertion of additional bibliography files with yaml
-   metadata
-4. Easy export to html, PDF or Latex format
+   Since we can embed Math markup, images, tables and links in the org
+   buffer, it can be exported to a fairly functional document. I've used a
+   pandoc backend for easy export to multiple formats.
 
-*** Backup and File Sharing
-    :PROPERTIES:
-    :CUSTOM_ID: backup-and-file-sharing
-    :END:
+   We can do:
 
-The entire pdf and metadata cache can be uploaded to a supported cloud
-storage for easy backup, access and sharing. I've used =rclone= for that
-and any backend supported by =rclone= can therefore be theoretically
-used. We can:
+   1. Automatic conversion of org links in text to citations.
+      - A bibliography section is added automatically at the end if
+        required.
+   2. Support for table editing and conversion to LaTex
+   3. Formatting with standard and custom LaTex templates
+   4. Custom flags and switches for pandoc via its yaml header
+   5. Automatic insertion of additional bibliography files with yaml
+      metadata
+   6. Easy export to html, PDF or LaTex format via pandoc
 
-1. Convert to html and mail an org buffer or subtree with pdf links
-   being attached automatically from the specific remote storage.
+** Backup and File Sharing
+   :PROPERTIES:
+   :CUSTOM_ID: backup-and-file-sharing
+   :END:
 
-For mail I use [[https://www.djcbsoftware.nl/code/mu/mu4e.html][mu4e]] and a separate module which I call [[https://github.com/akshaybadola/org-mu4e][org-mu4e]] which is built
-on top of [[https://github.com/org-mime/org-mime][org-mime]] as a backend.
+   The entire pdf and metadata cache can be uploaded to a supported cloud
+   storage for easy backup, access and sharing. I've used =rclone= for that
+   and any backend supported by =rclone= can therefore be theoretically
+   used. We can:
+
+   1. Convert an org subtree to html. Attach pdf files as cloud links for every
+      ~ref~ link.
+   2. Mail the converted text/html multipart buffer with [[https://www.djcbsoftware.nl/code/mu/mu4e.html][mu4e]]
+      For mail I use [[https://www.djcbsoftware.nl/code/mu/mu4e.html][mu4e]] and a separate module [[https://github.com/akshaybadola/org-mailer][org-mailer]] which is built
+      on top of [[https://github.com/org-mime/org-mime][org-mime]] as a backend.
+
+** Searching and Indexing
+   *WORK IN PROGRESS*
+
+   I'm in the process of writing a search module which can
+   integrate with [[https://solr.apache.org/][Apache solr]]. The idea is to:
+   1. Extract full text fields from science parse
+   2. Match with Semantic Scholar database and get metadata
+      Semantic Scholar doesn't provide full text (for obvious reasons) but those
+      fields can be obtained from Science Parse.
+   3. Index full text of pdfs with metadata from Semantic Scholar
+
 
 * Roadmap
   :PROPERTIES:
   :CUSTOM_ID: roadmap
   :END:
 
-There are some bugs and a lot of incomplete features. I had constructed
-a PyQt GUI for viewing the citations as a graph but that project was
-shelved due to lack of time. It can easily be repurposed and integrated
-with this project as a backend.
+  There are some bugs and a lot of incomplete features. I had constructed
+  a PyQt GUI for viewing the citations as a graph but that project was
+  shelved due to lack of time. It can easily be repurposed and integrated
+  with this project as a backend.
 
-Another very useful thing would be to have a JS based UI layer which can
-interact with Emacs as a daemon for people who aren't so comfortable
-with Emacs. We can parse =org= metadata (possibly with multiple threads)
-and render it with HTML. It would be much more useful to the broader
-scientific community.
+  Another very useful thing would be to have a JS based UI layer which can
+  interact with Emacs as a daemon for people who aren't so comfortable
+  with Emacs. We can parse =org= metadata (possibly with multiple threads)
+  and render it with HTML. It would be much more useful to the broader
+  scientific community.
 
-- Separate the python module and installation from PyPI
-- Refactoring to make it more modular and remove redundant code.
-- More comprehensive Documentation and Tutorial
-- Unit/Regression testing setup
-- Finish pending/incomplete features
-- A mind-map/network layer for visualization
-- UI layer on top for non emacs users as an optional module
+  - Separate the python module and installation from PyPI
+  - Refactoring to make it more modular and remove redundant code.
+  - More comprehensive Documentation and Tutorial
+  - Unit/Regression testing setup
+  - Finish pending/incomplete features
+  - Full text search with [[https://solr.apache.org/][Apache solr]]
+  - A mind-map/network layer for visualization
+  - UI layer on top for non emacs users as an optional module
 
 * License
   :PROPERTIES:
   :CUSTOM_ID: license
   :END:
 
-All the code in the repo is licensed under GPLv3. See LICENSE.md file in
-the repo.
+  All the code in the repo is licensed under GPLv3. See LICENSE.md file in
+  the repo.
 
-For all libraries being used along with this codebase, please refer to
-their licencses.
+  For all libraries being used along with this codebase, please refer to
+  their licencses.
 
-For any external modules or services (like Semantic Scholar or DBLP)
-being used, please see their individual terms of services.
+  For any external modules or services (like Semantic Scholar or DBLP)
+  being used, please see their individual terms of services.
