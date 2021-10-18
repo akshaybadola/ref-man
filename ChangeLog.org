@@ -148,3 +148,8 @@
    - Added variable ~ref-man-export-no-confirm-overwrite~
    - Mostly have migrated to independent ~pndconf~ (see [[https://github.com/akshaybadola/pndconf][pndconf]]). Need to change
      a few more things
+
+** [2021-10-18 Mon 13:53]
+   - Fixed issues with ~pndconf~ and bibtex citation processor.
+   - Added metadata extraction variables and hook ~ref-man-export-metadata-hook~.
+   - Cleaner ~ref-man-py~ url.

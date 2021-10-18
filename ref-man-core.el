@@ -726,7 +726,7 @@ and the entire process was very messy.  Parallel network calls in
 python are much easier and cleaner."
   ;; (setq ref-man--temp-ref nil)
   (let ((queries (mapcar 'car refs-list))
-        (url (format "http://localhost:%s/dblp" ref-man-py-server-port)))
+        (url (ref-man-py-url "dblp")))
     ;; ;; NOTE: For `ref-man--post-json-new' encode-func has to be provided
     ;; ;;       Not using for now
     ;; (encode-func json-encode-list))
@@ -2079,7 +2079,7 @@ Link is saved to URL property."
   "Fetch bibliography from an arxiv URL and return the buffer.
 This function uses arxiv api with python server as an intermediary."
   (let* ((arxiv-id (ref-man-url-to-arxiv-id url))
-         (bib-url (format "http://localhost:%s/arxiv?id=%s" ref-man-py-server-port arxiv-id)))
+         (bib-url (ref-man-py-url "arxiv" `(("id" . ,arxiv-id)))))
     (message "[ref-man] Fetching for arxiv-id %s" arxiv-id)
     (with-current-buffer
         (url-retrieve-synchronously bib-url)
@@ -2546,17 +2546,17 @@ citations.  Can be one of 'refs 'cites."
         (unless (org-at-heading-p)
           (outline-previous-heading))
         (let* ((idtype-id (ref-man--ss-id))
+               (opts `(("id_type" . ,(car idtype-id))
+                       ("id" . ,(cdr idtype-id))))
+               (opts (if update-on-disk
+                         (-concat opts '(("force" . "")))
+                       opts))
                (ss-data (when idtype-id
                           (message "[ref-man] Fetching Semantic Scholar Data for %s id: %s"
                                    (car idtype-id) (cdr idtype-id))
                           (with-current-buffer
                               (url-retrieve-synchronously
-                               (format "http://localhost:%s/semantic_scholar?id_type=%s&id=%s%s"
-                                       ref-man-py-server-port
-                                       (car idtype-id)
-                                       (cdr idtype-id)
-                                       (if update-on-disk "&force" ""))
-                               t)       ; silent
+                               (ref-man-py-url "semantic_scholar" opts) t) ; silent
                             (goto-char (point-min))
                             (forward-paragraph)
                             (json-read)))))
@@ -2660,14 +2660,14 @@ the heading."
         (org-entry-put (or pt (point)) prop val)))))
 
 
-(defun ref-man-search-semantic-scholar (search-string &optional insert-first &rest args)
+(defun ref-man-search-semantic-scholar (search-string &optional insert-first args)
   "Search Semantic Scholar for SEARCH-STRING.
 
-ARGS should be either alist which converts to valid json and or a
-json string itself.  The json object should correspond to
-Semantic Scholar Search api keywords, e.g.:
-\"{'fieldsOfStudy': ['computer-science'], 'yearFilter': {'max': 1995, 'min': 1990}}\"
-or, '((fieldsOfStudy . (computer-science)) (yearFilter (max . 1995) (min . 1990)))
+Optional ARGS should be an alist of which converts to valid json.
+The json object should correspond to Semantic Scholar Search api
+keywords, e.g.: \"{'fieldsOfStudy': ['computer-science'],
+'yearFilter': {'max': 1995, 'min': 1990}}\" or, '((fieldsOfStudy
+. (computer-science)) (yearFilter (max . 1995) (min . 1990)))
 
 As of now, by default INSERT-FIRST is set to t later in the code as
 pagination of results isn't supported yet."
@@ -2686,10 +2686,10 @@ pagination of results isn't supported yet."
       )
     ;; TODO: fetch page from python server and can select which entry to insert.
     ;;       Should use jinja or lisp template
-    (let* ((args (when args (string-join args "&")))
-           (url (concat (format "http://localhost:%s/semantic_scholar_search?q=%s"
-                                ref-man-py-server-port search-string)
-                        (if args (concat "&" args) "")))
+    (let* ((opts (if args
+                     (-concat `(("q" . ,search-string)) args)
+                   `(("q" . ,search-string))))
+           (url (ref-man-py-url "semantic_scholar_search" opts))
            (buf (if args (ref-man--post-json-synchronous url args)
                   (url-retrieve-synchronously url)))
            (result (with-current-buffer buf

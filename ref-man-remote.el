@@ -1,4 +1,4 @@
-;;; ref-man-remote.el --- Components for `ref-man' to work with remote servers, like mail and remote storage. ;;; -*- lexical-binding: t; -*-
+;;; ref-man-remote.el --- Components for `ref-man' to work with remote storage. ;;; -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2018,2019,2020,2021
 ;; Akshay Badola
@@ -6,7 +6,7 @@
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Time-stamp:	<Monday 02 August 2021 15:12:56 PM IST>
-;; Keywords:	pdfs, references, bibtex, org, eww
+;; Keywords:	remote storage, cloud, rclone
 
 ;; This file is *NOT* part of GNU Emacs.
 
@@ -26,13 +26,12 @@
 
 ;;; Commentary:
 ;;
-;; Components for interfacing remote servers like mail and remote
-;; storage.  Provides custom functions to use with `mu4e' to export `org-mode'
-;; buffers as mail and attach files as remote links automatically.
+;; Components for interfacing remote storage via `rclone' and `ref-man-py'
+;; module. This module helps in accessing a cache of local files to be shared
+;; and corresponding remote links generated with `rclone'.
 ;;
-;; Remote storage management requires rclone to be available.  See URL
-;; https://rclone.org/.  Not all remote servers may support generating public
-;; links.  Refer to rclone documentation.
+;; See URL https://rclone.org/ for details about `rclone'.  Not all remote
+;; servers may support generating public links.  Refer to `rclone' documentation.
 
 ;;; Code:
 
@@ -43,6 +42,7 @@
 
 (unless (featurep 'ref-man-util)
   (require 'ref-man-util))
+(require 'ref-man-py)
 
 (defcustom ref-man-remote-documents-dir ""
   "Remote rclone documents dir which will sync with `ref-man-documents-dir'.
@@ -88,8 +88,7 @@ Hash table used to sync wtih `ref-man-public-links-cache-file'.")
 
 (defun ref-man-remote-check-cache-updated ()
   "Check from python server if cache is updated."
-  (let* ((buf (url-retrieve-synchronously
-              (format "http://localhost:%s/cache_updated" ref-man-py-server-port) t))
+  (let* ((buf (url-retrieve-synchronously (ref-man-py-url "cache_updated") t))
          (buf-string (and buf (with-current-buffer buf (buffer-string)))))
     (cond ((string-match-p "updated cache with errors" buf-string)
            'updated-with-errors)
@@ -110,11 +109,10 @@ disk."
               (string-empty-p ref-man-remote-documents-dir))
     ;; Else, update first
     (let ((buf (url-retrieve-synchronously
-                (format "http://localhost:%s/update_links_cache?local_dir=%s&remote_dir=%s&cache_file=%s"
-                        ref-man-py-server-port
-                        ref-man-documents-dir
-                        ref-man-remote-documents-dir
-                        ref-man-public-links-cache-file)
+                (ref-man-py-url "update_links_cache"
+                                `(("local_dir" . ,ref-man-documents-dir)
+                                  ("remote_dir" . ,ref-man-remote-documents-dir)
+                                  ("cache_file" . ,ref-man-public-links-cache-file)))
                 t)))
       ;; NOTE: Timer not implemented
       ;; (setq ref-man-remote-cache-update-check-timer

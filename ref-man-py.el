@@ -83,6 +83,21 @@ on the system."
 ;; NOTE: Internal variables
 (defvar ref-man-py-external-process-pid nil)
 
+(defsubst ref-man-py-url (&optional path opts)
+  "Return `ref-man-py' url for python process.
+
+Optional PATH is the path after url to fetch.
+Optional OPTS is an alist of additional HTTP args to send."
+  (declare (pure t) (side-effect-free t))
+  (format "http://localhost:%s/%s%s"
+          ref-man-py-server-port
+          (or path "")
+          (or (and opts (concat "?"
+                                (mapconcat
+                                 (lambda (x) (format "%s=%s" (car x) (cdr x)))
+                                 opts "&")))
+              "")))
+
 (defun ref-man-py-create-venv (python path)
   "Create a new `ref-man' virtual env in directory PATH.
 The python executable to use is defined by PYTHON."
@@ -249,8 +264,7 @@ nil, `ref-man-py-data-dir' respectively by
   "Stop the python server by sending a shutdown command.
 This is sent via http and lets the server exit gracefully."
   (interactive)
-  (let ((buf (url-retrieve-synchronously
-              (format "http://localhost:%s/shutdown" ref-man-py-server-port))))
+  (let ((buf (url-retrieve-synchronously (ref-man-py-url "shutdown"))))
     (with-current-buffer buf
       (goto-char (point-min))
       (re-search-forward "\r?\n\r?\n")
@@ -267,8 +281,7 @@ This is sent via http and lets the server exit gracefully."
 (defun ref-man-py-server-reachable-p ()
   "Check if python server is reachable."
   (condition-case nil
-      (let ((buf (url-retrieve-synchronously
-                  (format "http://localhost:%s/version" ref-man-py-server-port) t)))
+      (let ((buf (url-retrieve-synchronously (ref-man-py-url "version") t)))
         (when buf
           (string-match-p "ref-man python server"
                           (with-current-buffer buf (buffer-string)))))

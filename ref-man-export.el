@@ -106,6 +106,11 @@ Should be an `alist' parseable by `yaml-encode'."
   :type 'alist
   :group 'ref-man)
 
+(defcustom ref-man-export-journal-args nil
+  "Extra journal specific arguments."
+  :type 'alist
+  :group 'ref-man)
+
 (defcustom ref-man-export-docproc-dir ""
   "Directory of docproc"
   :type 'directory
@@ -148,6 +153,16 @@ accordingly and must preserve the org buffer structure.
 The default value is
 `ref-man-replace-multiple-spaces-with-a-single-space' which is a
 clean up function replacing multiple spaces with a single space.")
+
+(defvar ref-man-export-metadata-hook '(ref-man-export-get-journal-metadata)
+  "Hook to run while exporting org properties as pandoc metadata.
+The functions in this hook should modify
+`ref-man-export-metadata' by appending to it an alist of any
+custom metadata extraction method.  See
+`ref-man-export-get-journal-metadata' for an example.")
+
+(defvar ref-man-export-metadata nil
+  "Variable to gather results of `ref-man-export-metadata-hook'.")
 
 (defcustom ref-man-export-pdflatex-env-vars ""
   "Environment variables for pdflatex."
@@ -283,7 +298,12 @@ be located and CSL-FILE is the Citation Style File."
         (blog-header ref-man-export-blog-yaml-template)
         (author ref-man-export-author-name))
     (pcase type
-      ((or 'html 'pdf 'both 'paper)
+      ((or 'html 'pdf 'both)
+       (format yaml-header title author
+               (if no-refs ""
+                 (ref-man-pandoc-bib-string bib-file))
+               mathjax-path csl-file))
+      ('paper
        (format yaml-header title author
                (if no-refs ""
                  (ref-man-pandoc-bib-string bib-file))
@@ -297,9 +317,12 @@ be located and CSL-FILE is the Citation Style File."
                      (downcase (or (ref-man-org-ask-to-set-property "BLOG_KEYWORDS")
                                    (ref-man-org-ask-to-set-property "BLOG_TAGS"))))))))
 
-(defun ref-man-export-bibtexs (bibtexs &optional tmp-bib-file no-gdrive)
+(defun ref-man-export-bibtexs (bibtexs citeproc &optional tmp-bib-file no-gdrive)
   "Export the references from BIBTEXS.
 BIBTEXS is a string of bibliography entries.
+
+CITEPROC is the citation processor to use.  Can be one of
+`bibtex' or `biblatex'.
 
 If optional TMP-BIB-FILE is given then write to that file.
 Default is to export the BIBTEXS string as yaml metadata which is
@@ -325,8 +348,9 @@ gdrive keys if present."
                (goto-char cur)
                (insert (replace-regexp-in-string
                         "^---\\|^nocite.*" ""
-                        (shell-command-to-string (format "%s -s -f biblatex -t markdown %s"
+                        (shell-command-to-string (format "%s -s -f %s -t markdown %s"
                                                          ref-man-pandoc-executable
+                                                         citeproc
                                                          temp-file))))
                (delete-file temp-file)
                (util/delete-blank-lines-in-region cur (point-max))
@@ -336,11 +360,23 @@ gdrive keys if present."
                (goto-char cur)
                (insert (replace-regexp-in-string
                         "^---\\|^nocite.*" ""
-                        (shell-command-to-string (format "%s -s -f biblatex -t markdown <<<'%s'"
+                        (shell-command-to-string (format "%s -s -f %s -t markdown <<<'%s'"
                                                          ref-man-pandoc-executable
+                                                         citeproc
                                                          (buffer-string)))))
                (util/delete-blank-lines-in-region cur (point-max))
                (buffer-substring-no-properties cur (point-max))))))))
+
+(defun ref-man-export-get-journal-metadata ()
+  "Extract keywords and standard metadata for journal."
+  (let ((props (org-entry-properties)))
+    (setq ref-man-export-metadata
+          (-concat ref-man-export-metadata
+                   `(("journal" . ,(a-get props "JOURNAL"))
+                     ("keywords" . ,(split-string (a-get props "KEYWORDS") ","))
+                     ("template" . ,(a-get props "TEMPLATE"))
+                     ("caption" . ,(a-get props "CAPTION")))
+                   (a-get ref-man-export-journal-args (a-get props "JOURNAL"))))))
 
 (defun ref-man-export-blog-no-urls (&optional buffer)
   (interactive)
@@ -492,6 +528,7 @@ with pandoc."
                           ref-man-export-csl-no-urls-file
                         ref-man-export-csl-urls-file))
                      (csl (a-get (ref-man-export-csl-files) (downcase csl)))))
+         (citeproc "biblatex")
          (mathjax-path ref-man-export-mathjax-dir)
          (pandocwatch "-m pndconf")
          ;; (pandocwatch (path-join docproc-dir "pandocwatch.py"))
@@ -523,7 +560,14 @@ with pandoc."
                        ("t" t)
                        ("nil" nil)
                        (_ ref-man-export-no-confirm-overwrite)))
-         abstract bibtexs refs-string)  ; had sections
+         (no-citeproc (pcase (org-entry-get (point) "NO_CITEPROC" nil t)
+                        ("t" "--no-citeproc")
+                        ("nil" "")
+                        (_ "")))
+         metadata abstract bibtexs refs-string)  ; had sections
+    (setq ref-man-export-metadata nil)
+    (run-hook-with-args 'ref-man-export-metadata-hook)
+    (setq metadata ref-man-export-metadata)
     (when (and (f-exists? md-file) (not no-confirm))
       (unless (y-or-n-p (format "The file with name %s exists.  Replace? "
                                 (f-filename md-file)))
@@ -543,15 +587,15 @@ with pandoc."
                 (setq abstract (buffer-substring-no-properties beg end)))
               (narrow-to-region end (point-max)))))
         (setq bibtexs (ref-man-export-parse-references type (a-get bib-no-warn-types type)))
-        (setq refs-string (ref-man-export-bibtexs bibtexs tmp-bib-file no-gdrive))
+        (setq refs-string (ref-man-export-bibtexs bibtexs citeproc tmp-bib-file no-gdrive))
         (when refs-string
           (setq yaml-header (concat (string-remove-suffix "---\n" yaml-header) refs-string "---\n")))
         (when abstract
           (setq yaml-header (concat (string-remove-suffix "---\n" yaml-header)
                                     "abstract: >\n" abstract "\n---\n")))
-        (when (and (eq type 'paper) ref-man-export-research-article-args)
+        (when (and (eq type 'paper))
           (setq yaml-header (concat (string-remove-suffix "---\n" yaml-header)
-                                    (yaml-encode ref-man-export-research-article-args)
+                                    (yaml-encode metadata)
                                     "\n---\n")))
         (goto-char (point-min))
         ;; NOTE: export to markdown in ref-man-export-temp-md-buf
@@ -593,19 +637,20 @@ with pandoc."
           (insert (concat yaml-header "\n"))
           (write-region (point-min) (point-max) md-file))))
     (unless (eq type 'blog)
-      (setq cmd (format "cd %s && %s %s -c %s --pandoc-path %s -ro --input-files %s -g %s %s"
+      (setq cmd (format "cd %s && %s %s -c %s %s --pandoc-path %s --templates-dir %s -ro --input-files %s -g %s %s"
                         docproc-dir
                         python
                         pandocwatch
                         config-file
+                        no-citeproc
                         ref-man-pandoc-executable
+                        ref-man-export-pandoc-templates-dir
                         md-file
                         (pcase type
                           ('both "html,pdf")
                           ('paper "pdf")
                           (_ type))
                         extra-opts))
-      (message "Running command %s" cmd)
       (let* ((process-environment (mapcar
                                    (lambda (x) (split-string x "="))
                                    process-environment))
@@ -618,6 +663,7 @@ with pandoc."
              case-fold-search)
         (with-current-buffer buf
           (erase-buffer)
+          (insert (format "Running command %s\n" cmd))
           (insert msg)
           (ansi-color-apply-on-region (point-min) (point-max))))
       (when tmp-bib-file
