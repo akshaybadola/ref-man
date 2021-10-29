@@ -3,7 +3,7 @@
 
 (package-file "ref-man.el")
 
-(depends-on "a" "0.1.1")
+;; (depends-on "a" "0.1.1")
 ;; NOTE: Removed util as cask git install dependency seems buggy
 (depends-on "util"
 	    :git "https://github.com/akshaybadola/emacs-util"

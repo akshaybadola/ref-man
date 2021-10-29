@@ -1,5 +1,6 @@
-Flask==1.1.2
-requests==2.24.0
-beautifulsoup4==4.9.1
-psutil==5.8.0
-git+https://github.com/akshaybadola/common-pyutil.git@master
+PyYAML>=5.4.0
+Flask>=1.1.1
+requests>=2.24.0
+beautifulsoup4>=4.9.1
+psutil>=5.8.0
+common-pyutil>=0.7.2

@@ -81,6 +81,8 @@
 (require 'time-stamp)
 (require 'url)
 (require 'xml)
+(require 'util)
+(require 'util/org "util-org")
 
 (require 'ref-man-util)
 (require 'ref-man-files)
@@ -90,7 +92,7 @@
 (defgroup ref-man nil
   "Bibliography Manager"
   :prefix "ref-man-"
-  :group 'org)
+  :group 'ref-man)
 
 (defcustom ref-man-data-root-dir (expand-file-name "~/.ref-man")
   "Root directory where ref-man data is stored."
@@ -3259,6 +3261,37 @@ property drawer as the URL property."
       (message "Not enough properties to parse as bibtex\ntitle: %s, author: %s, year: %s"
                title author year)
       nil)))
+
+(defun ref-man-org-download-pdf-links-in-notes ()
+  "Download PDF links in notes to designated directory.
+
+Notes are any given subtree with a specified storage directory.
+The pdfs are downloaded and the file links are marked as `(file here)'"
+  (save-excursion
+    (save-restriction
+      (let ((case-fold-search t)
+            links)
+        (org-narrow-to-subtree)
+        (goto-char (point-min))
+        (org-end-of-meta-data)
+        (while (re-search-forward "http.+?\\.pdf" nil t)
+          (push (list :beg (match-beginning 0)
+                      :end (match-end 0)
+                      :link (substring-no-properties (match-string 0)))
+                links))
+        (seq-do (lambda (pl)
+                  (let ((link (plist-get pl :link))
+                        (beg (plist-get pl :beg))
+                        (end (plist-get pl :end))
+                        file-link)
+                    ;; TODO: push to file links, perhaps parallel
+                    (setq file-link (wget-download link))
+                    (if file-link
+                        (replace-region-contents beg end
+                                                 (lambda (contents)
+                                                   (concat contents " " file-link)))
+                      (user-error "Error downloading link %s" file-link))))
+                links)))))
 
 (defun ref-man--check-fix-pdf-file-property ()
   (let* ((props (org-entry-properties))

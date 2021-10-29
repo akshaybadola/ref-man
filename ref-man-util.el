@@ -392,7 +392,7 @@ Performs inverse of `ref-man--replace-non-ascii'."
   "Replace multiple spaces with a single space unless indentation."
   (goto-char (point-min))
   (while (re-search-forward "[ \t]\\{2,\\}" nil t)
-    (unless (save-match-data (looking-back "^[ \t]+"))
+    (unless (save-match-data (looking-back "^[ \t]+" 1))
       (replace-match " "))))
 
 (defun ref-man-save-headings-before-pdf-file-open (arg)

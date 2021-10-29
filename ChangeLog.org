@@ -153,3 +153,9 @@
    - Fixed issues with ~pndconf~ and bibtex citation processor.
    - Added metadata extraction variables and hook ~ref-man-export-metadata-hook~.
    - Cleaner ~ref-man-py~ url.
+
+** [2021-10-29 Fri 09:22]
+   - Cleaner metadata extraction and hooks in ~ref-man-export-docproc-article~
+   - Changed yaml templates to alist in ~ref-man-export~
+   - Some changes to ~ref-man-url.el~ but need to fix the interface still.
+   - Added ~get_yaml~ endpoint to ~server.py~.

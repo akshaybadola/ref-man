@@ -10,4 +10,4 @@ default_headers: Dict[str, str] = {"accept": ACCEPT,
                                    "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
                                    "cache-control": "no-cache",
                                    "user-agent": USER_AGENT}
-__version__: str = "0.3.5"
+__version__: str = "0.3.6"

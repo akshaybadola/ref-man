@@ -1,13 +1,15 @@
 from typing import List, Dict, Optional, Tuple
 import os
 from pathlib import Path
+import re
+import operator
 import json
+
+import yaml
 import requests
 from flask import Flask, request, Response
 from werkzeug import serving
 
-import re
-import operator
 from bs4 import BeautifulSoup
 
 from common_pyutil.log import get_stream_logger
@@ -414,6 +416,11 @@ class Server:
             result = post_json_wrapper(request, dblp_fetch, _dblp_helper,
                                        self.batch_size, "DBLP", self.logger)
             return result
+
+        @app.route("/get_yaml", methods=["POST"])
+        def get_yaml():
+            data = request.json
+            return yaml.dump(data)
 
         @app.route("/shutdown")
         def shutdown():

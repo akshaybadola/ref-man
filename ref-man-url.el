@@ -167,15 +167,16 @@ localhost specified by this port."
   "Does the given URL contain a pdf to download."
   (and (ref-man-url-non-gscholar-url-p url)
        (cond ((string-match-p "arxiv.org" url)
-              (string-match-p "/pdf/" url))
+              (when (string-match-p "/pdf/" url) url))
              ((string-match-p "aaai.org" url)
-              (or (string-match-p "/download/" url)
-                  (string-match-p "ojs.aaai.org.+article/view/[0-9]+/[0-9]+" url)))
+              (when (or (string-match-p "/download/" url)
+                        (string-match-p "ojs.aaai.org.+article/view/[0-9]+/[0-9]+" url))
+                url))
              ((string-match-p "openreview.net" url)
-              (string-match-p "pdf" url))
+              (when (string-match-p "pdf" url) url))
              ((string-match-p "dl.acm.org" url)
-              (or (string-match-p "doi/pdf" url) (string-match-p "gateway.cfm" url)))
-             (t (string-match-p "\\.pdf$" url)))))
+              (when (string-match-p "doi/pdf" url) url))
+             (t (when (string-match-p "\\.pdf$" url) url)))))
 
 (defun ref-man-url-get-bibtex-link-from-nips-url  (url))
 (defun ref-man-url-get-bibtex-link-from-cvf-url  (url))
@@ -360,16 +361,10 @@ first pdf link from the buffer."
                  (replace-regexp-in-string "/paper/view/" "/paper/viewFile/"
                                            (ref-man-url-get-last-link-from-html-buffer buf))))))
         ((eq site 'acm)
-         (if (string-match-p "/doi/" url)
-             (replace-regexp-in-string "/doi/" "/doi/pdf/" url)
-           (let ((link (with-temp-shr-buffer
-                        buf
-                        (or (car (ref-man-web-get-all-links (current-buffer) nil nil "gateway"))
-                            (car (ref-man-web-get-all-links (current-buffer) nil nil "doi/pdf"))))))
-             (when link
-               (if (string-prefix-p "https://dl.acm.org/" link)
-                   link
-                 (url-join "https://dl.acm.org/" link))))))
+         (let ((link (ref-man-url-acm-pdf-link-helper-subr url)))
+           (if (string-match-p "/pdf/" link)
+               link
+             (ref-man-url-acm-pdf-link-helper url))))
         ((eq site 'cvf)
          (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
            (when link
@@ -417,6 +412,34 @@ first pdf link from the buffer."
                (if (string-match-p "^http:\\|^https:" link)
                    link
                  (ref-man-url-get-absolute-path url link)))))))
+
+(defun ref-man-url-acm-transform (link)
+  (when link
+    (if (string-prefix-p "https://dl.acm.org/" link)
+        link
+      (url-join "https://dl.acm.org/" link))))
+
+(defun ref-man-url-acm-pdf-link-helper-subr (url)
+  (pcase url
+    ((pred (string-match-p "/doi/abs/"))
+     (replace-regexp-in-string "/doi/abs/" "/doi/pdf/" url))
+    ((and (pred (string-match-p "/doi/")) (pred (not (string-match-p "/doi/abs/"))))
+     (replace-regexp-in-string "/doi/" "/doi/pdf/" url))
+    (_ url)))
+
+(defun ref-man-url-acm-pdf-link-helper-redirect (url buf &rest args)
+  (let ((link (ref-man-url-acm-pdf-link-helper-subr
+               (with-temp-shr-buffer
+                buf
+                (or (car (ref-man-web-get-all-links (current-buffer) nil nil "gateway"))
+                    (car (ref-man-web-get-all-links (current-buffer) nil nil "doi/pdf"))
+                    (car (ref-man-web-get-all-links (current-buffer) nil nil "doi/abs")))))))
+    link))
+
+(defun ref-man-url-acm-pdf-link-helper (url &rest args)
+  (ref-man-url-acm-transform
+   (or (ref-man-url-downloadable-pdf-url-p (ref-man-url-acm-pdf-link-helper-subr url))
+       (ref-man-url-acm-pdf-link-helper-redirect url))))
 
 ;; (defun ref-man-url-get-pdf-link (site url &optional callback cbargs)
 ;;   "Helper function to get a pdf link from URL and website SITE.
@@ -499,6 +522,11 @@ Return a '(site url) pair."
                best)
               (t (ref-man-url--sort-best-subroutine best)))))))
 
+;; FIXME: This fetches a url FIRST AND THEN tries to obtain if
+;;        `ref-man-url-get-pdf-link-helper' is used.
+;;
+;;        This is incorrect as for example a simple transform can sometimes
+;;        determine the PDF url.
 (defun ref-man-url-get-pdf-url-according-to-source (url &optional callback cbargs)
   "Fetch a PDF url according to te source URL.
 When optional CALLBACK and CBARGS is non nil, CALLBACK is called
@@ -516,7 +544,7 @@ Post which a HELPER function is determined which can obtain the
 PDF URL from that particular SITE (see `ref-man-url-get-pdf-link-helper').
 
 After which if an optional CALLBACK (with optional CBARGS) is
-given is it called on the PDF URL."
+given, it is called on the PDF URL."
   (when url
     (let* ((site (ref-man-url-get-site-from-url url))
            (helper (pcase site
@@ -524,6 +552,7 @@ given is it called on the PDF URL."
                      ('acl #'ref-man-url-acl-pdf-link-helper)
                      ('doi-cvpr #'ref-man-url-cvf-pdf-link-helper)
                      ('ieee #'ref-man-url-cvf-pdf-link-helper)
+                     ('acm #'ref-man-url-acm-pdf-link-helper)
                      (_ (-partial #'ref-man-url-get-pdf-link-helper site)))))
       (cond ((and helper (symbolp helper) callback)
              (let ((link (funcall helper url cbargs)))
