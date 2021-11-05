@@ -59,20 +59,14 @@ localhost specified by this port."
           (replace-in-string suffix ".pdf" "")
         suffix))))
 
+;; TODO: Unify arxiv functions url into a single one
 (defun ref-man-url-from-arxiv-id ()
   "Get url from arxivid extracted from org property drawer at point."
   (interactive)
   (if (eq major-mode 'org-mode)
       (let ((arxiv-id (pcase (or (org-entry-get (point) "ARXIVID")
                                  (org-entry-get (point) "EPRINT"))
-                        ((and val) val))
-                      ;; NOTE: Replaced with pcase
-                      ;; (cond ((org-entry-get (point) "ARXIVID")
-                      ;;        (org-entry-get (point) "ARXIVID"))
-                      ;;       ((org-entry-get (point) "EPRINT")
-                      ;;        (org-entry-get (point) "EPRINT"))
-                      ;;       (t nil))
-                      ))
+                        ((and val) val))))
         (when arxiv-id
           (if (called-interactively-p 'any)
               (progn
@@ -163,34 +157,39 @@ localhost specified by this port."
            (string-match-p "dl.acm.org" url)
            (string-match-p "openreview.net" url))))
 
-(defun ref-man-url-downloadable-pdf-url-p (url)
+(defun ref-man-url-downloadable-pdf-url-p (url &optional transform)
   "Does the given URL contain a pdf to download."
   (and (ref-man-url-non-gscholar-url-p url)
        (cond ((string-match-p "arxiv.org" url)
-              (when (string-match-p "/pdf/" url) url))
+              (if (string-match-p "/pdf/" url) url
+                (when transform
+                  (ref-man-url-arxiv-pdf-link-helper url))))
              ((string-match-p "aaai.org" url)
               (when (or (string-match-p "/download/" url)
                         (string-match-p "ojs.aaai.org.+article/view/[0-9]+/[0-9]+" url))
-                url))
+                url
+                (when transform nil)))
              ((string-match-p "openreview.net" url)
-              (when (string-match-p "pdf" url) url))
+              (if (string-match-p "pdf\\?" url) url
+                (when (and transform (string-match-p "forum\\?id" url))
+                  (replace-regexp-in-string "forum\\?id=" "pdf?id=" url))))
              ((string-match-p "dl.acm.org" url)
               (when (string-match-p "doi/pdf" url) url))
              (t (when (string-match-p "\\.pdf$" url) url)))))
 
-(defun ref-man-url-get-bibtex-link-from-nips-url  (url))
-(defun ref-man-url-get-bibtex-link-from-cvf-url  (url))
-(defun ref-man-url-get-bibtex-link-from-aaai-url  (url))
-(defun ref-man-url-get-bibtex-link-from-acm-url  (url))
-(defun ref-man-url-get-bibtex-link-from-openreview-url  (url))
-(defun ref-man-url-get-supplementary-url-from-doi  (url))
-(defun ref-man-url-get-supplementary-url-from-arxiv  (url))
-(defun ref-man-url-get-supplementary-url-from-acl  (url))
-(defun ref-man-url-get-supplementary-url-from-nips-url  (url))
-(defun ref-man-url-get-supplementary-url-from-cvf-url  (url))
-(defun ref-man-url-get-supplementary-url-from-aaai-url  (url))
-(defun ref-man-url-get-supplementary-url-from-acm-url  (url))
-(defun ref-man-url-get-supplementary-url-from-openreview-url (url))
+;; (defun ref-man-url-get-bibtex-link-from-nips-url  (url))
+;; (defun ref-man-url-get-bibtex-link-from-cvf-url  (url))
+;; (defun ref-man-url-get-bibtex-link-from-aaai-url  (url))
+;; (defun ref-man-url-get-bibtex-link-from-acm-url  (url))
+;; (defun ref-man-url-get-bibtex-link-from-openreview-url  (url))
+;; (defun ref-man-url-get-supplementary-url-from-doi  (url))
+;; (defun ref-man-url-get-supplementary-url-from-arxiv  (url))
+;; (defun ref-man-url-get-supplementary-url-from-acl  (url))
+;; (defun ref-man-url-get-supplementary-url-from-nips-url  (url))
+;; (defun ref-man-url-get-supplementary-url-from-cvf-url  (url))
+;; (defun ref-man-url-get-supplementary-url-from-aaai-url  (url))
+;; (defun ref-man-url-get-supplementary-url-from-acm-url  (url))
+;; (defun ref-man-url-get-supplementary-url-from-openreview-url (url))
 
 (defmacro with-temp-shr-buffer (buf &rest body)
   "Construct a temp `shr' buffer from url buffer BUF and execute BODY."
@@ -395,17 +394,18 @@ first pdf link from the buffer."
          (let* ((links (with-temp-shr-buffer buf
                                             (ref-man-web-get-all-links (current-buffer) t)))
                 (site-url (ref-man-url-get-best-pdf-url links))
-                (url (cond ((eq (car site-url) 'pdf)
-                            (cdr site-url))
-                           (site-url
-                            (condition-case nil
-                                (ref-man-url-get-pdf-link-helper (car site-url) (cdr site-url) nil)
+                (url (when site-url
+                       (cond ((eq (car site-url) 'pdf)
+                              (cdr site-url))
+                             ((car site-url)
+                              (condition-case nil
+                                  (ref-man-url-get-pdf-link-helper (car site-url) (cdr site-url) nil)
                                 (error (with-current-buffer
                                            (url-retrieve-synchronously (cdr site-url))
                                          (ref-man-url-get-pdf-link-helper
                                           (car site-url)
                                           (cdr site-url)
-                                          (current-buffer)))))))))
+                                         (current-buffer))))))))))
            url))
         (t (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
              (when link
@@ -513,14 +513,15 @@ Return a '(site url) pair."
                                                              cvf-old openreview ss doi))))
                            (ref-man-pairs-to-alist links)))
              (best (car links)))
-        (cond ((and (symbolp (car best))
-                    (listp (cdr best)))
-               (cons (car best)
-                     (cadr best)))
-              ((and (symbolp (car best))
-                    (stringp (cdr best)))
-               best)
-              (t (ref-man-url--sort-best-subroutine best)))))))
+        (and best
+             (cond ((and (symbolp (car best))
+                         (listp (cdr best)))
+                    (cons (car best)
+                          (cadr best)))
+                   ((and (symbolp (car best))
+                         (stringp (cdr best)))
+                    best)
+                   (t (ref-man-url--sort-best-subroutine best))))))))
 
 ;; FIXME: This fetches a url FIRST AND THEN tries to obtain if
 ;;        `ref-man-url-get-pdf-link-helper' is used.
@@ -571,34 +572,34 @@ given, it is called on the PDF URL."
                (funcall helper url buf)))
             (t nil)))))
 
-;; NOTE: This function currently is only used by `ref-man-try-fetch-and-store-pdf-in-org-entry'
-(defun ref-man-url-get-bib-according-to-source (url)
-  "Return a bibtex entry according to URL."
-  (when url
-    ;; NOTE: This how it could be if a cons of (url . buf-or-name) is given
-    ;; (when (and (listp buf-url) (ref-man--downloadable-bib-url-p (cdr url)))
-    ;;   (ref-man--get-bib-from-url-buf url)
-    ;;   )
-    (cond ((string-match-p "doi.org" url)
-           (ref-man-url-get-bibtex-link-from-doi url))
-          ((string-match-p "arxiv.org" url)
-           (ref-man-url-get-bibtex-link-from-arxiv url))
-          ((string-match-p "aclweb.org" url)
-           (concat (replace-regexp-in-string "/$" "" url) ".bib"))
-          ((string-match-p "aclanthology.info" url)
-           (cons 'url (concat "https://www.aclweb.org/anthology/"
-                              (upcase (car (last (split-string url "/")))) ".bib")))
-          ((string-match-p "papers.nips.cc\\|proceedings.neurips.cc" url)
-           (ref-man-url-get-bibtex-link-from-nips-url url))
-          ((string-match-p "openaccess.thecvf.com" url)
-           (ref-man-url-get-bibtex-link-from-cvf-url url))
-          ((string-match-p "aaai.org" url)
-           (ref-man-url-get-bibtex-link-from-aaai-url url))
-          ((string-match-p "dl.acm.org" url)
-           (ref-man-url-get-bibtex-link-from-acm-url url))
-          ((string-match-p "openreview.net" url)
-           (ref-man-url-get-bibtex-link-from-openreview-url url))
-          (t url))))
+;; ;; NOTE: This function currently is only used by `ref-man-try-fetch-and-store-pdf-in-org-entry'
+;; (defun ref-man-url-get-bib-according-to-source (url)
+;;   "Return a bibtex entry according to URL."
+;;   (when url
+;;     ;; NOTE: This how it could be if a cons of (url . buf-or-name) is given
+;;     ;; (when (and (listp buf-url) (ref-man--downloadable-bib-url-p (cdr url)))
+;;     ;;   (ref-man--get-bib-from-url-buf url)
+;;     ;;   )
+;;     (cond ((string-match-p "doi.org" url)
+;;            (ref-man-url-get-bibtex-link-from-doi url))
+;;           ((string-match-p "arxiv.org" url)
+;;            (ref-man-url-get-bibtex-link-from-arxiv url))
+;;           ((string-match-p "aclweb.org" url)
+;;            (concat (replace-regexp-in-string "/$" "" url) ".bib"))
+;;           ((string-match-p "aclanthology.info" url)
+;;            (cons 'url (concat "https://www.aclweb.org/anthology/"
+;;                               (upcase (car (last (split-string url "/")))) ".bib")))
+;;           ((string-match-p "papers.nips.cc\\|proceedings.neurips.cc" url)
+;;            (ref-man-url-get-bibtex-link-from-nips-url url))
+;;           ((string-match-p "openaccess.thecvf.com" url)
+;;            (ref-man-url-get-bibtex-link-from-cvf-url url))
+;;           ((string-match-p "aaai.org" url)
+;;            (ref-man-url-get-bibtex-link-from-aaai-url url))
+;;           ((string-match-p "dl.acm.org" url)
+;;            (ref-man-url-get-bibtex-link-from-acm-url url))
+;;           ((string-match-p "openreview.net" url)
+;;            (ref-man-url-get-bibtex-link-from-openreview-url url))
+;;           (t url))))
 
 (defun ref-man--shr-render-buffer-quiet (buffer buffer-name)
   "Display the HTML rendering of the current buffer."
@@ -627,26 +628,26 @@ given, it is called on the PDF URL."
          (when bib-url
            (replace-regexp-in-string "/bibtex/" "/bib2/" (concat bib-url ".bib"))))))))
 
-(defun ref-man-url-get-supplementary-url-according-to-source (url)
-  "Try and get url for supplementary material for given URL."
-  (when url
-    (cond ((string-match-p "doi.org" url)
-           (ref-man-url-get-supplementary-url-from-doi url))
-          ((string-match-p "arxiv.org" url)
-           (ref-man-url-get-supplementary-url-from-arxiv url))
-          ((string-match-p "aclweb.org" url)
-           (ref-man-url-get-supplementary-url-from-acl url))
-          ((string-match-p "papers.nips.cc\\|proceedings.neurips.cc" url)
-           (ref-man-url-get-supplementary-url-from-nips-url url))
-          ((string-match-p "openaccess.thecvf.com" url)
-           (ref-man-url-get-supplementary-url-from-cvf-url url))
-          ((string-match-p "aaai.org" url)
-           (ref-man-url-get-supplementary-url-from-aaai-url url))
-          ((string-match-p "dl.acm.org" url)
-           (ref-man-url-get-supplementary-url-from-acm-url url))
-          ((string-match-p "openreview.net" url)
-           (ref-man-url-get-supplementary-url-from-openreview-url url))
-          (t url))))
+;; (defun ref-man-url-get-supplementary-url-according-to-source (url)
+;;   "Try and get url for supplementary material for given URL."
+;;   (when url
+;;     (cond ((string-match-p "doi.org" url)
+;;            (ref-man-url-get-supplementary-url-from-doi url))
+;;           ((string-match-p "arxiv.org" url)
+;;            (ref-man-url-get-supplementary-url-from-arxiv url))
+;;           ((string-match-p "aclweb.org" url)
+;;            (ref-man-url-get-supplementary-url-from-acl url))
+;;           ((string-match-p "papers.nips.cc\\|proceedings.neurips.cc" url)
+;;            (ref-man-url-get-supplementary-url-from-nips-url url))
+;;           ((string-match-p "openaccess.thecvf.com" url)
+;;            (ref-man-url-get-supplementary-url-from-cvf-url url))
+;;           ((string-match-p "aaai.org" url)
+;;            (ref-man-url-get-supplementary-url-from-aaai-url url))
+;;           ((string-match-p "dl.acm.org" url)
+;;            (ref-man-url-get-supplementary-url-from-acm-url url))
+;;           ((string-match-p "openreview.net" url)
+;;            (ref-man-url-get-supplementary-url-from-openreview-url url))
+;;           (t url))))
 
 (defun ref-man-url-parse-cvf-venue (doi venue)
   (cond ((and doi (string-match ".*\\(ICCV\\|CVPR\\).*" doi))

@@ -159,3 +159,12 @@
    - Changed yaml templates to alist in ~ref-man-export~
    - Some changes to ~ref-man-url.el~ but need to fix the interface still.
    - Added ~get_yaml~ endpoint to ~server.py~.
+
+** [2021-11-05 Fri 08:59]
+   - Cleaned up ~ref-man-try-fetch-pdf-from-url~ and added
+     ~ref-man-fetch-pdf-functions~ which runs as a hook.
+   - ~ref-man-try-fetch-and-store-pdf-in-org-entry~ is also in the middle of
+     cleaning up and now checks for more urls including semanticscholar url.
+   - Added ~ref-man--check-fix-ss-url~.
+   - Commented out some unused functions in ~ref-man-url~
+   - Some naming changes

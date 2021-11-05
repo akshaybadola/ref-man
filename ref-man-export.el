@@ -100,8 +100,8 @@ Should be an `alist' parseable by `yaml-encode'."
   :type 'alist
   :group 'ref-man)
 
-(defcustom ref-man-export-docproc-dir ""
-  "Directory of docproc"
+(defcustom ref-man-export-output-dir ""
+  "Export output directory."
   :type 'directory
   :group 'ref-man)
 
@@ -544,7 +544,6 @@ REFS-STRING is references in yaml format."
 
 
 ;; TODO: Use a pndconf server instead
-;; TODO: Use the pndconf cmdline instead
 ;; TODO: Export can take a while and it would be better to do
 ;;       it in an async process.
 (defun ref-man-export-docproc-article (buffer type &optional no-urls no-gdrive with-toc no-cite)
@@ -566,9 +565,12 @@ See `ref-man-export-blog-extra-opts'.
 
 Optional non-nil NO-URLS means to not include URLs in generated
 bibliography, similar for NO-GDRIVE and gdrive links.  Default is
-to include both URLS and GDRIVE links.  Optional non-nil WITH-TOC
-generates a TOC from `org-export'.  Usually the TOC is generated
-with pandoc."
+to include both URLS and GDRIVE links.
+
+Optional non-nil WITH-TOC generates a TOC from `org-export'.
+Usually the TOC is generated with pandoc.
+
+When optional NO-CITE is non-nil, don't use CSL and citeproc."
   (let* ((org-export-with-broken-links 'mark) ; mark broken links and they'll be replaced with citations
          (org-export-with-clocks nil)
          (org-export-with-date nil)
@@ -587,7 +589,7 @@ with pandoc."
          (tmp-bib-file (unless (or (string= "2.14" (ref-man-pandoc-version))
                                    (string< "2.14" (ref-man-pandoc-version)))
                          (make-temp-file "ref-bib-" nil ".bib")))
-         (docproc-dir ref-man-export-docproc-dir)
+         (docproc-dir ref-man-export-output-dir)
          (config-file (path-join docproc-dir "config.ini"))
          (csl-file (pcase (org-entry-get (point) "CSL")
                      ('nil

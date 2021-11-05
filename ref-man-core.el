@@ -910,7 +910,8 @@ point after metadata, end is the point at end of subtree and
 has-body indicates if any text is present."
   (let* ((beg (point))
          (end (progn
-                (outline-next-heading)
+                (unless (org-at-heading-p)
+                  (outline-next-heading))
                 (point)))
          (has-body (not (string-empty-p
                          (string-trim
@@ -2771,7 +2772,7 @@ Only for `org-mode'."
              (message "[ref-man] Set buffer and point successfully."))
     (message "[ref-man] Not org mode")))
 
-(defun ref-man--get-org-buf-and-point (&optional org-buf org-point)
+(defun ref-man-org-get-buf-and-point (&optional org-buf org-point)
   "Get the correct org buffer and point for operations.
 When optional ORG-BUF and ORG-POINT are non-nil, they are given
 preference over global variables
@@ -2797,9 +2798,7 @@ given to the buffer with file `ref-man-org-links-file-path'."
 ARGS are a plist constitute the data for the link.
 
 :link LINK -- the uri of the link
-
 :link-text LINK-TEXT -- the text of the link, inserted as title/heading
-
 :metadata METADATA -- From Google Scholar, it's the line immediately after the title.
 
 Optional non-nil argument CURRENT specifies whether to update the
@@ -2811,7 +2810,7 @@ current headline.  Default is to insert a subheading."
       ;;                     (find-file-noselect ref-man-org-links-file-path)))))
       ;;    (org-point (or (and ref-man--org-gscholar-launch-buffer ref-man--org-gscholar-launch-point)
       ;;                   (with-current-buffer org-buf (point)))))
-      ((org-data (ref-man--get-org-buf-and-point))
+      ((org-data (ref-man-org-get-buf-and-point))
        (org-buf (plist-get org-data :org-buf))
        ;; NOTE: Not used
        ;; (org-point (plist-get org-data :org-point))
@@ -2910,7 +2909,34 @@ subtree will be updated later."
         ref-man--subtree-list))
 
 
-(defun ref-man-try-fetch-pdf-from-url (org-buf pt heading url pdf-url
+(defun ref-man-fetch-pdf-from-maybe-pdf-url (args)
+  "Fetch pdf from pdf-url if exists in :urls property of plist ARGS.
+If pdf-url doesn't exist then check if first non-nil `cdr' of
+:urls is a downloadable pdf url.  Fetch pdf if possible."
+  (let* ((urls (plist-get args :urls))
+         (url (or (a-get urls 'pdf-url)
+                  (cdr (-first #'cdr urls))))
+         (url (and url (ref-man-url-downloadable-pdf-url-p url t))))
+    (when url
+      (prog1 t (ref-man--fetch-from-pdf-url-new url args)))))
+
+(defun ref-man-try-fetch-pdf-after-redirect (args)
+  "Fetch pdf from one of the :urls property of plist ARGS after redirect."
+  (let ((url (cdr (-first #'cdr (plist-get args :urls)))))
+    (ref-man-url-get-pdf-url-according-to-source url #'ref-man--fetch-from-pdf-url-new args)))
+
+(defvar ref-man-fetch-pdf-functions
+  '(ref-man-fetch-pdf-from-maybe-pdf-url ref-man-try-fetch-pdf-after-redirect)
+  "Functions to fetch a PDF url and store in an org buffer.
+
+Each of the functions is called with a plist with keys:
+
+:URLS are all avaiable URLs in the org property drawer.
+:BUFFER is the buffer from which they were called.
+:POINT is the point in buffer.
+:HEADING is the heading of the subtree at point.")
+
+(defun ref-man-try-fetch-pdf-from-url (org-buf pt heading urls
                                                &optional retrieve-pdf retrieve-bib
                                                          retrieve-title storep)
   "Try and fetch pdf and bib entry from URL.
@@ -2921,8 +2947,8 @@ We Can only retrieve from specific sites.  See
 PT, HEADING, URL, PDF-URL are `point', org heading and url and
 pdf url in org entry properties respectively.
 
-Optional STOREP specifies
-whether to store the retrieved data to org file or not.
+Optional STOREP specifies whether to store the retrieved data to
+org file or not.
 
 If at least one of two optional arguments RETRIEVE-PDF or
 RETRIEVE-BIB are non-nil then the corresponding pdf and/or bibtex
@@ -2931,91 +2957,13 @@ buffer to insert the data is set by
 `ref-man--org-gscholar-launch-buffer'.
 
 RETRIEVE-TITLE has no effect at the moment."
-  (if (eq major-mode 'org-mode)
-      (progn
-        (when retrieve-pdf
-          (let (maybe-pdf-url)
-            (setq maybe-pdf-url (cond (pdf-url
-                                       (ref-man--fetch-from-pdf-url-new
-                                        pdf-url (list :buffer org-buf
-                                                      :point pt
-                                                      :heading heading))
-                                       pdf-url)
-                                      ((and url (ref-man-url-downloadable-pdf-url-p url))
-                                       (ref-man--fetch-from-pdf-url-new
-                                        url (list :buffer org-buf :point pt
-                                                  :heading heading))
-                                       url)
-                                      (t (ref-man-url-get-pdf-url-according-to-source
-                                          url #'ref-man--fetch-from-pdf-url-new
-                                          (list :buffer org-buf :point pt
-                                                :heading heading))
-                                         url)))
-            ;; FIXME: Subtree list needn't exist. Pass org heading (and point)
-            ;;        to fetch-from-pdf-url callback
-            (when storep
-              (ref-man--update-subtree-list maybe-pdf-url "fetching"))))
-        (when (and retrieve-bib (not storep)) ; don't try retrieve bib when storep
-          (message "[ref-man] NOT Retrieving bib entry"))
-        (when retrieve-title
-          ;; NOTE: Not worth it right now.
-          (message "[ref-man] Let's see if we can insert heading"))
-        (when (and (not retrieve-bib) (not retrieve-pdf))
-          (message "[ref-man] Nothing to do")))
-    (message "[ref-man] Not in org mode")))
-
-
-;; NOTE: The following comments and code were for additions to
-;;       `ref-man-try-fetch-pdf-from-url' however a lot of functionality from
-;;       that has been subsumed by semantic scholar routines. Headings, bibs can
-;;       be fetched from there and crossref via DOI is a more reliable source of
-;;       bibtex.
-;;
-;;       Of course the original pages are good sources but parsing all
-;;       of them may be overkill.
-;;
-;;       The reason they all were in one function was because I wanted to make
-;;       all the network calls simultaneously to avoid overhead.
-;;
-;;       SHOULD REWRITE all of this.
-
-
-;; CHECK: Curious thing is, pdf retrieval is async and bib retrieval isn't I
-;;        should make it uniform
-;; NOTE: Adding update heading also if heading is nil
-;; NOTE: This is only called by `ref-man-try-fetch-and-store-pdf-in-org-entry'
-;;
-;; FIXME: Can this bet `let'
-(defvar ref-man--fetched-url-title)
-(defvar ref-man--fetched-url-buffers nil
-  "Internal variable to hold fetched (url . buffer) pairs.")
-(defvar ref-man--fetching-url-buffers nil
-  "Internal variable to hold (url . buffer) pairs being fetched right now.")
-
-;; TODO: What if the buffer gets killed before the pdf/bib is fetched?
-(defun ref-man-try-fetch-pdf-from-url-alt (org-buf pt heading url pdf-url
-                                               &optional retrieve-pdf retrieve-bib
-                                                         retrieve-title storep)
-  "Try and fetch pdf and bib entry from URL.
-
-We Can only retrieve from specific sites.  See
-`ref-man-url-get-pdf-link-helper' for a list of supported sites.
-
-PT, HEADING, URL, PDF-URL are `point', org heading and url and
-pdf url in org entry properties respectively.
-
-Optional STOREP specifies
-whether to store the retrieved data to org file or not.
-
-If at least one of two optional arguments RETRIEVE-PDF or
-RETRIEVE-BIB are non-nil then the corresponding pdf and/or bibtex
-entry are/is fetched and stored if the option is given.  Org
-buffer to insert the data is set by
-`ref-man--org-gscholar-launch-buffer'.
-
-RETRIEVE-TITLE has no effect at the moment."
-
-  ;; NOTE: prefetch url
+  (util/check-mode 'org-mode "[ref-man]")
+  ;; NOTE: Code to prefetch url
+  ;;
+  ;;(defvar ref-man--fetched-url-buffers nil
+  ;;   "Internal variable to hold fetched (url . buffer) pairs.")
+  ;; (defvar ref-man--fetching-url-buffers nil
+  ;;   "Internal variable to hold (url . buffer) pairs being fetched right now.")
   ;;
   ;; (when url
   ;;   (let ((-url (ref-man-url-maybe-unproxy url)))
@@ -3028,103 +2976,34 @@ RETRIEVE-TITLE has no effect at the moment."
   ;;                          (push (cons -url (buffer-name (current-buffer)))
   ;;                                ref-man--fetched-url-buffers))
   ;;                   (list -url))))
-  (if (eq major-mode 'org-mode)
-      (progn
-        (when retrieve-pdf
-          ;; TEMP
-          ;;
-          ;; NOTE: I had written a subroutine for checking the file if it's a pdf but
-          ;;       it required opening the buffer in raw mode I think, which is not
-          ;;       ideal. Either have a shell command built in or use python or
-          ;;       something. python in most cases may be more platform independent.
-          ;;
-          ;; NOTE: Initial code for method to solve current issues
-          ;;       1. pdf-url may succeed
-          ;;       2. url and bib from url and pdf-url from url should not lead to
-          ;;          url being fetched multiple times
-          ;;       3. fetch-bib and fetch-pdf should happen in parallel
-          ;; Problem is that pdf download is with callback
-          ;; (defun ref-man-download-and-check (url-or-buffer)
-          ;;   )
-          ;; (let* ((downloaded (when (and pdf-url (ref-man-url-downloadable-pdf-url-p pdf-url))
-          ;;                      (ref-man-download-and-check pdf-url)))
-          ;;        (downloaded (if downloaded downloaded
-          ;;                      ;; Wait for buffer in `ref-man--fetched-url-buffers'
-          ;;                      (when (ref-man-url-downloadable-pdf-url-p url)
-          ;;                        (ref-man-download-and-check url))))
-          ;;        (downloaded (if downladed downloaded
-          ;;                      (ref-man-download-and-check
-          ;;                       (ref-man-url-get-pdf-url-according-to-source
-          ;;                        (a-get ref-man--fetched-url-buffers url))))))
-          ;;   downloaded)
-          ;; END TEMP
-          (let (maybe-pdf-url)
-            (setq maybe-pdf-url (cond (pdf-url
-                                       (ref-man--fetch-from-pdf-url-new
-                                        pdf-url (list :buffer org-buf
-                                                      :point pt
-                                                      :heading heading))
-                                       pdf-url)
-                                      ((and url (ref-man-url-downloadable-pdf-url-p url))
-                                       (ref-man--fetch-from-pdf-url-new
-                                        url (list :buffer org-buf :point pt
-                                                  :heading heading))
-                                       url)
-                                      (t (ref-man-url-get-pdf-url-according-to-source
-                                          url #'ref-man--fetch-from-pdf-url-new
-                                          (list :buffer org-buf :point pt
-                                                :heading heading))
-                                         url)))
-            ;; FIXME: Subtree list needn't exist. Pass org heading (and point)
-            ;;        to fetch-from-pdf-url callback
-            (when storep
-              (ref-man--update-subtree-list maybe-pdf-url "fetching")))
-          ;; (let ((maybe-pdf-url (or pdf-url (if (ref-man-url-downloadable-pdf-url-p url) url
-          ;;                                    (ref-man-url-get-pdf-url-according-to-source url)))))
-          ;;   (cond (maybe-pdf-url
-          ;;          (when storep
-          ;;            (push (list :url maybe-pdf-url :point (point)
-          ;;                        :heading (org-link-heading-search-string)
-          ;;                        :status "fetching")
-          ;;                  ref-man--subtree-list))
-          ;;          (ref-man--fetch-from-pdf-url maybe-pdf-url storep))
-          ;;         ((not maybe-pdf-url)
-          ;;          (if storep
-          ;;              (push (list :url maybe-pdf-url :point (point)
-          ;;                          :heading (org-link-heading-search-string)
-          ;;                          :status "NOT_PDF")
-          ;;                    ref-man--subtree-list)
-          ;;            (message "[ref-man] Browsing %s" url)
-          ;;            (eww-browse-url url)))
-          ;;         ((not url)
-          ;;          (if storep
-          ;;              (push (list :url url :point (point)
-          ;;                          :heading (org-link-heading-search-string)
-          ;;                          :status "BAD_URL")
-          ;;                    ref-man--subtree-list)
-          ;;            (message "[ref-man] Bad URL %s" url)))
-          ;;         (t (message "[ref-man--try-fetch-pdf-from-url] Some strange error occured. Check"))))
-          )
-        (when (and retrieve-bib (not storep)) ; don't try retrieve bib when storep
-          (message "[ref-man] NOT Retrieving bib entry")
-          ;; (message "[ref-man] Retrieving bib entry")
-          ;; (cond ((and url (ref-man-url-has-bib-url-p url))
-          ;;        (let ((bib-url (ref-man--try-get-bib-according-to-source url)))
-          ;;          (if bib-url
-          ;;              (ref-man-eww--browse-url bib-url nil ref-man--org-gscholar-launch-buffer)
-          ;;            (message "[ref-man] No bibtex URL in %s" url))))
-          ;;       ((not url)
-          ;;        (message "[ref-man] No URL given"))
-          ;;       ((and url (not (ref-man-url-has-bib-url-p url)))
-          ;;        (message "[ref-man] URL doesn't have a bib URL"))
-          ;;       (t (message "[ref-man] Some strange error occured for retrieve-bib in %s. Check" url)))
-          )
-        (when retrieve-title
-          ;; NOTE: Not worth it right now.
-          (message "[ref-man] Let's see if we can insert heading"))
-        (when (and (not retrieve-bib) (not retrieve-pdf))
-          (message "[ref-man] Nothing to do")))
-    (message "[ref-man] Not in org mode")))
+  (when retrieve-pdf
+    (let ((maybe-pdf-url (-first #'cdr urls))
+          (args (list :urls urls :buffer org-buf :point pt :heading heading)))
+      (run-hook-with-args-until-success 'ref-man-fetch-pdf-functions args)
+      ;; FIXME: Subtree list needn't exist. Pass org heading (and point)
+      ;;        to fetch-from-pdf-url callback
+      (when storep
+        (ref-man--update-subtree-list maybe-pdf-url "fetching"))))
+  (when (and retrieve-bib (not storep)) ; don't try retrieve bib when storep
+    ;; NOTE: Code to fetch bib entries
+    ;;
+    ;; (message "[ref-man] Retrieving bib entry")
+    ;; (cond ((and url (ref-man-url-has-bib-url-p url))
+    ;;        (let ((bib-url (ref-man--try-get-bib-according-to-source url)))
+    ;;          (if bib-url
+    ;;              (ref-man-eww--browse-url bib-url nil ref-man--org-gscholar-launch-buffer)
+    ;;            (message "[ref-man] No bibtex URL in %s" url))))
+    ;;       ((not url)
+    ;;        (message "[ref-man] No URL given"))
+    ;;       ((and url (not (ref-man-url-has-bib-url-p url)))
+    ;;        (message "[ref-man] URL doesn't have a bib URL"))
+    ;;       (t (message "[ref-man] Some strange error occured for retrieve-bib in %s. Check" url)))
+    (message "[ref-man] Retrieving bib entry not implemented"))
+  (when retrieve-title
+    ;; NOTE: Not worth it right now.
+    (message "[ref-man] Let's see if we can insert heading"))
+  (when (and (not retrieve-bib) (not retrieve-pdf))
+    (message "[ref-man] Nothing to do")))
 
 ;; FIXME: Although it works in principle, but for a large subtree it sort of
 ;;        hangs and the multithreading is not really that great in emacs.
@@ -3136,7 +3015,6 @@ RETRIEVE-TITLE has no effect at the moment."
 ;;        (add-text-properties begin end '(read-only t)))
 ;;        https://www.gnu.org/software/emacs/manual/html_node/elisp/Text-Properties.html#Text-Properties
 ;;        https://www.gnu.org/software/emacs/manual/html_node/elisp/Special-Properties.html#Special-Properties
-
 (defun ref-man-try-fetch-and-store-pdf-in-org-subtree-entries ()
   (interactive)
   (message "[ref-man] Fetching PDFs in subtree. Wait for completion...")
@@ -3199,17 +3077,18 @@ the current heading are excluded."
       (setq ref-man--point-max (point))
       (narrow-to-region ref-man--point-min ref-man--point-max))))
 
-(defun ref-man--check-heading-p ()
+(defun ref-man-check-heading-non-empty-p ()
+  "Check if the org heading a non empty string."
   (> (length (string-trim (substring-no-properties (org-get-heading t t t t)))) 0))
 
-(defun ref-man--check-fix-url-property ()
+(defun ref-man--check-fix-url-property (&optional props)
   "Fix the URL property in the property drawer.
 Make sure URL property exists in either property drawer or text
 and if no URL could be found return nil.  If no URL property
 exists, then first link from entry text is imported into the
 property drawer as the URL property."
   (save-excursion
-    (let* ((props (org-entry-properties))
+    (let* ((props (or props (org-entry-properties)))
            (url-prop (cdr (assoc "URL" props))))
       ;; Remove the url args. Would be useless to keep
       (when (and url-prop (string-match-p "?.*" url-prop)
@@ -3305,6 +3184,35 @@ The pdfs are downloaded and the file links are marked as `(file here)'"
       (org-delete-property "FILE_NAME"))
     pdf-file))
 
+
+(defun ref-man--check-fix-ss-url (&optional props)
+  "Replace all *_URL entries with SS_URL if they're of semanticscholar.org."
+  (let ((props (or props (org-entry-properties))))
+    (seq-do (lambda (url)
+              (let ((val (a-get props url)))
+                (when (and val
+                           (string-match-p "semanticscholar.org" val))
+                  (org-entry-put (point) "SS_URL" val)
+                  (org-entry-delete (point) url))))
+            '("URL" "ALT_URL")))
+  (org-entry-get (point) "SS_URL"))
+
+(defun ref-man-fetch-pdf-check-pdf-file (pdf-file urls)
+  "Check if pdf file already exists in heading.
+After checking the file return message for which url it matches.
+
+URLS is an alist of urls with the type of url as the key and url
+as the value."
+  (let* ((url-keys '(pdf-url-prop url-prop arxiv-url-prop alt-url-prop ss-url-prop))
+         (url (-first (lambda (x) (a-get urls x)) url-keys))
+         (url (a-get urls url))
+         (same (if (string= (replace-regexp-in-string "\\[\\|\\]" "" pdf-file)
+                            (ref-man-files-filename-from-url url))
+                   (s-lex-format "And is the same as URL ${url}")
+                 (s-lex-format "But is different from URL ${url}")))
+         (msg (s-lex-format "[ref-man] PDF already exists. ${same}")))
+    msg))
+
 ;; TODO: Link (arxiv, ACL, DOI) to SS_IDs for papers also, minimize redundancy
 ;;       NOTE: Perhaps maintain a python cache for that
 ;; TODO: I have not incorporated dblp extracted entries as they refer
@@ -3323,16 +3231,22 @@ Optional INTERACTIVEP is to check the `interactive' call."
       (let* ((buf (current-buffer))
              (pt (point))
              (heading (org-get-heading t t t t))
-             (props (org-entry-properties))
+             (ss-url-prop (ref-man--check-fix-ss-url))
              (url-prop (ref-man--check-fix-url-property))
+             (props (org-entry-properties))
              (pdf-url-prop (a-get props "PDF_URL"))
              ;; CHECK: Why're alt-url and arxiv-url not used?
              (alt-url-prop (a-get props "ALT_URL"))
-             (arxiv-url-prop (a-get props "ARXIV_URL"))
+             (arxiv-url-prop (or (a-get props "ARXIV_URL") (ref-man-url-from-arxiv-id)))
              (ssidtype-id (ref-man--ss-id))
              (pdf-file (ref-man--check-fix-pdf-file-property))
              (bib-prop (ref-man-parse-bib-property-key))
-             (headingp (ref-man--check-heading-p))
+             (headingp (ref-man-check-heading-non-empty-p))
+             (urls `((url-prop . ,url-prop)
+                     (pdf-url-prop . ,pdf-url-prop)
+                     (alt-url-prop . ,alt-url-prop)
+                     (arxiv-url-prop . ,arxiv-url-prop)
+                     (ss-url-prop . ,ss-url-prop)))
              retrieve-bib retrieve-pdf retrieve-title
              (msg-str ""))
         (when ssidtype-id
@@ -3353,23 +3267,20 @@ Optional INTERACTIVEP is to check the `interactive' call."
         ;;       We can also try them in sequence
         (setq msg-str
               (concat msg-str
-                      (cond ((and pdf-file (or pdf-url-prop url-prop))
-                             (concat "[ref-man] PDF already exists."
-                                     (if (string= (replace-regexp-in-string "\\[\\|\\]" "" pdf-file)
-                                                  (ref-man-files-filename-from-url (or pdf-url-prop url-prop)))
-                                         " And is the same as URL"
-                                       (format " But is different from URL [%s]"
-                                               (ref-man-files-filename-from-url (or pdf-url-prop url-prop))))))
-                            ((and pdf-file (not (or pdf-url-prop url-prop)))
+                      (cond ((and pdf-file (-any #'cdr urls))
+                             ;; (concat "[ref-man] PDF already exists."
+                             ;;         (if (string= (replace-regexp-in-string "\\[\\|\\]" "" pdf-file)
+                             ;;                      (ref-man-files-filename-from-url (or pdf-url-prop url-prop)))
+                             ;;             " And is the same as URL"
+                             ;;           (format " But is different from URL [%s]"
+                             ;;                   (ref-man-files-filename-from-url (or pdf-url-prop url-prop)))))
+                             (ref-man-fetch-pdf-check-pdf-file pdf-file urls))
+                            ((and pdf-file (not (-any #'cdr urls)))
                              "[ref-man] PDF exists, but no URL! What to do?!!")
-                            ((and (not pdf-file) (or pdf-url-prop url-prop))
+                            ((and (not pdf-file) (-any #'cdr urls))
                              (setq retrieve-pdf t)
                              "[ref-man] No pdf file in properties. Will fetch PDF from URL")
-                            ((ref-man-url-from-arxiv-id)
-                             (setq url-prop (ref-man-url-from-arxiv-id))
-                             (setq retrieve-pdf t)
-                             "[ref-man] Will fetch PDF file from Arxiv")
-                            ((and (not pdf-file) (not (or pdf-url-prop url-prop)))
+                            ((and (not pdf-file) (not (-any #'cdr urls)))
                              "[ref-man] Nothing to be done here for pdf file"))
                       "\n[ref-man] "
                       ;; NOTE: Check for bibtex also
@@ -3384,7 +3295,7 @@ Optional INTERACTIVEP is to check the `interactive' call."
                             ((and bib-prop (not (string= bib-prop (cdr (assoc "CUSTOM_ID" props)))))
                              (format "Bib in properties, but different from key {%s}. Check!!" bib-prop)))
                       "\n[ref-man] "
-                      (cond ((and headingp url-prop)
+                      (cond ((and headingp (-any #'cdr urls))
                              (setq retrieve-title nil)
                              "Heading exists!")
                             ((and (not headingp) url-prop)
@@ -3396,8 +3307,9 @@ Optional INTERACTIVEP is to check the `interactive' call."
         (when interactivep
           (message msg-str))
         (when (or retrieve-pdf retrieve-bib)
-          (ref-man-try-fetch-pdf-from-url buf pt heading url-prop pdf-url-prop retrieve-pdf
-                                          retrieve-bib retrieve-title interactivep)))
+          (ref-man-try-fetch-pdf-from-url buf pt heading urls
+                                          retrieve-pdf retrieve-bib retrieve-title
+                                          interactivep)))
     (message "[ref-man] Not in org-mode") nil))
 
 ;; FIXED: Since the retrieval is now async, if I move to another
