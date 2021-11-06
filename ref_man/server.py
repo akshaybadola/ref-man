@@ -1,9 +1,9 @@
 from typing import List, Dict, Optional, Tuple
-import os
-from pathlib import Path
-import re
-import operator
 import json
+import operator
+import os
+import re
+from pathlib import Path
 
 import yaml
 import requests

@@ -168,3 +168,7 @@
    - Added ~ref-man--check-fix-ss-url~.
    - Commented out some unused functions in ~ref-man-url~
    - Some naming changes
+
+** [2021-11-06 Sat 10:13]
+   - Fixed some regression errors in abstract insertion, text bounds and
+     semantic scholar display functions

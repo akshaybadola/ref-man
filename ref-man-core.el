@@ -893,14 +893,27 @@ buffer with that filename."
       (goto-char (util/org-get-tree-prop "DOC_ROOT"))
     (outline-up-heading 1)))
 
-(defun ref-man-org-end-of-meta-data ()
-  "Go to end of all drawers and other metadata."
-  (let ((pt (ref-man-org-consolidate-drawers)))
-    (org-end-of-meta-data)
-    (if pt
-        (goto-char (max (point) pt))
-      ;; If no metadata just insert new line
-      (insert "\n"))))
+(defun ref-man-org-end-of-meta-data (&optional no-consolidate)
+  "Go to end of all drawers and other metadata.
+With optional non-nil NO-CONSOLIDATE, do not consolidate the
+drawers into a contiguous chunk.  Default is to do so."
+  (save-restriction
+    (org-narrow-to-subtree)
+    (goto-char (point-min))
+    (let* (matches
+           (pt (if no-consolidate
+                   (condition-case nil
+                       (while (re-search-forward "^ +:END: *$")
+                         (push t matches))
+                     (+ 1 (point))
+                     (error (if matches (+ 1 (point)) nil)))
+                 (ref-man-org-consolidate-drawers))))
+      (if pt
+          (goto-char (max (point) pt (point-at-eol)))
+        ;; If no metadata just insert new line
+        (when (org-at-heading-p)
+          (goto-char (point-at-eol)))
+        (insert "\n")))))
 
 (defun ref-man-org-text-bounds ()
   "Return bounds of text body if present in org subtree.
@@ -908,15 +921,16 @@ buffer with that filename."
 Return value is a triple of '(beg end has-body) where beg is the
 point after metadata, end is the point at end of subtree and
 has-body indicates if any text is present."
-  (let* ((beg (point))
-         (end (progn
-                (unless (org-at-heading-p)
-                  (outline-next-heading))
-                (point)))
-         (has-body (not (string-empty-p
-                         (string-trim
-                          (buffer-substring-no-properties beg end))))))
-    (list beg end has-body)))
+  (save-excursion
+    (let* ((beg (or (ref-man-org-end-of-meta-data t) (point)))
+           (end (progn
+                  (unless (org-at-heading-p)
+                    (outline-next-heading))
+                  (point)))
+           (has-body (not (string-empty-p
+                           (string-trim
+                            (buffer-substring-no-properties beg end))))))
+      (list beg end has-body))))
 
 (defun ref-man-org-insert-abstract (abs &optional buf keep-current)
   "Insert abstract as text in entry after property drawer if it exists.
@@ -927,20 +941,24 @@ delete."
   (unless buf (setq buf (current-buffer)))
   (with-current-buffer buf
     (ref-man-org-end-of-meta-data)
-    (pcase-let ((`(,beg ,end ,has-body) (ref-man-org-text-bounds)))
-      (unless keep-current
-        (when (not (= beg end))
-          (delete-region beg (- end 1))))
-      (goto-char beg)
-      (insert (replace-regexp-in-string "\n" "" abs))
-      (when (and has-body keep-current)
-        (insert "\n"))
-      (goto-char beg)
-      (org-indent-line)
-      (fill-paragraph)
-      (forward-paragraph)
-      (when (org-at-heading-p)
-        (backward-char)))))
+    (pcase-let* ((`(,beg ,end ,has-text) (ref-man-org-text-bounds))
+                 (text (and has-text (buffer-substring-no-properties beg end)))
+                 (splits (and text (-remove #'string-empty-p (split-string text "^ +- "))))
+                 (level (org-current-level)))
+      (unless (-any (lambda (x) (string-match-p "^abstract: " x)) splits)
+        (unless keep-current
+          (when (not (= beg end))
+            (delete-region beg (- end 1))))
+        (goto-char beg)
+        (insert (make-string (1+ level) ? ) "- Abstract: "
+                (replace-regexp-in-string "\n" "" abs))
+        (insert "\n")
+        (goto-char beg)
+        (org-indent-line)
+        (fill-paragraph)
+        (forward-paragraph)
+        (when (org-at-heading-p)
+          (backward-char))))))
 
 (defun ref-man--org-bibtex-write-top-heading-from-assoc (entry)
   "Generate the top level org entry for the results org buffer.
@@ -1049,7 +1067,8 @@ org writing functions."
       (org-set-property "BTYPE" "article"))))
 
 ;; TODO: Rename this properly
-(defun ref-man--org-bibtex-write-ref-from-ss-ref (entry &optional ignore-errors update-current)
+(defun ref-man--org-bibtex-write-ref-from-ss-ref (entry &optional ignore-errors
+                                                        update-current no-abstract)
   "Generate an org entry from data fetched from Semantic Scholar.
 ENTRY is an alist of symbols cons.  Optional IGNORE-ERRORS is in
 case error occurs while parsing the org properties as bibtex.
@@ -1063,27 +1082,17 @@ after current."
     (unless update-current
       (org-insert-heading-after-current))
     (org-edit-headline (a-get entry 'title))
-    (let* ((pblock (org-get-property-block))
-           (text-bounds (and pblock (save-excursion
-                                      (list (progn (goto-char (cdr pblock))
-                                                   (end-of-line)
-                                                   (point))
-                                            (progn (outline-next-heading)
-                                                   (- (point) 1))))))
-           (text (and text-bounds (apply #'buffer-substring-no-properties text-bounds)))
-           (splits (and text (split-string text "^ +- "))))
-      ;; NOTE: - Authors on the second split implies abstract already present
-      (when (and (not (and splits (string-prefix-p "Authors" (nth 1 splits))))
-                 (a-get entry 'abstract))
-        (ref-man-org-insert-abstract (a-get entry 'abstract) nil t)))
     ;; FIXME: beg is same as current point
+    (when (and (not no-abstract) (a-get entry 'abstract))
+      (ref-man-org-insert-abstract (a-get entry 'abstract) nil t))
     (pcase-let ((`(,beg ,_ ,has-text) (ref-man-org-text-bounds))
                 (author-str (mapconcat (lambda (x)
                                          (a-get x 'name))
                                        (a-get entry 'authors) ", ")))
       (goto-char beg)
       (unless has-text
-        (insert "\n")
+        (when (org-at-heading-p)
+          (insert "\n"))
         (org-indent-line)
         (insert (format "- Authors: %s" author-str))
         (org-insert-item)
@@ -1138,7 +1147,8 @@ after current."
         (kill-line))
       (insert (cdr (assoc 'title entry))))))
 
-(defun ref-man--org-bibtex-write-ref-from-assoc (entry &optional ignore-errors)
+(defun ref-man--org-bibtex-write-ref-from-assoc (entry &optional ignore-errors
+                                                       update-current no-abstract)
   "Write an org entry from an alist ENTRY with string cons'es.
 Optional non-nil IGNORE-ERRORS is unused to conform with all the
 org writing functions."
@@ -1148,7 +1158,7 @@ org writing functions."
     (insert (cdr (assoc "title" entry)))
     (insert "\n")
     (org-indent-line)
-    (when (assoc "abstract" entry)
+    (when (and (not no-abstract) (assoc "abstract" entry))
         (insert (cdr (assoc "abstract" entry)))
         (fill-paragraph)
         (insert "\n")
@@ -1167,7 +1177,8 @@ org writing functions."
     (org-set-property "CUSTOM_ID" key)
     (org-set-property "BTYPE" "article")))
 
-(defun ref-man--org-bibtex-write-ref-from-plist (entry &optional ignore-errors)
+(defun ref-man--org-bibtex-write-ref-from-plist (entry &optional ignore-errors
+                                                       update-current no-abstract)
   "Write an org entry from an plist ENTRY.
 Optional non-nil IGNORE-ERRORS is unused to conform with all the
 org writing functions."
@@ -1175,7 +1186,7 @@ org writing functions."
   (insert (cdr (assoc :title entry)))
   (insert "\n")
   (org-indent-line)
-  (when (assoc :abstract entry)
+  (when (and (not no-abstract) (assoc :abstract entry))
     (insert (cdr (assoc :abstract entry)))
     (fill-paragraph)
     (insert "\n")
@@ -1232,7 +1243,8 @@ org writing functions."
 ;;     (org-set-property "CUSTOM_ID" key)
 ;;     (org-set-property "BTYPE" "article")))
 
-(defun ref-man--org-bibtex-write-heading-from-bibtex (entry &optional ignore-errors)
+(defun ref-man--org-bibtex-write-heading-from-bibtex (entry &optional ignore-errors
+                                                            update-current no-abstract)
   "Write an org entry from an alist ENTRY.
 The alist is generated from `bibtex-parse-entry', probably from a
 bibtex buffer.  Optional non-nil IGNORE-ERRORS is unused to
@@ -1242,7 +1254,7 @@ conform with all the org writing functions."
   (insert "\n")
   ;; from where do I get the abstract?
   ;; assuming abstract is in the bib entry
-  (when (assoc "abstract" entry)
+  (when (and (not no-abstract) (assoc "abstract" entry))
       (insert (ref-man--fix-curly (cdr (assoc "abstract" entry))))
       (org-indent-line)
       (fill-paragraph))
@@ -2138,7 +2150,7 @@ Return a cons of `id-type' and `id'.  Possible values for
                    (t nil)))))
         (t nil)))
 
-(defun ref-man--insert-refs-from-seq (data name seqtype &optional ignore-errors)
+(defun ref-man--insert-refs-from-seq (data name seqtype &optional ignore-errors no-abstract)
   "Insert references from a given sequence at cursor.
 DATA is json-data from semantic scholar.  NAME is the org heading
 that will be generated.
@@ -2160,17 +2172,6 @@ happen while inserting references in the buffer."
                           ((eq seqtype 'bibtex)
                            #'ref-man--org-bibtex-write-heading-from-bibtex)
                           (t nil))))
-    ;; (seq-do (lambda (ref)
-    ;;           (funcall write-func ref ignore-errors))
-    ;;         data)
-    ;; (org-insert-heading-respect-content)
-    ;; (org-demote)
-    ;; (outline-up-heading 1)
-    ;; (forward-line)
-    ;; (kill-line)
-    ;; (delete-blank-lines)
-    ;; (outline-previous-heading)
-
     (if (not write-func)
         (message "[ref-man] Illegal seqtype %s" seqtype)
       (when name
@@ -2178,24 +2179,34 @@ happen while inserting references in the buffer."
       (org-insert-heading-respect-content)
       (org-demote)
       (seq-do (lambda (ref)
-                (funcall write-func ref ignore-errors))
+                (funcall write-func ref ignore-errors nil no-abstract))
               data)
       (outline-up-heading 1)
       (forward-line)
       (kill-line)
       (delete-blank-lines)
-      (outline-previous-heading))
-))
+      (outline-previous-heading))))
 
 (defun ref-man-insert-ss-data-subr (ss-data &optional buf where ignore-errors only
                                             no-abstract current)
   "Insert Semantic Scholar Data SS-DATA into an org buffer.
 
-If optional BUF is given then that is the target buffer, else
-defaults to CURRENT-BUFFER.  Optional WHERE specifies at which
-point in buffer to insert the data.  Defaults to (point).  With
-optional IGNORE-ERRORS non-nil, ignore any errors that may happen
+SS-DATA is an alist of a paper details with references and
+citations. The heading is inserted first for the paper, then
+abstract and then references and citations. Rest of metadata is
+not inserted.  The function accepts following optional arguments:
+
+BUF is the target buffer, defaults to `current-buffer'.
+
+WHERE specifies the point at which to insert the data.  Defaults to `point'
+
+IGNORE-ERRORS if non-nil, indicates to ignore any errors that may happen
 while inserting references in the buffer.
+
+NO-ABSTRACT if non-nil, do not insert abstract at the top heading.
+
+CURRENT specifies to update current heading instead of creating a
+new heading.
 
 The function assumes that it is at an org heading and inserts abstract
 following the property drawer for the heading and references and
@@ -2206,19 +2217,24 @@ citations after that."
   (unless no-abstract
     (let ((abs (a-get ss-data 'abstract)))
       (when abs (ref-man-org-insert-abstract abs buf))))
+  ;; Delete empty lines from here till end
+  ;; They should all be empty lines
+  (when (= (point) (point-at-bol))
+    (backward-char))
+  (delete-region (point) (point-max))
   (unless current
     (org-insert-heading-respect-content))
   (org-demote)                          ; demote only once
   (pcase only
     ('refs (ref-man--insert-refs-from-seq
-            (a-get ss-data 'references) "references" 'ss ignore-errors))
+            (a-get ss-data 'references) "references" 'ss ignore-errors t))
     ('cites (ref-man--insert-refs-from-seq
-             (a-get ss-data 'citations) "citations" 'ss ignore-errors))
+             (a-get ss-data 'citations) "citations" 'ss ignore-errors t))
     (_ (ref-man--insert-refs-from-seq
-        (a-get ss-data 'references) "references" 'ss ignore-errors)
+        (a-get ss-data 'references) "references" 'ss ignore-errors t)
        (org-insert-heading-respect-content)
        (ref-man--insert-refs-from-seq
-        (a-get ss-data 'citations) "citations" 'ss ignore-errors)))
+        (a-get ss-data 'citations) "citations" 'ss ignore-errors t)))
   (outline-up-heading 1)
   (org-hide-block-all))
 
