@@ -172,3 +172,8 @@
 ** [2021-11-06 Sat 10:13]
    - Fixed some regression errors in abstract insertion, text bounds and
      semantic scholar display functions
+
+** [2021-11-13 Sat 10:15]
+   - Bug fixes and enhancements in ~ref-man-end-of-meta-data~
+   - Some other fixes to export and py module.
+   - Added ~download_cvf_page_and_update_soups~ in server.py

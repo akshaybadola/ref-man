@@ -45,7 +45,7 @@
 (require 'util)
 (require 'ox)
 (require 'yaml)
-; (require 'ref-man-core)
+(require 'ref-man-core)
 
 (defcustom ref-man-export-blog-dir (expand-file-name "~/.ref-man/blog/")
   "Directory where the org files corresponding to documents will be stored."
@@ -382,10 +382,8 @@ TYPE has to be 'paper for this hook to run."
         (org-narrow-to-subtree)
         (let ((props (org-entry-properties)))
           (pcase-let* ((`(,root ,before-refs) (ref-man-org-get-bounds-before-references))
-                       (`(,beg ,end ,has-body) (progn
-                                                 (goto-char root)
-                                                 (ref-man-org-end-of-meta-data)
-                                                 (ref-man-org-text-bounds))))
+                       (`(,beg ,end ,has-body) (progn (goto-char root)
+                                                      (ref-man-org-text-bounds))))
             (when has-body
               (setq ref-man-export-metadata
                     (a-assoc ref-man-export-metadata

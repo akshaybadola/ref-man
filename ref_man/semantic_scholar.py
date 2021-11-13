@@ -178,8 +178,6 @@ class SemanticSearch:
                     if cmd and ("google-chrome" in cmd[0] or "chromium" in cmd[0]):
                         check_flag = True
                         break
-                if cmd:
-                    print(f"Process {cmd[0]} found.")
             except Exception as e:
                 print(e)
             if check_flag and cmd:

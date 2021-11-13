@@ -3,7 +3,7 @@ import sys
 import argparse
 
 
-from .const import __version__
+from . import __version__
 
 
 def main():

@@ -88,6 +88,7 @@
 (require 'ref-man-files)
 (require 'ref-man-url)
 (require 'ref-man-web)
+(require 'ref-man-py)
 
 (defgroup ref-man nil
   "Bibliography Manager"
@@ -893,27 +894,39 @@ buffer with that filename."
       (goto-char (util/org-get-tree-prop "DOC_ROOT"))
     (outline-up-heading 1)))
 
-(defun ref-man-org-end-of-meta-data (&optional no-consolidate)
+(defun ref-man-org-end-of-meta-data (&optional no-consolidate no-newline)
   "Go to end of all drawers and other metadata.
 With optional non-nil NO-CONSOLIDATE, do not consolidate the
 drawers into a contiguous chunk.  Default is to do so."
   (save-restriction
     (org-narrow-to-subtree)
-    (goto-char (point-min))
-    (let* (matches
-           (pt (if no-consolidate
-                   (condition-case nil
-                       (while (re-search-forward "^ +:END: *$")
-                         (push t matches))
-                     (+ 1 (point))
-                     (error (if matches (+ 1 (point)) nil)))
-                 (ref-man-org-consolidate-drawers))))
-      (if pt
-          (goto-char (max (point) pt (point-at-eol)))
-        ;; If no metadata just insert new line
-        (when (org-at-heading-p)
-          (goto-char (point-at-eol)))
-        (insert "\n")))))
+    (let ((beg (point-min))
+          (end (progn (outline-next-heading) (- (point) 1))))
+      (narrow-to-region beg end)
+      (let* (matches
+             (pt-end-metadata (cond (no-consolidate
+                                     (goto-char (point-min))
+                                     (while (re-search-forward "^ +:END: *$" nil t)
+                                       (push t matches))
+                                     (if matches
+                                         (+ 1 (point))
+                                       (goto-char (point-min))
+                                       (point-at-eol)
+                                       (unless no-newline (insert "\n"))
+                                       (point)))
+                                    (t (ref-man-org-consolidate-drawers))))
+             (end (progn (goto-char (point-min))
+                         (end-of-line)
+                         (or (when (re-search-forward "\\*+ .+" nil t)
+                               (- (point-at-bol) 1))
+                             (point-max)))))
+        (if pt-end-metadata
+            (goto-char pt-end-metadata)
+          (goto-char end)
+          (when (org-at-heading-p)
+            (unless no-newline
+              (end-of-line)
+              (insert "\n"))))))))
 
 (defun ref-man-org-text-bounds ()
   "Return bounds of text body if present in org subtree.
@@ -1088,13 +1101,12 @@ after current."
     (pcase-let ((`(,beg ,_ ,has-text) (ref-man-org-text-bounds))
                 (author-str (mapconcat (lambda (x)
                                          (a-get x 'name))
-                                       (a-get entry 'authors) ", ")))
+                                       (a-get entry 'authors) ", "))
+                (level (org-current-level)))
       (goto-char beg)
       (unless has-text
-        (when (org-at-heading-p)
-          (insert "\n"))
-        (org-indent-line)
-        (insert (format "- Authors: %s" author-str))
+        (insert "\n")
+        (insert (format "%s- Authors: %s" (make-string (1+ level) ? ) author-str))
         (org-insert-item)
         (insert (concat (a-get entry 'venue) ", " (format "%s" (a-get entry 'year)))))
       (org-insert-property-drawer)

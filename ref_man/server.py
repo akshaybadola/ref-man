@@ -14,7 +14,8 @@ from bs4 import BeautifulSoup
 
 from common_pyutil.log import get_stream_logger
 
-from .const import default_headers, __version__
+from . import __version__
+from .const import default_headers
 from .util import fetch_url_info, fetch_url_info_parallel, parallel_fetch, post_json_wrapper
 from .arxiv import arxiv_get, arxiv_fetch, arxiv_helper
 from .dblp import dblp_helper
@@ -115,6 +116,17 @@ class Server:
         self.semantic_search = SemanticSearch(self.chrome_debugger_path)
         self.init_routes()
 
+    def download_cvf_page_and_update_soups(self, venue, year):
+        url = f"https://openaccess.thecvf.com/{venue.upper()}{year}"
+        resp = requests.get(url)
+        fname = self.config_dir.joinpath(f"{venue.upper()}{year}")
+        if resp.status_code == 200:
+            with open(fname, "w") as f:
+                f.write(resp.content.decode())
+        self.logd(f"Fetched page for {venue.upper()}{year}")
+        with open(fname) as f:
+            self.soups[(venue.lower(), year)] = BeautifulSoup(f.read(), features="lxml")
+
     def logi(self, msg: str) -> str:
         self.logger.info(msg)
         return msg
@@ -160,7 +172,8 @@ class Server:
         self.proxies = None
         self.everything_proxies = None
         if self.proxy_everything_port:
-            status, msg, proxies = self.check_proxies_subr(self.proxy_everything_port, "proxy everything")
+            status, msg, proxies = self.check_proxies_subr(self.proxy_everything_port,
+                                                           "proxy everything")
             msgs.append(msg)
             if status:
                 msg = "Warning: proxy_everything is only implemented for DBLP."
@@ -351,7 +364,7 @@ class Server:
 
         @app.route("/get_cvf_url", methods=["GET"])
         def get_cvf_url():
-            """Get CVPR or ICCV Pdf url.
+            """Get CVPR or ICCV PDF url.
             """
             if "title" not in request.args:
                 return self.loge("Error. Title not in request")
@@ -372,6 +385,10 @@ class Server:
                 soup_keys = [(v, y) for v, y in self.soups.keys() if v == venue and y == year]
             else:
                 soup_keys = [(v, y) for v, y in self.soups.keys() if v == venue]
+            if not soup_keys and year:
+                self.logd(f"Fetching page for {venue.upper()}{year}")
+                self.download_cvf_page_and_update_soups(venue, year)
+                soup_keys = [(v, y) for v, y in self.soups.keys() if v == venue and y == year]
             soups = []
             for k in soup_keys:
                 soups.extend(self.soups[k].find_all("a"))

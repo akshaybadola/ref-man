@@ -126,8 +126,8 @@ PYTHON is the path for python executable."
 
 (defun ref-man-py-file-mod-version ()
   "Return the version of python module in file `const.py'."
-  (let* ((const-file (path-join ref-man-home-dir "ref_man" "const.py"))
-        (buf (find-file-noselect const-file)))
+  (let* ((init-file (path-join ref-man-home-dir "ref_man" "__init__.py"))
+        (buf (find-file-noselect init-file)))
     (with-current-buffer buf
       (goto-char (point-min))
       (re-search-forward "__version__\\(.+?\\)=\\(.+?\\)\"\\(.+\\)\"")
