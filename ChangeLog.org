@@ -177,3 +177,15 @@
    - Bug fixes and enhancements in ~ref-man-end-of-meta-data~
    - Some other fixes to export and py module.
    - Added ~download_cvf_page_and_update_soups~ in server.py
+
+** [2021-11-23 Tue 11:21]
+   - Added variable ~ref-man-bibtex-clean-pipe~ which runs after bibtexs are
+     collected in ref-man-export.
+   - Added function ~ref-man-util-pipe-through~ to ref-man-util
+   - Added functions ~ref-man-bibtex-change-venue-to-booktitle~ and
+     ~ref-man-bibtex-remove-arxiv~.
+   - ~ref-man-org-bibtex-read-from-headline~ is now broken up into the command
+     with the same name and function ~ref-man-org-parse-entry-as-bib~
+   - Additional ~clean~ parameters for ~ref-man-org-get-bib-from-org-link~
+   - ~ref-man-update-entry-with-ss-data~ with prefix argument now fetches the
+     data from SS again.

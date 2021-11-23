@@ -493,7 +493,7 @@ NO-WARN-TYPES can be passed as a list of (string) link types."
         ;; FIXME: How to fix for dup titles if they are for different papers (and bibs)?
         ;;        We should either report them as dups or store them with custom_ids
         (unless (member (match-string 1) sections)
-          (let ((bib (ref-man-org-get-bib-from-org-link t t))
+          (let ((bib (ref-man-org-get-bib-from-org-link t t t))
                 (title-keys (mapcar (lambda (x) (-take 2 x)) bibtexs)))
             ;; NOTE: Append _a to duplicate bibtex key
             ;; TODO: Fix dups for CUSTOM_ID across org buffer
@@ -656,6 +656,9 @@ When optional NO-CITE is non-nil, don't use CSL and citeproc."
               (_ (narrow-to-region doc-root end)))
             (setq metadata (a-dissoc metadata "abstract" "doc-root" "sections-beg" "sections-end"))))
         (setq bibtexs (ref-man-export-parse-references type (a-get bib-no-warn-types type)))
+        (setq bibtexs (mapcar (lambda (x)
+                                `(,(car x) ,(nth 1 x) ,(replace-regexp-in-string "venue=" "booktitle=" (nth 2 x))))
+                              bibtexs))
         (setq yaml-header
               (ref-man-export-generate-yaml-header type abstract metadata
                                                    (ref-man-export-bibtexs

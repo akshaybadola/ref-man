@@ -901,7 +901,9 @@ drawers into a contiguous chunk.  Default is to do so."
   (save-restriction
     (org-narrow-to-subtree)
     (let ((beg (point-min))
-          (end (progn (outline-next-heading) (- (point) 1))))
+          (end (if (outline-next-heading)
+                   (- (point) 1)
+                 (point))))
       (narrow-to-region beg end)
       (let* (matches
              (pt-end-metadata (cond (no-consolidate
@@ -910,8 +912,7 @@ drawers into a contiguous chunk.  Default is to do so."
                                        (push t matches))
                                      (if matches
                                          (+ 1 (point))
-                                       (goto-char (point-min))
-                                       (point-at-eol)
+                                       (goto-char (point-at-eol))
                                        (unless no-newline (insert "\n"))
                                        (point)))
                                     (t (ref-man-org-consolidate-drawers))))
@@ -969,7 +970,7 @@ delete."
         (goto-char beg)
         (org-indent-line)
         (fill-paragraph)
-        (forward-paragraph)
+        (forward-line)
         (when (org-at-heading-p)
           (backward-char))))))
 
@@ -1105,7 +1106,8 @@ after current."
                 (level (org-current-level)))
       (goto-char beg)
       (unless has-text
-        (insert "\n")
+        (unless (and (looking-at "\n") (looking-back "\n" 1))
+          (insert "\n"))
         (insert (format "%s- Authors: %s" (make-string (1+ level) ? ) author-str))
         (org-insert-item)
         (insert (concat (a-get entry 'venue) ", " (format "%s" (a-get entry 'year)))))
@@ -1320,9 +1322,11 @@ FILENAME where the suffix .bib is replaced with .org."
   "Parse the headline at point, convert to a bib entry and append to `kill-ring'.
 Only for interactive use.  Same as
 `ref-man-org-bibtex-read-from-headline' except it returns nothing
-and kills the entry as bibtex."
+and kills the entry as bibtex.
+
+With \\[universal-argument] misc entries are also parsed"
   (interactive)
-  (ref-man-org-bibtex-read-from-headline t))
+  (ref-man-org-bibtex-read-from-headline t nil current-prefix-arg))
 
 (defun ref-man-org-bibtex-kill-headline-as-yaml ()
   "Parse the headline at point, convert to yaml and append to `kill-ring'.
@@ -1339,7 +1343,8 @@ and kills the entry as yaml to be used with pandoc."
     (kill-new yaml)))
 
 (defun ref-man-org-publish-type (props-alist &optional allow-misc)
-  "Get the correct published type for an org entry properties P-ASSOC alist."
+  "Get the correct published type for an org entry properties PROPS-ALIST.
+Optional ALLOW-MISC allows misc and unpublished."
   (let ((venue (a-get props-alist "VENUE"))
         (booktitle (a-get props-alist "BOOKTITLE"))
         (journal (a-get props-alist "JOURNAL"))
@@ -1368,22 +1373,70 @@ and kills the entry as yaml to be used with pandoc."
                     (url-generic-parse-url url)))
               "/"))))))
 
-(defun ref-man-org-bibtex-read-from-headline (&optional kill gdrive allow-misc)
-  "Parse the headline at point and convert to a bib entry.
-The entry is appended to `ref-man-bibtex-save-ring'.  When
-optional KILL is non-nil, the entry is also added to `kill-ring'
-with `kill-new'.
+(defvar ref-man-bibtex-clean-pipe
+  '(ref-man-bibtex-remove-arxiv ref-man-bibtex-change-venue-to-booktitle)
+  "Pipe to run for cleaning a bibtex alist.
+Like a hook the functions in the pipe are called in order but
+they should each return the transformed variable which they take
+as input.")
+
+
+(defun ref-man-bibtex-change-venue-to-booktitle (bib-alist)
+  "Change venue to booktitle in a BIB-ALIST.
+Primarily for compatibility with pandoc citeproc which seems to
+ignore the venue key."
+  (when (string= (a-get bib-alist "type") "@inproceedings")
+    (let ((venue (a-get bib-alist "venue")))
+      (when venue
+        (setq bib-alist (a-dissoc (a-assoc bib-alist "booktitle" venue) "venue")))))
+  bib-alist)
+
+(defun ref-man-bibtex-bib-is-only-arxiv-p (bib-alist)
+  (let ((case-fold-search t)
+        (doi (a-get bib-alist "doi"))
+        (journal (a-get bib-alist "journal"))
+        (venue (a-get bib-alist "venue")))
+    (or (and (not doi) journal (not venue)
+             (string-match-p journal "^arxiv$\\|^corr$"))
+        (and (not doi) (not journal) venue
+             (string-match-p venue "^arxiv$\\|^corr$"))
+        (and (not doi) journal venue
+             (and (string-match-p journal "^arxiv$\\|^corr$")
+                  (string-match-p venue "^arxiv$\\|^corr$"))))))
+
+(defun ref-man-bibtex-remove-arxiv (bib-alist)
+  "Remove ArXiv from a BIB-ALIST unless it's the only venue."
+  (let ((only-arxiv (ref-man-bibtex-bib-is-only-arxiv-p bib-alist)))
+    (unless only-arxiv                  ; should change with CoRR
+      (when (and (a-get bib-alist "journal")
+                 (string= (downcase (a-get bib-alist "journal")) "arxiv"))
+        (setq bib-alist
+              (a-dissoc bib-alist "journal")))
+      (when (and (a-get bib-alist "venue")
+                 (string= (downcase (a-get bib-alist "venue")) "arxiv"))
+        (setq bib-alist
+              (a-dissoc bib-alist "venue")))))
+  (when (and (a-get bib-alist "volume")
+             (string-match-p "^abs/.+" (a-get bib-alist "volume")))
+    (setq bib-alist (a-dissoc bib-alist "volume")))
+  bib-alist)
+
+(defun ref-man-org-parse-entry-as-bib (&optional gdrive allow-misc clean)
+  "Parse the headline at point and return alist.
+The entry is appended to `ref-man-bibtex-save-ring'.
 
 When optional GDRIVE is non-nil include a (possible) gdrive link
 from `ref-man-public-links-cache'.
 
 When optional ALLOW-MISC is non-nil, if a url is found in the
 property drawer, then the entry is exported as a \"@misc\" with a
-\"howpublished\" and a \"url\" field."
-  (interactive)
+\"howpublished\" and a \"url\" field.
+
+When optional CLEAN is non-nil, some cleaning, like removing
+redundant entries and arxiv metadata is done."
   (if (eq major-mode 'org-mode)
       (let* ((props (org-entry-properties))
-             (bib-str (list
+             (bib-alist (list
                        (cons "type" (concat "@" (ref-man-org-publish-type props allow-misc)))
                        (cons "key"  (or (cdr (assoc "CUSTOM_ID" props))
                                         (ref-man-parse-bib-property-key)))
@@ -1402,38 +1455,75 @@ property drawer, then the entry is exported as a \"@misc\" with a
                        (cons "url" (or (cdr (assoc "URL" props))
                                        (cdr (assoc "PDF_URL" props))))
                        (cons "gdrive" (and (cdr (assoc "PDF_FILE" props))
-                                         (gethash (replace-regexp-in-string
-                                                   ref-man-org-file-link-re "\\2"
-                                                   (cdr (assoc "PDF_FILE" props)))
-                                                  ref-man-public-links-cache)))
+                                           (gethash (replace-regexp-in-string
+                                                     ref-man-org-file-link-re "\\2"
+                                                     (cdr (assoc "PDF_FILE" props)))
+                                                    ref-man-public-links-cache)))
                        (cons "publisher"  (cdr (assoc "PUBLISHER" props)))
                        (cons "organization"  (cdr (assoc "ORGANIZATION" props)))))
-             (bib-str (if (a-get bib-str "key") bib-str
+             (bib-alist (if (a-get bib-alist "key") bib-alist
                         (user-error "Could not generate key for \"%s\""
                                     (org-get-heading t t t t))))
-             (bib-str (if (and gdrive (assoc "gdrive" bib-str))
-                          bib-str (delq (assoc "gdrive" bib-str) bib-str)))
-             (bib-str (if (and allow-misc (a-get bib-str "url")
-                               (equal (a-get bib-str "type") "@misc"))
-                          (a-assoc bib-str "howpublished" (format "\\url{%s}" (a-get bib-str "url"))
-                                   "title" (substring-no-properties (org-get-heading t t t t))
-                                   "year" (time-stamp-string "%Y")
-                                   "key" (ref-man-key-from-url (a-get bib-str "url"))
-                                   "url" nil)
-                        bib-str))
-             (header (concat (cdr (assoc "type" bib-str)) "{" (cdr (assoc "key" bib-str)) ",\n"))
-             (bib-str (delq (assoc "type" bib-str) bib-str))
-             (bib-str (delq (assoc "key" bib-str) bib-str))
-             (bib-str (concat header
-                              (mapconcat (lambda (x)
-                                           (if (cdr x) (concat "  " (car x) "={" (cdr x) "},\n")))
-                                         bib-str "") "}\n"))
-             (bib-str (ref-man--replace-non-ascii bib-str)))
+             (bib-alist (if (and gdrive (assoc "gdrive" bib-alist))
+                          bib-alist (delq (assoc "gdrive" bib-alist) bib-alist)))
+             (bib-alist (if (and allow-misc (a-get bib-alist "url")
+                               (equal (a-get bib-alist "type") "@misc"))
+                          (let ((temp (a-assoc bib-alist
+                                               "howpublished" (format "\\url{%s}" (a-get bib-alist "url"))
+                                               "url" nil)))
+                            (unless (a-get temp "title")
+                              (setq temp (a-assoc temp "title" (substring-no-properties (org-get-heading t t t t)))))
+                            (unless (a-get temp "year")
+                              (setq temp (a-assoc temp "year" (time-stamp-string "%Y"))))
+                            (unless (a-get temp "key")
+                              (setq temp (a-assoc temp "key" (ref-man-key-from-url (a-get bib-alist "url")))))
+                            temp)
+                        bib-alist))
+             (bib-alist (mapcar (lambda (x) `(,(car x) . ,(if (cdr x)
+                                                              (ref-man--replace-non-ascii (cdr x))
+                                                            (cdr x))))
+                                bib-alist)))
+        ;; (when clean
+        ;;   (when (and (a-get bib-alist "journal")
+        ;;              (string= (downcase (a-get bib-alist "journal")) "arxiv"))
+        ;;     (setq bib-alist
+        ;;           (a-dissoc bib-alist "journal")))
+        ;;   (when (and (a-get bib-alist "volume")
+        ;;                (string-match-p "^abs/.+" (a-get bib-alist "volume")))
+        ;;       (setq bib-alist (a-dissoc bib-alist "volume")))
+        ;;   (when (string= (a-get bib-alist "type") "@inproceedings")
+        ;;     (when (a-get bib-alist "venue")
+        ;;       (setq bib-alist (a-assoc bib-alist "booktitle" (a-get bib-alist "venue")))
+        ;;       (setq bib-alist (a-dissoc bib-alist "venue")))))
+        (when clean
+          (setq bib-alist
+                (ref-man-util-pipe-through ref-man-bibtex-clean-pipe bib-alist)))
+        bib-alist)
+    (message "[ref-man] Not org mode") nil))
+
+(defun ref-man-org-bibtex-read-from-headline (&optional kill gdrive allow-misc clean)
+  "Parse the headline at point and convert to bibtex string.
+The current org entry is parsed with `ref-man-org-parse-entry-as-bib'.
+
+When optional KILL is non-nil, the entry is also added to
+`kill-ring' with `kill-new'.
+
+For the rest of the optional arguments see
+`ref-man-org-parse-entry-as-bib'."
+  (interactive)
+  (let* ((bib-str (ref-man-org-parse-entry-as-bib gdrive allow-misc clean))
+         (header (concat (cdr (assoc "type" bib-str)) "{" (cdr (assoc "key" bib-str)) ",\n"))
+         (bib-str (delq (assoc "type" bib-str) bib-str))
+         (bib-str (delq (assoc "key" bib-str) bib-str))
+         (bib-str (concat header
+                          (mapconcat (lambda (x)
+                                       (if (cdr x) (concat "  " (car x) "={" (cdr x) "},\n")))
+                                     bib-str "")
+                          "}\n")))
         (when kill
           (kill-new bib-str))
         (push bib-str ref-man-bibtex-save-ring)
-        bib-str)
-    (message "[ref-man] Not org mode") nil))
+        bib-str))
 
 ;; TODO: prefix arg should insert to temp-file in interactive mode
 (defun ref-man-org-bibtex-kill-or-insert-headline-as-bib-to-file (&optional file)
@@ -2250,7 +2340,7 @@ citations after that."
   (outline-up-heading 1)
   (org-hide-block-all))
 
-(defun ref-man-org-get-bib-from-org-link-subr (get-key &optional allow-misc)
+(defun ref-man-org-get-bib-from-org-link-subr (get-key &optional allow-misc clean)
   "Subroutine to get a bib string from an org heading.
 The return value is a list with PATH, a bibkey if GET-KEY is
 non-nil and the bib string extracted with
@@ -2266,11 +2356,11 @@ The values are returned as a list of '(path key bib)."
          (cid (org-entry-get (point) "CUSTOM_ID"))
          (key (if allow-misc (or cid url-key) cid))
          (bib (when key
-                (ref-man-org-bibtex-read-from-headline nil t allow-misc))))
+                (ref-man-org-bibtex-read-from-headline nil t allow-misc clean))))
     (when bib
       (if get-key (list key bib) bib))))
 
-(defun ref-man-org-get-bib-from-org-link (&optional get-key allow-misc)
+(defun ref-man-org-get-bib-from-org-link (&optional get-key allow-misc clean)
   "Get a possible bibtex from an org link in text.
 The link must point to either an org heading or an org
 CUSTOM_ID.
@@ -2299,8 +2389,8 @@ With optional non-nil ALLOW-MISC @misc bibs are also parsed."
                     (+ 2 (org-element-property :begin link)))
                t)                       ; don't change visibility around point
               (if get-key
-                  (cons path (ref-man-org-get-bib-from-org-link-subr get-key allow-misc))
-                (ref-man-org-get-bib-from-org-link-subr get-key allow-misc)))
+                  (cons path (ref-man-org-get-bib-from-org-link-subr get-key allow-misc clean))
+                (ref-man-org-get-bib-from-org-link-subr get-key allow-misc clean)))
              ("file" (with-current-buffer (find-file-noselect path)
                        (let ((path (org-element-property :search-option link)))
                          (setq type (cond ((string-match-p "^#.+" path)
@@ -2310,8 +2400,8 @@ With optional non-nil ALLOW-MISC @misc bibs are also parsed."
                                           (t (user-error "Unknown type of link %s" path))))
                          (org-link-search path nil t) ; don't change visibility around point
                          (if get-key
-                             (cons path (ref-man-org-get-bib-from-org-link-subr get-key allow-misc))
-                           (ref-man-org-get-bib-from-org-link-subr get-key allow-misc))))))))))))
+                             (cons path (ref-man-org-get-bib-from-org-link-subr get-key allow-misc clean))
+                           (ref-man-org-get-bib-from-org-link-subr get-key allow-misc clean))))))))))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END org utility functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -2505,15 +2595,20 @@ is from a recognized parseable host. As of now, only ArXiv"
         (kill-new (buffer-string))
         (message "Killed entry as org heading")))))
 
-(defun ref-man-update-entry-with-ss-data ()
+(defun ref-man-update-entry-with-ss-data (&optional prefix-arg)
   "Update current entry with Semantic Scholar Data.
 
 The data is fetched if required from `semanticscholar.org' and
 the properties are updated. Citations and references are not
 displayed or inserted.  See `ref-man-fetch-ss-data-for-entry' for
-details."
-  (interactive)
-  (ref-man-fetch-ss-data-for-entry t nil nil nil nil))
+details.
+
+With a non-nil `\\[universal-argument]' fetch the data from
+`semanticscholar.org' even if it's present in cache."
+  (interactive "p")
+  (pcase prefix-arg
+    (1 (ref-man-fetch-ss-data-for-entry t nil nil nil nil))
+    (_ (ref-man-fetch-ss-data-for-entry t nil t nil nil))))
 
 (defun ref-man-insert-ss-data ()
   "Insert Semantic Scholar Data for org entry at point.
@@ -2597,7 +2692,8 @@ citations.  Can be one of 'refs 'cites."
             (ref-man--org-bibtex-write-ref-from-ss-ref ss-data nil t))
           (when ss-data
             (message "[ref-man] Fetched Semantic Scholar Data")
-            (org-entry-put (point) "PAPERID" (a-get ss-data 'paperId))
+            (unless (org-entry-get (point) "PAPERID")
+              (org-entry-put (point) "PAPERID" (a-get ss-data 'paperId)))
             ;; NOTE: The data is inserted into a new buffer named "*Semantic Scholar*"
             (when display
               (message "[ref-man] Preparing Semantic Scholar Data for display")

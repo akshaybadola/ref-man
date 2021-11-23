@@ -358,6 +358,24 @@ This function is aliased from URL `https://github.com/akshaybadola/emacs-util'."
   (with-current-buffer buf
     (ref-man-delete-blank-lines-in-region (point-min) (point-max) no-trailing-newline)))
 
+;; (defun test/ref-man-util-pipe-through
+;;     (let ((arg '(("venue" . "something")
+;;                  ("journal" . "ArXiv"))))
+;;       (ref-man-util-pipe-through ref-man-bibtex-clean-pipe arg)))
+
+;; TODO: A better pip macro based `->>' can be made I think
+(defun ref-man-util-pipe-through (pipe args)
+  "Pipe the ARGS through a named PIPE.
+The PIPE must be a sequence of functions and they are called in
+order on ARGS.
+
+The result of the call from each function is passed down to the
+next one and the final result is returned."
+  (seq-do (lambda (x)
+            (setq args (funcall x args)))
+          pipe)
+  args)
+
 (defun ref-man--replace-non-ascii (str &optional inverse)
   "Replace non-ascii characters in STR with escape codes.
 
