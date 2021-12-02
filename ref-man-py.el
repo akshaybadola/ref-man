@@ -163,10 +163,21 @@ PYTHON is the path for python executable."
 
 (defun ref-man-py-get-system-python ()
   "Get system python3 executable."
-  (unless (or ref-man-py-executable (executable-find "python3"))
-    (error "No `ref-man-py-executable' or python3 found in current paths.\n
+  (let* ((python (executable-find "python3"))
+         (in-venv (string= "False" (string-trim
+                                    (shell-command-to-string
+                                     (format "%s -c 'import sys; print(sys.prefix == sys.base_prefix)'"
+                                             python))))))
+    (unless (or ref-man-py-executable python)
+      (error "No `ref-man-py-executable' or python3 found in current paths.\n
 Either set `ref-man-py-executable' or add python3 path to the exec path"))
-  (or ref-man-py-executable (executable-find "python3")))
+    (or ref-man-py-executable
+        (if in-venv
+            (if (y-or-n-p
+                 (format "Python executable %s seems to be in a virtualenv.  Really use? " python))
+                python
+              (ido-read-file-name "Enter python executable to use: "))
+          python))))
 
 (defun ref-man-py-setup-env (&optional reinstall update)
   "Setup python virtualenv.
@@ -175,9 +186,13 @@ Optional non-nil REINSTALL removes the virtualenv and installs
 everything again.  Optional non-nil UPDATE only updates the
 `ref-man' python module.  The directory is relative to `ref-man'
 install directory `ref-man-home-dir'."
-  (let* ((python (ref-man-py-get-system-python))
-         (py-version (and python (cadr (split-string (shell-command-to-string (format "%s --version" python))))))
-         (env (path-join ref-man-home-dir "env")))
+  (let* ((env (path-join ref-man-home-dir "env"))
+         (python (pcase (path-join env "bin" "python")
+                   ((and arg (pred f-exists?)) arg)
+                   (_ (ref-man-py-get-system-python))))
+         (py-version (and python (cadr
+                                  (split-string
+                                   (shell-command-to-string (format "%s --version" python)))))))
     (when (version< py-version "3.6.9")
       (user-error "Your default python3 executable is < 3.6.9.
 `ref-man' requires at least 3.6.9.

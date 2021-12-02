@@ -3366,11 +3366,11 @@ Optional INTERACTIVEP is to check the `interactive' call."
              (pdf-file (ref-man--check-fix-pdf-file-property))
              (bib-prop (ref-man-parse-bib-property-key))
              (headingp (ref-man-check-heading-non-empty-p))
-             (urls `((url-prop . ,url-prop)
-                     (pdf-url-prop . ,pdf-url-prop)
-                     (alt-url-prop . ,alt-url-prop)
-                     (arxiv-url-prop . ,arxiv-url-prop)
-                     (ss-url-prop . ,ss-url-prop)))
+             (urls `((url . ,url-prop)
+                     (pdf-url . ,pdf-url-prop)
+                     (alt-url . ,alt-url-prop)
+                     (arxiv-url . ,arxiv-url-prop)
+                     (ss-url . ,ss-url-prop)))
              retrieve-bib retrieve-pdf retrieve-title
              (msg-str ""))
         (when ssidtype-id

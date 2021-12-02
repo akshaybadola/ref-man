@@ -186,14 +186,15 @@ in the properties drawer of the subtree."
                 x))
    (f-files ref-man-export-pandoc-templates-dir)))
 
-(defun ref-man-export-csl-files ()
+(defun ref-man-export-csl-files (csl-file)
   "Get csl files as an alist from `ref-man-export-pandoc-csl-dir'."
-  (mapcar
-   (lambda (x) (cons
-                (downcase (string-remove-suffix ".csl" (f-filename x)))
-                x))
-   (-filter (lambda (x) (string-suffix-p ".csl" (f-filename x)))
-            (f-files ref-man-export-pandoc-csl-dir))))
+  (a-get (mapcar
+          (lambda (x) (cons
+                       (downcase (string-remove-suffix ".csl" (f-filename x)))
+                       x))
+          (-filter (lambda (x) (string-suffix-p ".csl" (f-filename x)))
+                   (f-files ref-man-export-pandoc-csl-dir)))
+         (string-remove-suffix ".csl" csl-file)))
 
 ;; TODO: This should be a macro
 (defun ref-man-export-pdf-template ()
@@ -568,7 +569,9 @@ to include both URLS and GDRIVE links.
 Optional non-nil WITH-TOC generates a TOC from `org-export'.
 Usually the TOC is generated with pandoc.
 
-When optional NO-CITE is non-nil, don't use CSL and citeproc."
+When optional NO-CITE is non-nil, don't use CSL and citeproc.
+Helpful when pdflatex is used to compile and citations don't need
+updating."
   (let* ((org-export-with-broken-links 'mark) ; mark broken links and they'll be replaced with citations
          (org-export-with-clocks nil)
          (org-export-with-date nil)
@@ -591,10 +594,11 @@ When optional NO-CITE is non-nil, don't use CSL and citeproc."
          (config-file (path-join docproc-dir "config.ini"))
          (csl-file (pcase (org-entry-get (point) "CSL")
                      ('nil
-                      (if no-urls
-                          ref-man-export-csl-no-urls-file
-                        ref-man-export-csl-urls-file))
-                     (csl (a-get (ref-man-export-csl-files) (downcase csl)))))
+                      (ref-man-export-csl-files
+                       (if no-urls
+                           ref-man-export-csl-no-urls-file
+                         ref-man-export-csl-urls-file)))
+                     (csl (ref-man-export-csl-files (downcase csl)))))
          (citeproc "biblatex")
          (mathjax-path ref-man-export-mathjax-dir)
          (pandocwatch "-m pndconf")

@@ -189,3 +189,10 @@
    - Additional ~clean~ parameters for ~ref-man-org-get-bib-from-org-link~
    - ~ref-man-update-entry-with-ss-data~ with prefix argument now fetches the
      data from SS again.
+
+** [2021-12-02 Thu 16:52]
+   - Added ss_defaults.json to package data in setup.py
+   - Fixed wrong alist attrs in ~ref-man-try-fetch-and-store-pdf-in-org-entry~
+   - Changed ~ref-man-export~csl-files~ so that it retrieves the filename now
+     for a given csl
+   - ~ref-man-py-get-system-python~ now warns if a virtualenv python is used.
