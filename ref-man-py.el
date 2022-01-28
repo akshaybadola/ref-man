@@ -125,7 +125,7 @@ PYTHON is the path for python executable."
    (format "%s -m ref_man --version" python)))
 
 (defun ref-man-py-file-mod-version ()
-  "Return the version of python module in file `const.py'."
+  "Return the version of ref-man python module in venv."
   (let* ((init-file (path-join ref-man-home-dir "ref_man" "__init__.py"))
         (buf (find-file-noselect init-file)))
     (with-current-buffer buf
@@ -199,7 +199,7 @@ Make sure package 'virtualenv' exists in current python environment"))
       (let* ((env-has-no-ref-man (ref-man-py-no-mod-in-venv-p python))
              (need-update (or update (ref-man-py-env-needs-update-p))))
         (when (or need-update env-has-no-ref-man)
-          (cond (need-update
+          (cond ((and need-update (not env-has-no-ref-man))
                  (message "New version of ref-man. Updating existing ref-man-server in %s" env)
                  (ref-man-py-env-uninstall-module env))
                 (env-has-no-ref-man

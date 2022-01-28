@@ -37,6 +37,7 @@
 
 (defcustom ref-man-pdf-proxy-port nil
   "Fetch PDFs over a proxy server if non-nil.
+
 If this is non-nil then the all the pdf downloads go through the
 python server which additionally fetches it from an http proxy at
 localhost specified by this port."
@@ -97,7 +98,9 @@ localhost specified by this port."
          (string-match-p filename path)))
 
 (defun ref-man-url-maybe-proxy (url)
-  "Return proxy URL if `ref-man-pdf-proxy-port' is non-nil, else same URL."
+  "Return proxy URL if present.
+
+See `ref-man-pdf-proxy-port' for details."
   (let ((prefix (format "http://localhost:%s/fetch_proxy?url="
                         ref-man-py-server-port)))
     (if (and ref-man-pdf-proxy-port (not (string-prefix-p "http://localhost" url)))
@@ -106,7 +109,9 @@ localhost specified by this port."
 
 ;; CHECK: Do I require something similar in case some other URL is proxied?
 (defun ref-man-url-maybe-unproxy (url)
-  "Remove proxy prefix and return URL if `ref-man-pdf-proxy-port' is non-nil, else same URL."
+  "Remove proxy prefix if present and return URL.
+
+See `ref-man-pdf-proxy-port' for details."
   (let ((prefix (format "http://localhost:%s/fetch_proxy?url="
                         ref-man-py-server-port)))
     (if (and ref-man-pdf-proxy-port (string-prefix-p prefix url))
@@ -158,21 +163,24 @@ localhost specified by this port."
            (string-match-p "openreview.net" url))))
 
 (defun ref-man-url-downloadable-pdf-url-p (url &optional transform)
-  "Does the given URL contain a pdf to download."
+  "Does the given URL contain a pdf to download.
+
+If optional TRANSFORM is non-nil then change the URL according to its type to a
+downloadable one."
   (and (ref-man-url-non-gscholar-url-p url)
        (cond ((string-match-p "arxiv.org" url)
               (if (string-match-p "/pdf/" url) url
-                (when transform
-                  (ref-man-url-arxiv-pdf-link-helper url))))
+                (if transform (ref-man-url-arxiv-pdf-link-helper url) url)))
              ((string-match-p "aaai.org" url)
               (when (or (string-match-p "/download/" url)
                         (string-match-p "ojs.aaai.org.+article/view/[0-9]+/[0-9]+" url))
-                url
-                (when transform nil)))
+                (if transform
+                    (replace-regexp-in-string "/article/view/" "/article/download/" url)
+                  url)))
              ((string-match-p "openreview.net" url)
-              (if (string-match-p "pdf\\?" url) url
-                (when (and transform (string-match-p "forum\\?id" url))
-                  (replace-regexp-in-string "forum\\?id=" "pdf?id=" url))))
+              (if transform
+                  (replace-regexp-in-string "forum\\?id=" "pdf?id=" url)
+                url))
              ((string-match-p "dl.acm.org" url)
               (when (string-match-p "doi/pdf" url) url))
              (t (when (string-match-p "\\.pdf$" url) url)))))
@@ -208,6 +216,8 @@ localhost specified by this port."
 
 (defmacro with-named-shr-buffer (buf name &rest body)
   "Similar to `with-temp-shr-buffer' but created a named buffer with NAME.
+Arguments BUF and BODY are same as in `with-temp-shr-buffer'.
+
 Useful when you want the buffer to persist afterwards."
   (or (fboundp 'libxml-parse-html-region)
     (error "This function requires Emacs to be compiled with libxml2"))
@@ -307,7 +317,7 @@ BUF is the html buffer retrieved from URL.  Optional status is a
 plist which contains the http status.
 
 SITE is a symbol according to which the helper function is
-returned. Possible values for SITE are:
+returned.  Possible values for SITE are:
 
 'acl            denotes an `aclweb.org' type website
 'arxiv          `arxiv.org'
@@ -414,12 +424,14 @@ first pdf link from the buffer."
                  (ref-man-url-get-absolute-path url link)))))))
 
 (defun ref-man-url-acm-transform (link)
+  "Transform an acm url LINK."
   (when link
     (if (string-prefix-p "https://dl.acm.org/" link)
         link
       (url-join "https://dl.acm.org/" link))))
 
 (defun ref-man-url-acm-pdf-link-helper-subr (url)
+  "ACM PDF URL link helper subroutine."
   (pcase url
     ((pred (string-match-p "/doi/abs/"))
      (replace-regexp-in-string "/doi/abs/" "/doi/pdf/" url))
@@ -428,6 +440,8 @@ first pdf link from the buffer."
     (_ url)))
 
 (defun ref-man-url-acm-pdf-link-helper-redirect (url buf &rest args)
+  "Redirect helper for ACM pdf URL.
+BUF is the html buffer received."
   (let ((link (ref-man-url-acm-pdf-link-helper-subr
                (with-temp-shr-buffer
                 buf
@@ -437,6 +451,7 @@ first pdf link from the buffer."
     link))
 
 (defun ref-man-url-acm-pdf-link-helper (url &rest args)
+  "ACM PDF URL link helper."
   (ref-man-url-acm-transform
    (or (ref-man-url-downloadable-pdf-url-p (ref-man-url-acm-pdf-link-helper-subr url))
        (ref-man-url-acm-pdf-link-helper-redirect url))))
@@ -489,6 +504,7 @@ ARGS is for compatibility and not used."
       (t nil)))
 
 (defun ref-man-url--sort-best-subroutine (x)
+  "Sort best subroutines for a given '(site . url) X."
   (pcase (car x)
     ('acm (or (let ((link (car (-filter (lambda (y) (string-match-p "pdf" y)) (cdr x)))))
                 (and link (cons 'pdf link)))
@@ -602,7 +618,9 @@ given, it is called on the PDF URL."
 ;;           (t url))))
 
 (defun ref-man--shr-render-buffer-quiet (buffer buffer-name)
-  "Display the HTML rendering of the current buffer."
+  "Display the HTML rendering of the BUFFER.
+
+The rendered buffer is a named buffer BUFFER-NAME."
   (interactive (list (current-buffer)))
   (or (fboundp 'libxml-parse-html-region)
       (error "This function requires Emacs to be compiled with libxml2"))
@@ -650,6 +668,7 @@ given, it is called on the PDF URL."
 ;;           (t url))))
 
 (defun ref-man-url-parse-cvf-venue (doi venue)
+  "Get the correct venue from a CVF DOI and VENUE."
   (cond ((and doi (string-match ".*\\(ICCV\\|CVPR\\).*" doi))
          (match-string 1 doi))
         (venue
@@ -682,7 +701,8 @@ ARGS is a plist with keywords :heading :point :buffer"
           (ref-man-py-get-cvf-url heading venue url year))))))
 
 (defun ref-man-py-get-cvf-url (title venue &optional url year)
-  "Get the cvpr url from python server for given TITLE if possible.
+  "Get the cvpr url from python server for given TITLE and VENUE.
+
 Optional YEAR if not specified but can be extracted from a DOI
 URL.  If neither are given, then the pdf url for the longest regexp
 match for TITLE's first three words will be returned."
@@ -704,8 +724,10 @@ match for TITLE's first three words will be returned."
   (doi-utils-get-pdf-url url))
 
 (defun ref-man-url-get-bibtex-link-from-doi (url)
-  "Buffer redirects correctly to IEEE (or some other site), but I
-  can't really download from there"
+  "Get a bibtex from a DOI URL."
+  ;; FIXME: Buffer redirects correctly to IEEE (or some other site), but I can't
+  ;; really download from there
+
   ;; If link is cvpr or iccv, then find the cvf link and go to that site
   (message "[ref-man] Not Implemented yet") nil)
 

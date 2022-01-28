@@ -430,6 +430,9 @@ buffer is not gscholar"
                                #'ref-man-web-get-link-info (list link callback))))))))
 
 (defun ref-man-web-user-input (&optional default initial)
+  "Get input from user with a DEFAULT prompt.
+
+INITIAL is passed on to `read-from-minibuffer' as intial-contents."
   (let ((prompt (if default (format "Enter URL or keywords (default %s): " default)
                   (read-from-minibuffer "Enter URL or keywords: "))))
     (read-from-minibuffer prompt initial)))
@@ -458,9 +461,9 @@ then read it from minibuffer."
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;; TODO: Move the url regex functions here. See `ref-man-web-gscholar'
 (defvar ref-man-web-default-webjump "google"
-  "Default webjump")
+  "Default webjump.")
 (defun ref-man-web-search (url)
-  "Search on Google Scholar according to mode.
+  "Search Web for URL or keywords according to mode.
 Uses `ref-man-get-title-according-to-mode' which is used to
 extract the query string from compatible modes.
 

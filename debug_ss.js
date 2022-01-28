@@ -1,6 +1,6 @@
 const CDP = require('chrome-remote-interface');
 
-async function example() {
+async function get_ss_url_from_chrome() {
     let client;
     try {
         // connect to endpoint
@@ -27,4 +27,4 @@ async function example() {
     }
 }
 
-example();
+get_ss_url_from_chrome();

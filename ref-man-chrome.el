@@ -32,11 +32,11 @@
 ;; through a headless chromium/chrome.
 ;;
 ;; The need for this arose as I had written custom `eww' functions for searching
-;; extracting pdfs and bibliographic data from google scholar. I don't think it
+;; extracting pdfs and bibliographic data from google scholar.  I don't think it
 ;; violates any google policy as I'm interacting with the page myself and not
-;; via an automated script. Although a good configurable browser can be used
+;; via an automated script.  Although a good configurable browser can be used
 ;; instead of `eww', `eww' loads pages faster and it's easier to write functions
-;; directly in lisp for interaction with Emacs.
+;; directly in Lisp for interaction with Emacs.
 
 ;;; Code:
 
@@ -285,11 +285,13 @@ sockets are opened and verified.")
 
 ;; CHECK: Maybe save history also
 (define-derived-mode ref-man-chrome-mode fundamental-mode "ref-man-chrome"
-  "Mode for browsing google scholar when google wants to spy on
-you and you don't care but you want emacs integration with
-org-mode, so you run a chrome headless instance with some google
-account signed in so that google doesn't call you a \"robot\".
-WTF, right?
+  "Mode for browsing websites with Emacs bypassing their JS.
+
+Used when the websites want to spy on you and you don't care but
+you want Emacs integration with `org-mode', so you run a chrome
+headless instance with some google account signed in so that the
+website doesn't call you a \"robot\" or doesn't block you for not
+using JS or whatever.  WTF, right?
 
 \\{ref-man-chrome-mode-map}"
   (setq-local ref-man-chrome-data (list :url ref-man-chrome--page-url))
@@ -312,8 +314,8 @@ WTF, right?
 
 Earlier I had thought that it would extract more data or from
 more websites, as of now will only extract bibtex and insert to
-org.  Optionally extract to org buffer ORG-BUF or bib buffer
-BIB-BUF."
+org.  Optionally extract to org buffer ORG-BUF at optional point
+ORG-POINT or bib buffer BIB-BUF."
   (interactive)
   (save-excursion
     (let ((bib-url (progn (search-forward "import into bibtex")
@@ -418,11 +420,17 @@ gscholar buffer."
             (throw 'retval t)))))))
 
 (defun ref-man-chrome-insert-link-to-org (&optional update)
+  "Extract link at point and insert to an org buffer.
+
+Optionally UPDATE the heading."
   (interactive)
   (ref-man-chrome-insert-to-org
    (or update (if current-prefix-arg 'current 'next)) 'link))
 
 (defun ref-man-chrome-insert-everything-to-org (&optional update)
+  "Extract link and metadata at point and insert to an org buffer.
+
+Optionally UPDATE the heading."
   (interactive)
   (ref-man-chrome-insert-to-org
    (or update (if current-prefix-arg 'current 'next)) 'everything))
@@ -476,7 +484,9 @@ instead of inserting a subheading."
       (setq-local buffer-read-only t))
     (pop-to-buffer (get-buffer "*rfc-source*"))))
 
-;; CHECK: Maybe should just use eww for non gscholar pages. It might be simpler
+;; TODO: This should not be interactive and should always be called from a
+;;       different function, maybe `ref-man-web-search'.
+;;       As of now it's used for the [Enter] key in `ref-man-chrome-mode-map'
 (defun ref-man-chrome-browse-url (url)
   "Browse a URL with ref-man-chrome.
 We have special functions for google scholar."
@@ -570,7 +580,8 @@ inserted or updated.  See `ref-man--insert-org-pdf-file-property'."
   (message "[ref-man-chrome] Does nothing for now"))
 
 (defun ref-man-chrome-list-buffers ()
-  "Not sure actually.  Should list current active *eww* and *chrome* or other `shr' buffers maybe."
+  "Not sure actually.
+Should list current active *eww* and *chrome* or other `shr' buffers maybe."
   (interactive)
   (message "[ref-man-chrome] Does nothing for now"))
 
@@ -641,7 +652,15 @@ Optional argument DONT-SAVE does not add the URL to the history."
 ;; FIXME: these should be moved from here into some config
 ;; (global-set-key (kbd "C-c e c") 'ref-man-chrome-gscholar)
 (defun ref-man-chrome-gscholar (url)
-  "Fetch google scholar URL.  Mostly derived from `eww' and `eww--dwim-expand-url'."
+  "Fetch URL with a Chromium process.
+
+Used to bypass annoying \"need JS\" messages from google (or
+other sites).  Primarily used for Google Scholar but can be used
+for other sites.  Uses a chromium process running in headless
+mode with a debugger to fetch pages there and then get html to
+eww and render with that.
+
+Mostly derived from `eww' and `eww--dwim-expand-url'."
   (interactive
    (let* ((uris (eww-suggested-uris))
 	  (prompt (concat "Enter URL or keywords"
@@ -732,7 +751,7 @@ regarding regardless of mode."
        (concat "https://scholar.google.com/scholar?q="
                (replace-regexp-in-string " " "+" query))))))
 (make-obsolete 'ref-man-chrome-search-on-gscholar
-               'ref-man-search-web "")
+               'ref-man-web-search "")
 
 ;; (defun ref-man-chrome-search-heading-on-gscholar ()
 ;;   "Search for the current org heading in google scholar in *chrome*.
@@ -767,7 +786,7 @@ regarding regardless of mode."
 Returns the first executable found from candidates in
 `ref-man-chrome-chromium-names'.  If `ref-man-chrome-command' is
 non-nil then the value of that is returned instead."
-  (or ref-man-chrome-command
+  (or (not (string-empty-p ref-man-chrome-command))
       (-first #'identity
               (mapcar #'executable-find ref-man-chrome-chromium-names))))
 
@@ -838,7 +857,7 @@ default."
     (ref-man-chrome--process-helper headless data-dir port)
     ;; NOTE: start process regardless of whether running previously
     ;; (cond ((eq chromium 'internal)
-    ;;        (if (y-or-n-p "Existing internal chromium process found. Kill it and start headless? ")
+    ;;        (if (y-or-n-p "Existing internal chromium process found.  Kill it and start headless? ")
     ;;            (progn (ref-man-chrome--kill-chromium-process)
     ;;                   (message "[ref-man-chrome] Killing old and starting new chromium.")
     ;;                   (ref-man-chrome--process-helper headless data-dir port))
@@ -1154,13 +1173,13 @@ websocket."
    callback))
 
 (defun ref-man-chrome-eval-on-socket (eval-str socket &optional callback)
-  "Evaluate (usually javascript) expression EVAL-STR for chrome debugger websocket SOCKET.
+  "Evaluate JS expression EVAL-STR for chrome debugger websocket SOCKET.
 Optional CALLBACK to call when response is received from
 websocket."
   (unless socket
-    (error "[ref-man-chrome] Empty socket given."))
+    (error "[ref-man-chrome] Empty socket given"))
   (unless (websocket-openp socket)
-    (error "[ref-man-chrome] Socket is closed."))
+    (error "[ref-man-chrome] Socket is closed"))
   (ref-man-chrome-call-rpc
    "Runtime.evaluate"                   ; method
    socket                               ;socket
@@ -1210,7 +1229,9 @@ history also."
 (defun ref-man-chrome-init (&optional not-headless quiet)
   "Initialze the `ref-man-chrome' plugin.
 With a non-nil optional NOT-HEADLESS, the chromium process is
-started in windowed mode instead of headless which is default."
+started in windowed mode instead of headless which is default.
+
+Optional non-nil QUIET supresses the messages."
   (interactive)
   (if ref-man-chrome--initialized-p
       (message "[ref-man-chrome] init, Chromium plugin was already initialized.")
@@ -1228,6 +1249,7 @@ started in windowed mode instead of headless which is default."
     (let ((ref-man-chrome--init-0 t)
           (ref-man-chrome--init-1 t))
       (ref-man-chrome-connect 0)
+      (message "%s" ref-man-chrome-socket-alist)
       (ref-man-chrome-eval "location.href = \"https://scholar.google.com\"" 0
                            (lambda (result)
                              (when ref-man-chrome-verbose
@@ -1594,103 +1616,15 @@ app.run('localhost', 8989)
                      num-lines (/ num-lines 25)))))
 
 (defun ref-man-chrome-http-buffer-data (buf)
+  "Get html from an http buffer BUF."
   (with-current-buffer buf
     (goto-char (point-min))
     (re-search-forward "\r?\n\r?\n")
     (message (string-trim (buffer-substring-no-properties (point) (point-max))))))
 
 (defun ref-man-chrome-message-http-buffer (buf)
+  "Get html from a chrome http buffer BUF."
   (message (string-trim (ref-man-chrome-http-buffer-data buf))))
-
-(defvar ref-man-chrome-linkedin-write-file nil)
-(defvar ref-man-chrome-linkedin-out-dir nil)
-(defun ref-man-chrome-parse-linkedin-setup ()
-  "Setup the linkedin parse by specifying the write file.
-The directory where the file is located
-is`/home/joe/projects/bikram_startup/hiring/resumes/'."
-  (interactive)
-  (if (and ref-man-chrome-linkedin-write-file
-           ref-man-chrome-linkedin-out-dir)
-      (let ((url-request-method "POST")
-            (url-request-extra-headers
-             `(("Content-Type" . "application/json")))
-            (url-request-data (encode-coding-string
-                               (json-encode-alist
-                                (list (cons "write_file" ref-man-chrome-linkedin-write-file)
-                                      (cons "out_dir" ref-man-chrome-linkedin-out-dir)))
-                               'utf-8)))
-        (ref-man-chrome-message-http-buffer
-         (url-retrieve-synchronously "http://localhost:8989/setup")))
-    (message "Set variable `ref-man-chrome-linkedin-write-file' first")))
-
-(defvar ref-man-chrome-linkedin-page-source nil)
-(defun ref-man-chrome-parse-linkedin-data (&optional write)
-  "Retrieve the applicants from linkedin recruiter page.
-Requires `python3' with `flask' and `bs4' packages.  The script
-is written to a temp file and is run as a service.  As of now,
-this is the python file which is run
-`/home/joe/lib/misc-python/linkedin_parse.py'"
-  (interactive)
-  (let ((url-request-method "POST")
-        (url-request-extra-headers
-         `(("Content-Type" . "application/json")))
-        (url-request-data (encode-coding-string
-                           (json-encode-alist
-                            (list (cons "page"  ref-man-chrome-linkedin-page-source)))
-                           'utf-8))
-        (linkedin-socket (ref-man-chrome-connect-to-tab-with-url-re "applicantswithfacets"))
-        (download-socket (when (or write current-prefix-arg)
-                           (condition-case nil
-                               (ref-man-chrome-connect-to-empty-tab)
-                             (error nil))
-                           (ref-man-chrome-connect-to-tab-with-url-re "cap/people"))))
-    (ref-man-chrome-eval-on-socket
-     "document.documentElement.innerHTML"
-     linkedin-socket
-     (lambda (result)
-       (setq ref-man-chrome-linkedin-page-source
-             (plist-get (plist-get result :result) :value))))
-    (sleep-for .5)
-    (cond ((not (or write current-prefix-arg))
-           (ref-man-chrome-message-http-buffer (url-retrieve-synchronously "http://localhost:8989/parse"))
-           (setq url-request-method "GET")
-               (setq url-request-extra-headers nil)
-               (setq url-request-data nil)
-               (ref-man-chrome-message-http-buffer
-                (url-retrieve-synchronously "http://localhost:8989/write")))
-          (t
-           (with-current-buffer
-               (url-retrieve-synchronously "http://localhost:8989/parse")
-             (let ((mails-urls (progn (goto-char (point-min))
-                                      (re-search-forward "\r?\n\r?\n")
-                                      (mapcar (lambda (x)
-                                                (split-string x ";"))
-                                              (-filter
-                                               #'identity
-                                               (split-string
-                                                (buffer-substring-no-properties (point) (point-max))))))))
-               (message "[ref-man-chrome] Downloading resumes")
-               (seq-do (lambda (x)
-                         (when (cadr x)
-                           (ref-man-chrome-eval-on-socket
-                            (format "location.href = \"%s\"" (cadr x))
-                            download-socket))
-                         (sleep-for 2)
-                         (setq url-request-data (encode-coding-string
-                                                 (json-encode-alist (list (cons (car x) (cadr x))))
-                                                 'utf-8))
-                         (with-current-buffer
-                             (url-retrieve-synchronously "http://localhost:8989/update_resumes")
-                           (goto-char (point-min))
-                           (re-search-forward "\r?\n\r?\n")
-                           (message (string-trim (buffer-substring-no-properties (point) (point-max))))))
-                       mails-urls)
-               (message "[ref-man-chrome] Finished downloading resumes")
-               (setq url-request-method "GET")
-               (setq url-request-extra-headers nil)
-               (setq url-request-data nil)
-               (ref-man-chrome-message-http-buffer
-                (url-retrieve-synchronously "http://localhost:8989/write"))))))))
 
 (provide 'ref-man-chrome)
 

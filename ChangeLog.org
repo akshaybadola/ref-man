@@ -189,3 +189,35 @@
    - Additional ~clean~ parameters for ~ref-man-org-get-bib-from-org-link~
    - ~ref-man-update-entry-with-ss-data~ with prefix argument now fetches the
      data from SS again.
+
+** [2022-01-28 Fri 15:07]
+   - Fixed docstrings everywhere.
+   - Added _ to some unsed vars.
+   - In ~ref-man-core~:
+     - Added some experimental citeproc symbols
+       - Var ~ref-man-bibtex-to-csl-alist~
+       - Var ~ref-man-citeproc-bib-to-csl-date~
+       - Function ~ref-man-bibtex-to-csl~
+       - Function ~ref-man-bibtex-csl-to-yaml~
+     - Fixed some minor errors in - ~ref-man-org-up-heading~
+     - ~ref-man--org-bibtex-write-ref-from-ss-ref~ now has ISINFLUENTIAL
+       property along with the tag.
+     - Fixed ~kil-new~ in ~ref-man-org-bibtex-read-from-headline~
+     - Determination of internal org link is done with
+       ~util/org-link-get-target-for-internal~
+     - ~ref-man-display-ss-data~ also works when cursor is over an org link
+       now. Also *Semantic Scholar* buffer opens in a window on the side now.
+     - Added preview command for org link ~ref-man-org-peek-link~ and helpers
+       ~ref-man-org-get-link-peek-info~, ~ref-man-org-peek-link-subr~
+   - In ~ref-man-export~:
+     - Added variable ~ref-man-export-journal-specific-metadata-hook~
+     - Added function ~ref-man-export-check-author~
+     - ~ref-man-export-check-author~ is used in ~ref-man-export-get-journal-metadata~
+     - ~ref-man-export-get-all-imgs~ to get all the image paths in a latex
+       ~ref-man-export~ article buffer.
+     - Started work on ~ref-man-export-generate-standalone~ to generate a self
+       contained folder or archive containing all the other files.
+     - ~ref-man-export-paper-no-urls~ and ~ref-man-export-docproc-article~ take
+       an optional argument ~plain~ to export without journal specific
+       templates.
+     - Added additional command ~ref-man-export-paper-plain-no-urls~

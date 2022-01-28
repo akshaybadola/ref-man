@@ -27,7 +27,7 @@
 ;;; Commentary:
 ;;
 ;; Components for interfacing remote storage via `rclone' and `ref-man-py'
-;; module. This module helps in accessing a cache of local files to be shared
+;; module.  This module helps in accessing a cache of local files to be shared
 ;; and corresponding remote links generated with `rclone'.
 ;;
 ;; See URL https://rclone.org/ for details about `rclone'.  Not all remote
