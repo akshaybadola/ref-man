@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Thursday 09 September 2021 01:22:58 AM IST>
+;; Time-stamp:	<Friday 28 January 2022 20:11:32 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -27,7 +27,7 @@
 ;;; Commentary:
 ;;
 ;; Core components include data structures and functions and commands forx
-;; `org', `bibtex', `science-parse' and `python'. A python flask server
+;; `org', `bibtex', `science-parse' and `python'.  A python flask server
 ;; interface is used as an interface to arxiv, dblp and semanticscholar.  There
 ;; are some file and pdf functions also and functions specific for gscholar
 ;; also.
@@ -94,7 +94,7 @@
 (require 'ref-man-py)
 
 (defgroup ref-man nil
-  "Bibliography Manager"
+  "Bibliography Manager."
   :prefix "ref-man-"
   :group 'ref-man)
 
@@ -129,7 +129,7 @@
   :group 'ref-man)
 
 (defcustom ref-man-pandoc-executable "/usr/bin/pandoc"
-  "`pandoc' executable to use"
+  "`pandoc' executable to use."
   :type 'file
   :group 'ref-man)
 
@@ -1019,8 +1019,12 @@ buffer with that filename."
 
 (defun ref-man-org-end-of-meta-data (&optional no-consolidate no-newline)
   "Go to end of all drawers and other metadata.
+
 With optional non-nil NO-CONSOLIDATE, do not consolidate the
-drawers into a contiguous chunk.  Default is to do so."
+drawers into a contiguous chunk.  Default is to do so.
+
+With optional non-nil NO-NEWLINE don't add a newline at the end
+of the heading content if it doesn't exist."
   (save-restriction
     (org-narrow-to-subtree)
     (let ((beg (point-min))
@@ -1122,7 +1126,7 @@ ENTRY is bibtex in alist format fetched from DBLP."
 (defun ref-man--generate-entry-from-hash (hash &optional na)
   "Generate an entry alist from hashtable HASH.
 With optional non-nil NA, they \"key\" is prefixed with
-\"na_\". It happens in case DBLP or another source cannot resolve
+\"na_\".  It happens in case DBLP or another source cannot resolve
 a reference, it's inserted as is prefixed with \"na_\"."
   ;; Need at least author and title
   (when (and (gethash "title" hash) (gethash "authors" hash))
@@ -1207,12 +1211,18 @@ org writing functions."
 (defun ref-man--org-bibtex-write-ref-from-ss-ref (entry &optional ignore-errors
                                                         update-current no-abstract)
   "Generate an org entry from data fetched from Semantic Scholar.
-ENTRY is an alist of symbols cons.  Optional IGNORE-ERRORS is in
-case error occurs while parsing the org properties as bibtex.
+
+ENTRY is an alist of a bibliographic property keys and values.
+
+Optional IGNORE-ERRORS to ignore erros in case error occurs while
+parsing the org properties as bibtex.
+
 With optional UPDATE-CURRENT, update the current org entry
 properties (reflecting the bibliography data) with
 semanticscholar data also.  The default is to insert a new entry
-after current."
+after current.
+
+Don't insert abstract with optional non-nil NO-ABSTRACT."
   ;; NOTE: insert only when title exists
   (when (a-get entry 'title)
     ;; NOTE: insert heading only when not updating current heading
@@ -1285,9 +1295,9 @@ after current."
 
 (defun ref-man--org-bibtex-write-ref-from-assoc (entry &optional ignore-errors
                                                        update-current no-abstract)
-  "Write an org entry from an alist ENTRY with string cons'es.
-Optional non-nil IGNORE-ERRORS is unused to conform with all the
-org writing functions."
+  "Write an org entry a bib ENTRY which is an alist of strings.
+
+The arguments mean the same as `ref-man--org-bibtex-write-ref-from-ss-ref'."
   (let* ((key (car entry))
          (entry (nth 1 entry)))
     (org-insert-heading-after-current)
@@ -1315,9 +1325,9 @@ org writing functions."
 
 (defun ref-man--org-bibtex-write-ref-from-plist (entry &optional ignore-errors
                                                        update-current no-abstract)
-  "Write an org entry from an plist ENTRY.
-Optional non-nil IGNORE-ERRORS is unused to conform with all the
-org writing functions."
+  "Write an org entry a bib ENTRY which is a plist.
+
+The arguments mean the same as `ref-man--org-bibtex-write-ref-from-ss-ref'."
   (org-insert-heading-after-current)
   (insert (cdr (assoc :title entry)))
   (insert "\n")
@@ -1379,12 +1389,12 @@ org writing functions."
 ;;     (org-set-property "CUSTOM_ID" key)
 ;;     (org-set-property "BTYPE" "article")))
 
+;; FIXME: How's this different from earlier org generation functions?
 (defun ref-man--org-bibtex-write-heading-from-bibtex (entry &optional ignore-errors
                                                             update-current no-abstract)
-  "Write an org entry from an alist ENTRY.
-The alist is generated from `bibtex-parse-entry', probably from a
-bibtex buffer.  Optional non-nil IGNORE-ERRORS is unused to
-conform with all the org writing functions."
+  "Write an org entry from an alist parsed from a bibtex ENTRY.
+
+The arguments are same as `ref-man--org-bibtex-write-ref-from-ss-ref'."
   (org-insert-heading)
   (insert (ref-man--fix-curly (cdr (assoc "title" entry))))
   (insert "\n")
@@ -1485,6 +1495,7 @@ Optional ALLOW-MISC allows misc and unpublished."
           (t (if allow-misc "misc" "unpublished")))))
 
 (defun ref-man-key-from-url (url)
+  "Generate a bibtex key from a URL."
   (concat (time-stamp-string "%Y")
           (replace-regexp-in-string
            "%[0-9][0-9]" "_"
@@ -1514,6 +1525,7 @@ ignore the venue key."
   bib-alist)
 
 (defun ref-man-bibtex-bib-is-only-arxiv-p (bib-alist)
+  "Check if a bibliographic entry BIB-ALIST has only appeared in arxiv."
   (let ((case-fold-search t)
         (doi (a-get bib-alist "doi"))
         (journal (a-get bib-alist "journal"))
@@ -1625,6 +1637,7 @@ redundant entries and arxiv metadata is done."
 
 (defun ref-man-org-bibtex-read-from-headline (&optional kill gdrive allow-misc clean)
   "Parse the headline at point and convert to bibtex string.
+
 The current org entry is parsed with `ref-man-org-parse-entry-as-bib'.
 
 When optional KILL is non-nil, the entry is also added to
@@ -1703,7 +1716,7 @@ heading first."
     (cond ((string-empty-p heading)
            (org-edit-headline (org-entry-get (point) "TITLE")))
           ((and (not (string= (org-get-heading t t t t) (org-entry-get (point) "TITLE")))
-                (y-or-n-p "Heading and Title differ. Update? "))
+                (y-or-n-p "Heading and Title differ.  Update? "))
            (org-edit-headline (org-entry-get (point) "TITLE"))))))
 
 (defun ref-man-org-bibtex-dump-bib-to-property ()
@@ -1719,12 +1732,14 @@ separate variable `ref-man-bibtex-save-ring' instead of `kill-ring'."
      bib-assoc (current-buffer) (point) t)))
 
 (defun ref-man-org-bibtex-transform-author-bib-to-org (str)
+  "Change a bibtex author string STR to regular text."
   (->> str
        (ref-man--fix-curly)
        (ref-man--trim-and-unquote)
        (ref-man--invert-accents)))
 
 (defun ref-man-org-bibtex-transform-author-org-to-bib (str)
+  "Change an author string STR suitable for bibtex."
   (ref-man--replace-non-ascii str))
 
 ;; TODO: Ignores should be customizable
@@ -1766,13 +1781,12 @@ the headline itself.  Default is to edit the headline also."
 ;; CHECK: Why only called from `ref-man--parse-bibtex'?
 (defun ref-man--sanitize-org-entry (&optional org-buf org-point)
   "Sanitize an org entry.
-If optional ORG-BUF is given then sanitize the entry at current
-point in that buffer.  Otherwise check if
-`ref-man--org-gscholar-launch-buffer' is non-nil and use that as
-ORG-BUF.
 
-If both are non existent then check if current buffer is an org
-buffer and sanitize the entry at point."
+If optional ORG-BUF is given then use that buffer else `current-buffer'.
+
+Go to optional point ORG-POINT or
+`ref-man--org-gscholar-launch-buffer' if it's non-nil.  Otherwise
+sanitize the entry at current point."
   (let (retval)
     (condition-case ex
         (setq retval
@@ -1885,7 +1899,7 @@ Org buffer defaults to `ref-man--org-gscholar-launch-buffer'."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun ref-man-pandoc-bib-string (&optional bib-file)
   "Generate the bibliography part of pandoc yaml metadata.
-The files included are those in `ref-man-bib-files'. With
+The files included are those in `ref-man-bib-files'.  With
 optional BIB-FILE, include that also."
   (let ((bib-files (if bib-file
                        (cons bib-file ref-man-bib-files)
@@ -1989,8 +2003,8 @@ which can be used to further add data to the org heading."
           (goto-char ref-man--org-gscholar-launch-point))))))
 
 (defun ref-man--insert-org-pdf-url-property (url)
-  "Insert FILE as property to an org drawer.
-Confirm in case the property PDF_FILE exists."
+  "Insert a PDF_URL property from URL to an org drawer.
+Confirm in case the property PDF_URL exists."
   (org-set-property "PDF_URL" url)
   ;; NOTE: Maybe asking for this is too much
   ;; (let ((props (org-entry-properties)))
@@ -2015,9 +2029,11 @@ Confirm in case the property PDF_FILE exists."
 
 (defun ref-man--eww-pdf-download-callback-store-new (status url args)
   "Callback for `url-retrieve' pdf download.
-STATUS is response status (I think).  URL is the url.  PT if
-given stores the point in `ref-man--subtree-list'.  This callback
-is meant to operate in batch mode."
+
+STATUS is response status.
+URL is the url.
+
+Rest of the ARGS are a plist."
   (unless (plist-get status :error)
     (let ((file (ref-man-files-filename-from-url url))
           (buf (and args (plist-get args :buffer)))
@@ -2181,7 +2197,9 @@ overwrite if it exists without confirmation."
 ;; START org link functions ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun ref-man-org-heading-level (&optional point)
-  "Get level of current heading."
+  "Get level of current heading.
+
+Goto optional POINT first if given."
   (if (eq major-mode 'org-mode)
       (save-restriction
         (ref-man-org-narrow-to-heading-and-body)
@@ -2243,11 +2261,11 @@ matches only `http'.
 Optional NARROW works the same as in `ref-man-org-get-links-with-conditions'.
 
 Optional LINK-TYPE specifies what to return.  When nil only the
-raw-link is returned. When it equals 'path then return only the
-path value. Helpful for `file' links sometimes.
+raw-link is returned.  When it equals 'path then return only the
+path value.  Helpful for `file' links sometimes.
 
 is non-nil only the link path is
-returned. "
+returned."
   (let ((preds (lambda (link) (string-match-p link-re (org-element-property :type link)))))
     (pcase link-type
       ('path (mapcar (lambda (link) (org-element-property :path link))
@@ -2381,15 +2399,20 @@ Return a cons of `id-type' and `id'.  Possible values for
 
 (defun ref-man--insert-refs-from-seq (data name seqtype &optional ignore-errors no-abstract)
   "Insert references from a given sequence at cursor.
-DATA is json-data from semantic scholar.  NAME is the org heading
-that will be generated.
+
+DATA is json-data from semantic scholar.
+NAME is the org heading that will be generated.
+
+SEQTYPE specifies the function to format the org entry
+determined.  It can be one of 'ss 'assoc 'plist or 'bibtex.
 
 After the heading is generated, each element of the data is
-inserted as a reference.  The function to format the org entry is
-determined by SEQTYPE; it can be one of 'ss 'assoc 'plist 'bibtex.
+inserted as a reference.
 
 With optional IGNORE-ERRORS non-nil, ignore any errors that may
-happen while inserting references in the buffer."
+happen while inserting references in the buffer.
+
+Non-nil NO-ABSTRACT means to not insert the abstract."
   (unless (eq major-mode 'org-mode)
     (message "[ref-man] Can only insert to an org buffer"))
   (let ((write-func (cond ((eq seqtype 'ss)
@@ -2421,8 +2444,8 @@ happen while inserting references in the buffer."
   "Insert Semantic Scholar Data SS-DATA into an org buffer.
 
 SS-DATA is an alist of a paper details with references and
-citations. The heading is inserted first for the paper, then
-abstract and then references and citations. Rest of metadata is
+citations.  The heading is inserted first for the paper, then
+abstract and then references and citations.  Rest of metadata is
 not inserted.  The function accepts following optional arguments:
 
 BUF is the target buffer, defaults to `current-buffer'.
@@ -2431,6 +2454,9 @@ WHERE specifies the point at which to insert the data.  Defaults to `point'
 
 IGNORE-ERRORS if non-nil, indicates to ignore any errors that may happen
 while inserting references in the buffer.
+
+ONLY if given can be one of 'refs or 'cites and means to insert
+either of References or Citations for an SS entry.
 
 NO-ABSTRACT if non-nil, do not insert abstract at the top heading.
 
@@ -2468,15 +2494,20 @@ citations after that."
   (org-hide-block-all))
 
 (defun ref-man-org-get-bib-from-org-link-subr (get-key &optional allow-misc clean)
-  "Subroutine to get a bib string from an org heading.
-The return value is a list with PATH, a bibkey if GET-KEY is
-non-nil and the bib string extracted with
-`ref-man-org-bibtex-read-from-headline'.
+  "Subroutine to get a bibtex string from an org heading.
+
+The return value is a list with PATH.
+
+If GET-KEY is non-nil then return a list of the bibtex key and
+the bibtex entry string.
+
+Option CLEAN means to clean the bibtex entry by running it
+through `ref-man-bibtex-clean-pipe'.
+
+The bibtex string is extracted with `ref-man-org-bibtex-read-from-headline'.
 
 With optional non-nil ALLOW-MISC, headings which have been
-published as urls are also exported as \"@misc\".
-
-The values are returned as a list of '(path key bib)."
+published as urls are also exported as \"@misc\"."
   (let* ((url (or (org-entry-get (point) "URL")
                   (org-entry-get (point) "PDF_URL")))
          (url-key (when url (ref-man-key-from-url url)))
@@ -2489,11 +2520,14 @@ The values are returned as a list of '(path key bib)."
 
 (defun ref-man-org-get-bib-from-org-link (&optional get-key allow-misc clean)
   "Get a possible bibtex from an org link in text.
+
 The link must point to either an org heading or an org
 CUSTOM_ID.
 
 With optional non-nil GET-KEY return a list of '(path key bib).  Default is
 to return bib only.
+
+CLEAN is passed on to `ref-man-org-get-bib-from-org-link-subr'.
 
 With optional non-nil ALLOW-MISC @misc bibs are also parsed."
   (save-excursion
@@ -2600,6 +2634,7 @@ ENTRY is the `org' entry at point."
   (org-copy-subtree 1 t))
 
 (defun ref-man-org-update-from-from-crossref ()
+  "Update the current org heading from crossref."
   (interactive)
   (let* ((doi (org-entry-get (point) "DOI"))
          (journal (org-entry-get (point) "JOURNAL"))
@@ -2667,8 +2702,10 @@ With optional non-nil FETCH-PDF also try to fetch a PDF file."
 ;; FIXME: This could be `let'
 (defvar ref-man-convert-links-in-subtree-to-headings-fetch--pdfs)
 (defun ref-man-convert-links-in-subtree-to-headings ()
-  "Convert all the links in the subtree to headings, if the link
-is from a recognized parseable host. As of now, only ArXiv"
+  "Convert all the links in the subtree to headings.
+
+If the link is from a recognized parseable host.  As of now, only
+ArXiv"
   (interactive)
   (if (eq major-mode 'org-mode)
       (progn
@@ -2708,8 +2745,10 @@ is from a recognized parseable host. As of now, only ArXiv"
 (defun ref-man-update-entry-with-ss-data (&optional arg)
   "Update current entry with Semantic Scholar Data.
 
+Optional ARG is for interactive use.
+
 The data is fetched if required from `semanticscholar.org' and
-the properties are updated. Citations and references are not
+the properties are updated.  Citations and references are not
 displayed or inserted.  See `ref-man-fetch-ss-data-for-entry' for
 details.
 
@@ -2725,7 +2764,7 @@ With a non-nil `\\[universal-argument]' fetch the data from
 
 The data is fetched if required from `semanticscholar.org' and
 inserted in the current subtree.  If `current-prefix-arg' is non
-nil then insert only references. Useful when the number of
+nil then insert only references.  Useful when the number of
 citations are really high, e.g. above 1000. Default is to insert
 both References and Citations.
 
@@ -2871,10 +2910,13 @@ the heading."
   (when (assoc "ABSTRACT" props-alist)
     (ref-man-org-insert-abstract (a-get props-alist "ABSTRACT") (current-buffer) t))
   (when (and (not (string= (org-get-heading t t t t) (a-get props-alist "TITLE")))
-             (y-or-n-p "Heading and Title differ. Update? "))
+             (y-or-n-p "Heading and Title differ.  Update? "))
     (org-edit-headline (a-get props-alist "TITLE"))))
 
 (defun ref-man-parse-ss-search-result (result)
+  "Parse the RESULT of a Semantic Scholar search.
+
+RESULT should be an alist."
   (let ((retval nil))
     (push `("PAPERID". ,(a-get result 'id)) retval)
     (push `("ABSTRACT". ,(a-get (a-get result 'paperAbstract) 'text)) retval)
@@ -2904,10 +2946,13 @@ the heading."
 
 
 (defun ref-man-safe-update-org-prop (prop val &optional pt)
+  "Safely update org heading property PROP with VAL.
+
+With optional PT goto that point first."
   (when (and prop val)
     (let ((test (or (not (org-entry-get (or pt (point)) prop))
                     (and (org-entry-get (or pt (point)) prop)
-                         (y-or-n-p (format "Property %s exists. Update Anyway? " prop))))))
+                         (y-or-n-p (format "Property %s exists.  Update Anyway? " prop))))))
       (when test
         (org-entry-put (or pt (point)) prop val)))))
 
@@ -3005,7 +3050,7 @@ inferred."
                                   ref-man--org-gscholar-launch-point)
                           (with-current-buffer org-buf (point)))))
       (if (or (ref-man-url-downloadable-pdf-url-p pdf-url)
-              (y-or-n-p (format "%s is not a valid PDF url. Add anyway? " pdf-url)))
+              (y-or-n-p (format "%s is not a valid PDF url.  Add anyway? " pdf-url)))
           (with-current-buffer org-buf
             (org-entry-put org-point "PDF_URL" pdf-url)
             (ref-man-maybe-set-arxiv-id org-point pdf-url))
@@ -3077,22 +3122,39 @@ current headline.  Default is to insert a subheading."
       (ref-man-org-insert-link-as-headline org-buf link title metadata current))))
 
 (defun ref-man--download-pdf-redirect-new (callback url &optional args)
+  "Redirect to Fetch PDF from URL.
+
+Call function CALLBACK after fetching.
+
+Optional ARGS are passed on to the callback with URL as a
+list (url args)."
   (message "[ref-man] Fetching PDF from %s" url)
   (let ((url (ref-man-url-maybe-proxy url)))
     (url-retrieve url callback (list url args))))
 
 (defun ref-man--download-pdf-redirect (callback url &optional point)
+  "Redirect to Fetch PDF from URL.
+
+Call function CALLBACK after fetching.
+
+Optional POINT is passed on to the callback with URL as a
+list (url point)."
   (message "[ref-man] Fetching PDF from %s" url)
   (let ((url (ref-man-url-maybe-proxy url)))
     (if point
         (url-retrieve url callback (list url point))
       (url-retrieve url callback (list url)))))
 
+;; FIXME: If not file and not args then visit with EWW? What does ARGS do?
 (defun ref-man--fetch-from-pdf-url-new (url &optional args)
   "Fetch pdf file if possible, from URL.
-Optional argument STOREP is for batch updates.  Store the
-filename in `ref-man--subtree-list' instead so that the whole
-subtree will be updated later."
+
+Check if the file exists on disk first.
+
+Call function `ref-man--download-pdf-redirect-new' with the
+callback `ref-man--eww-pdf-download-callback-store-new' and
+arguments optional ARGS.  Update the PDF_FILE property for the
+org entry after downloading."
   (if (and url (not (string-empty-p url)))
       (let ((file (ref-man-files-check-pdf-file-exists url t))
             (url (ref-man-url-maybe-proxy url))
@@ -3153,6 +3215,7 @@ subtree will be updated later."
            (ref-man--download-pdf-redirect #'ref-man--eww-pdf-download-callback url)))))
 (make-obsolete 'ref-man--fetch-from-pdf-url 'ref-man--fetch-from-pdf-url-new "ref-man 0.3.0")
 
+;; FIXME: What does this do?
 (defun ref-man--update-subtree-list (url status)
   (push (list :url url :point (point)
               :heading (org-link-heading-search-string)
@@ -3195,7 +3258,9 @@ Each of the functions is called with a plist with keys:
 We Can only retrieve from specific sites.  See
 `ref-man-url-get-pdf-link-helper' for a list of supported sites.
 
-PT, HEADING, URL, PDF-URL are `point', org heading and url and
+ORG-BUF is the org buffer to fetch in.
+
+PT, HEADING, URLS, PDF-URL are `point', org heading, url list and
 pdf url in org entry properties respectively.
 
 Optional STOREP specifies whether to store the retrieved data to
@@ -3268,6 +3333,7 @@ RETRIEVE-TITLE has no effect at the moment."
 ;;        https://www.gnu.org/software/emacs/manual/html_node/elisp/Text-Properties.html#Text-Properties
 ;;        https://www.gnu.org/software/emacs/manual/html_node/elisp/Special-Properties.html#Special-Properties
 (defun ref-man-try-fetch-and-store-pdf-in-org-subtree-entries ()
+  "Try fetch and store pdfs in current subtree."
   (interactive)
   (message "[ref-man] Fetching PDFs in subtree. Wait for completion...")
   (setq ref-man--current-org-buffer (current-buffer))
@@ -3335,6 +3401,10 @@ the current heading are excluded."
 
 (defun ref-man--check-fix-url-property (&optional props)
   "Fix the URL property in the property drawer.
+
+If optional PROPS is given then use those instead of reading from
+org entry.
+
 Make sure URL property exists in either property drawer or text
 and if no URL could be found return nil.  If no URL property
 exists, then first link from entry text is imported into the
@@ -3425,6 +3495,7 @@ The pdfs are downloaded and the file links are marked as `(file here)'"
                 links)))))
 
 (defun ref-man--check-fix-pdf-file-property ()
+  "Check current org entry for PDF_FILE property."
   (let* ((props (org-entry-properties))
          (pdf-file (cond ((assoc "PDF_FILE" props)
                           (cdr (assoc "PDF_FILE" props)))
@@ -3438,7 +3509,13 @@ The pdfs are downloaded and the file links are marked as `(file here)'"
 
 
 (defun ref-man--check-fix-ss-url (&optional props)
-  "Replace all *_URL entries with SS_URL if they're of semanticscholar.org."
+  "Fix SS_URL properties of current org entry.
+
+Replace all *_URL properties in current org entry with SS_URL if
+they're of semanticscholar.org.
+
+Use optional PROPS if given instead of current org entry's
+properties."
   (let ((props (or props (org-entry-properties))))
     (seq-do (lambda (url)
               (let ((val (a-get props url)))
@@ -3450,7 +3527,8 @@ The pdfs are downloaded and the file links are marked as `(file here)'"
   (org-entry-get (point) "SS_URL"))
 
 (defun ref-man-fetch-pdf-check-pdf-file (pdf-file urls)
-  "Check if pdf file already exists in heading.
+  "Check if PDF-FILE already exists in heading.
+
 After checking the file return message for which url it matches.
 
 URLS is an alist of urls with the type of url as the key and url
@@ -3494,11 +3572,11 @@ Optional INTERACTIVEP is to check the `interactive' call."
              (pdf-file (ref-man--check-fix-pdf-file-property))
              (bib-prop (ref-man-parse-bib-property-key))
              (headingp (ref-man-check-heading-non-empty-p))
-             (urls `((url-prop . ,url-prop)
-                     (pdf-url-prop . ,pdf-url-prop)
-                     (alt-url-prop . ,alt-url-prop)
-                     (arxiv-url-prop . ,arxiv-url-prop)
-                     (ss-url-prop . ,ss-url-prop)))
+             (urls `((url . ,url-prop)
+                     (pdf-url . ,pdf-url-prop)
+                     (alt-url . ,alt-url-prop)
+                     (arxiv-url . ,arxiv-url-prop)
+                     (ss-url . ,ss-url-prop)))
              retrieve-bib retrieve-pdf retrieve-title
              (msg-str ""))
         (when ssidtype-id
@@ -3664,6 +3742,7 @@ Adapted somewhat from `company-quickhelp--show'."
     ))
 
 (defun ref-man-org-peek-link (&optional _arg)
+  "Preview org entry's properties in a `pos-tip'."
   (interactive "p")
   (ref-man-org-peek-link-subr nil nil nil))
 
@@ -3697,8 +3776,9 @@ web buffer was called from an org buffer."
 ;; when gscholar is called from any other buffer than previous
 ;; ref-man--org-gscholar-launch-point
 (defun ref-man-org-search-heading-on-gscholar-with-eww ()
-  "Searches for the current heading in google scholar in
-eww. Stores the buffer and the position from where it was called."
+  "Search for the current heading in google scholar with eww.
+
+Store the buffer and the position from where it was called."
   (interactive)
   (if (eq major-mode 'org-mode)
       (progn
@@ -3723,14 +3803,13 @@ eww. Stores the buffer and the position from where it was called."
 ;;       eww. Heading if it existed, or create one. Check for files etc. I guess
 ;;       I can do it later
 (defun ref-man-maybe-create-or-insert-org-heading-and-property (file)
-  "For a given filename, a heading and/or :PDF_FILE: property is
-inserted in ref-man--org-gscholar-launch-buffer if it exists, or
-temp-org-buffer.
-a) org-gscholar-launch-buffer if it exists
-b) temp-org-buffer otherwise
+  "Create or insert an org heading with for a given PDF FILE.
 
-If the pdf already exists in the download directory
-a) org-gscholar-launch-buffer is checked for the entry"
+The heading contains PDF_FILE property with the FILE's path as
+link.
+
+The heading is inserted in `ref-man--org-gscholar-launch-buffer'
+if it exists, or `ref-man-org-links-file-path'."
   ;; - If org-gscholar-launch-buffer exists
   ;;   When does it exist though? What if I go to eww from org with eww?
   ;;   - Save excursion, get pdf file name and search in the buffer
@@ -3754,6 +3833,7 @@ a) org-gscholar-launch-buffer is checked for the entry"
                  (ref-man--insert-org-pdf-file-property file))))))))
 
 (defun ref-man--at-bib-heading-p ()
+  "Return non-nil if we're at a bib heading."
   (let ((props (org-entry-properties)))
     (and (org-at-heading-p)
          (or (assoc "TYPE" props) (assoc "BTYPE" props))
@@ -3835,7 +3915,9 @@ entry to kill ring."
 
 ;; NOTE: I wanted to do recursion also with this. Maybe use helper
 (defun ref-man-parse-subtree-to-buffer-as-bibtex (&optional bib-buf)
-  "Inserts contents of an org-subtree as bibtex entries to a bib file"
+  "Insert contents of an org-subtree as bibtex entries to an open buffer.
+
+Read buffer BIB-BUF from user."
   (interactive)
   (unless (boundp 'bib-buf)
     (completing-read "Bib buffer: "

@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Thursday 09 September 2021 01:23:06 AM IST>
+;; Time-stamp:	<Friday 28 January 2022 20:11:32 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -192,14 +192,17 @@ in the properties drawer of the subtree."
                 x))
    (f-files ref-man-export-pandoc-templates-dir)))
 
-(defun ref-man-export-csl-files ()
-  "Get csl files as an alist from `ref-man-export-pandoc-csl-dir'."
-  (mapcar
-   (lambda (x) (cons
-                (downcase (string-remove-suffix ".csl" (f-filename x)))
-                x))
-   (-filter (lambda (x) (string-suffix-p ".csl" (f-filename x)))
-            (f-files ref-man-export-pandoc-csl-dir))))
+(defun ref-man-export-csl-files (csl-file)
+  "Get the full path for CSL-FILE.
+
+Files are searched in `ref-man-export-pandoc-csl-dir'"
+  (a-get (mapcar
+          (lambda (x) (cons
+                       (downcase (string-remove-suffix ".csl" (f-filename x)))
+                       x))
+          (-filter (lambda (x) (string-suffix-p ".csl" (f-filename x)))
+                   (f-files ref-man-export-pandoc-csl-dir)))
+         (string-remove-suffix ".csl" csl-file)))
 
 ;; TODO: This should be a macro
 (defun ref-man-export-pdf-template ()
@@ -482,7 +485,7 @@ Requires the bib and other files to be generated once with
                                       (org-narrow-to-subtree)
                                       (list (substring-no-properties (org-get-heading t t t t))
                                             (md5 (buffer-substring-no-properties (point-min) (point-max))))))
-                                (user-error "For generation of a research article, a DOC_ROOT must be specified.?")))
+                                (user-error "For generation of a research article, a DOC_ROOT must be specified")))
          (doc-name (concat (string-join
                             (-take 3 (split-string (downcase (ref-man--remove-punc title t)))) "-")
                            "-" (substring checksum 0 10)))
@@ -496,7 +499,7 @@ Requires the bib and other files to be generated once with
                         '(".tex" ".bib")))
          (compile-cmd (s-lex-format "pdflatex ${doc-name}.tex && bibtex ${doc-name}.aux && pdflatex ${doc-name}.tex && pdflatex ${doc-name}.tex && rm *.out *.aux *.log *.blg")))
     (unless (-all? (lambda (x) (and (f-exists? x) (f-file? x))) files)
-      (user-error "Some files for document are missing.  Generate first.?"))
+      (user-error "Some files for document are missing.  Generate first?"))
     (when (f-exists? doc-dir)
       (f-delete doc-dir t))
     (f-mkdir doc-dir)
@@ -571,7 +574,7 @@ See `ref-man-export-docproc-article' for details."
   (interactive)
   (let ((doc-root (util/org-get-tree-prop "DOC_ROOT")))
     (unless doc-root
-      (user-error "For generation of a research article, a DOC_ROOT must be specified.?"))
+      (user-error "For generation of a research article, a DOC_ROOT must be specified"))
     (save-excursion
       (goto-char doc-root)
       (message "Exporting to PDF...")
@@ -633,7 +636,6 @@ The table is inserted at %s and formatted with `format'."
 
 (defun ref-man-export-parse-references (type &optional no-warn-types)
   "Parse the references from org text.
-
 Search for all org links of type (or 'fuzzy 'custom-id 'http) and
 gather the heading to which the link points to, if it can be
 parsed as bibtex.
@@ -767,10 +769,11 @@ preprints."
          (csl-dir ref-man-export-pandoc-csl-dir)
          (csl-file (pcase (org-entry-get (point) "CSL")
                      ('nil
-                      (if no-urls
-                          ref-man-export-csl-no-urls-file
-                        ref-man-export-csl-urls-file))
-                     (csl (a-get (ref-man-export-csl-files) (downcase csl)))))
+                      (ref-man-export-csl-files
+                       (if no-urls
+                           ref-man-export-csl-no-urls-file
+                         ref-man-export-csl-urls-file)))
+                     (csl (ref-man-export-csl-files (downcase csl)))))
          (citeproc "biblatex")
          (mathjax-path ref-man-export-mathjax-dir)
          (pandocwatch "-m pndconf")

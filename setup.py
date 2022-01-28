@@ -34,11 +34,14 @@ setup(
     ],
     packages=["ref_man"],
     include_package_data=True,
+    package_data={'': ['ss_default.json']},
     python_requires=">=3.6.9",
     install_requires=["flask==1.1.2",
                       "requests>=2.24.0",
                       "beautifulsoup4>=4.9.1",
                       "psutil>=5.8.0",
+                      "PyYAML>=5.4.1",
+                      "lxml>=4.6.4",
                       "common_pyutil>=0.7.2"],
     entry_points={
         'console_scripts': [

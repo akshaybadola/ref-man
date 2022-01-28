@@ -221,3 +221,6 @@
        an optional argument ~plain~ to export without journal specific
        templates.
      - Added additional command ~ref-man-export-paper-plain-no-urls~
+   - In ~ref-man-py~:
+     - In ~ref-man-py-get-system-python~ we can detect if we're in a virtualenv
+       and warn user.
