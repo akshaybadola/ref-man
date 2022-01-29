@@ -2752,7 +2752,7 @@ the properties are updated.  Citations and references are not
 displayed or inserted.  See `ref-man-fetch-ss-data-for-entry' for
 details.
 
-With a non-nil `\\[universal-argument]' fetch the data from
+With `\\[universal-argument]' fetch the data from
 `semanticscholar.org' even if it's present in cache."
   (interactive "p")
   (pcase arg

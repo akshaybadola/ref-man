@@ -19,7 +19,7 @@ from .const import default_headers
 from .util import fetch_url_info, fetch_url_info_parallel, parallel_fetch, post_json_wrapper
 from .arxiv import arxiv_get, arxiv_fetch, arxiv_helper
 from .dblp import dblp_helper
-from .semantic_scholar import SemanticSearch, load_ss_cache, semantic_scholar_paper_details
+from .semantic_scholar import (SemanticSearch, FilesCache)
 from .cache import CacheHelper
 
 
@@ -65,7 +65,7 @@ class Server:
         self.host = "127.0.0.1"
         self.port = port
         self.batch_size = batch_size
-        self.data_dir = data_dir
+        self.data_dir = Path(data_dir)
         self.proxy_port = proxy_port
         self.proxy_everything = proxy_everything
         self.proxy_everything_port = proxy_everything_port
@@ -102,7 +102,9 @@ class Server:
                 self.logger.error(f"Could not load file {cvf}")
         self.logger.debug(f"Loaded conference files {self.soups.keys()}")
 
-        self.ss_cache = load_ss_cache(self.data_dir)
+        self.ss_cache = FilesCache(self.data_dir)
+        self.ss_cache.load()
+        # self.ss_cache = load_ss_cache(self.data_dir)
         self.update_cache_run = None
         if local_pdfs_dir and remote_pdfs_dir and remote_links_cache:
             self.pdf_cache_helper: Optional[CacheHelper] =\
@@ -217,8 +219,7 @@ class Server:
                     force = True
                 else:
                     force = False
-                data = semantic_scholar_paper_details(id_type, id, self.data_dir,
-                                                      self.ss_cache, force)
+                data = self.ss_cache.get(id_type, id, force)
                 return data
             else:
                 return json.dumps("METHOD NOT IMPLEMENTED")

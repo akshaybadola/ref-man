@@ -9,131 +9,122 @@ from pathlib import Path
 
 # TODO: I don't think the type for Cache is correct
 Cache = Dict[str, Dict[str, str]]
-
 assoc = [(x, i) for i, x in enumerate(["acl", "arxiv", "corpus", "doi"])]
 
 
-def load_ss_cache(data_dir: Path) -> Cache:
-    """Load the ss_cache metadata from the disk.
-
-    The cache is indexed as a file in `metadata` and the file data itself is
-    named as the Semantic Scholar `corpusId` for the paper. We load metadata on
-    startup and fetch the rest as needed.
+class FilesCache:
+    """A files based Cache for keep Semantic Scholar data.
 
     Args:
-        data_dir: Directory where the cache is located
+        root: root directory where all the metadata and the
+              files data will be kept
 
     """
-    with open(os.path.join(data_dir, "metadata")) as f:
-        _cache = [*filter(None, f.read().split("\n"))]
-    ss_cache: Cache = {"acl": {}, "doi": {}, "arxiv": {}, "corpus": {}}
-    for _ in _cache:
-        c = _.split(",")
+    def __init__(self, root: Path):
+        if not root.exists():
+            raise FileExistsError(f"{root} doesn't exist")
+        self._root = root
+        self._cache: Cache = {}
+
+    def load(self):
+        """Load the Semantic Scholar metadata from the disk.
+
+        The cache is indexed as a file in :code:`metadata` and the file data itself is
+        named as the Semantic Scholar :code:`corpusId` for the paper. We load metadata on
+        startup and fetch the rest as needed.
+
+        Args:
+            data_dir: Directory where the cache is located
+
+        """
+        with open(os.path.join(self._root, "metadata")) as f:
+            _cache = [*filter(None, f.read().split("\n"))]
+        self._cache = {"acl": {}, "doi": {}, "arxiv": {}, "corpus": {}}
+        for _ in _cache:
+            c = _.split(",")
+            for key, ind in assoc:
+                if c[ind]:
+                    self._cache[key][c[ind]] = c[-1]
+        print(f"Loaded SS cache with {sum(len(x) for x in self._cache.values())} entries")
+
+    def put(self, acl_id: str, data: Dict[str, str]):
+        """Save Semantic Scholar cache to disk.
+
+        We read and write data for individual papers instead of one big json
+        object.
+
+        Args:
+            data: data for the paper
+            data_dir: Directory where the cache is located
+            ss_cache: The Semantic Scholar cache
+            acl_id: ACL Id for the paper
+
+        """
+        with open(os.path.join(self._root, data["paperId"]), "w") as f:
+            json.dump(data, f)
+        c = [acl_id if acl_id else "",
+             data["arxivId"] if data["arxivId"] else "",
+             str(data["corpusId"]),
+             data["doi"] if data["doi"] else "",
+             data["paperId"]]
         for key, ind in assoc:
             if c[ind]:
-                ss_cache[key][c[ind]] = c[-1]
-    print(f"Loaded SS cache with {sum(len(x) for x in ss_cache.values())} entries")
-    return ss_cache
+                self._cache[key][c[ind]] = c[-1]
+        with open(os.path.join(self._root, "metadata"), "a") as f:
+            f.write(",".join(c) + "\n")
+        print("Updated metadata")
 
 
-# NOTE: There's a separate acl_id here, because SS allows query by acl_id but
-#       doesn't return it if it exists in the result.
-def save_data(data: Dict[str, str], data_dir: Path, ss_cache: Cache, acl_id) -> None:
-    """Save Semantic Scholar cache to disk.
+    def get(self, id_type: str, ID: str, force: bool) -> Union[str, bytes]:
+        """Get semantic scholar paper details
 
-    We read and write data for individual papers instead of one big json object.
+        The Semantic Scholar cache is checked first and if it's a miss then the
+        details are fetched from the server.
 
-    Args:
-        data: data for the paper
-        data_dir: Directory where the cache is located
-        ss_cache: The Semantic Scholar cache
-        acl_id: ACL Id for the paper
+        Args:
+            id_type: type of the paper identifier one of
+                     `['ss', 'doi', 'mag', 'arxiv', 'acl', 'pubmed', 'corpus']`
+            ID: paper identifier
+            force: Force fetch from Semantic Scholar server, ignoring cache
 
-    """
-    with open(os.path.join(data_dir, data["paperId"]), "w") as f:
-        json.dump(data, f)
-    c = [acl_id if acl_id else "",
-         data["arxivId"] if data["arxivId"] else "",
-         str(data["corpusId"]),
-         data["doi"] if data["doi"] else "",
-         data["paperId"]]
-    for key, ind in assoc:
-        if c[ind]:
-            ss_cache[key][c[ind]] = c[-1]
-    # ss_cache["acl"][c[0]] = c[-1]
-    # ss_cache["arxiv"][c[1]] = c[-1]
-    # ss_cache["corpus"][c[2]] = c[-1]
-    # ss_cache["doi"][c[3]] = c[-1]
-    with open(os.path.join(data_dir, "metadata"), "a") as f:
-        f.write(",".join(c) + "\n")
-    print("Updated metadata")
-
-
-# def semantic_scholar_sorted_citations(citations):
-#     return None
-
-
-# def semantic_scholar_two_hop_neighbour_graph(id_type: str, ID: str, k: int = 10):
-#     paper_details = semantic_scholar_paper_details()
-#     citations = semantic_scholar_sorted_citations(paper_details.citations)
-#     references = paper_details.references
-#     for cite in citations:
-#         ID = get_id_for_ref(cite)
-#         ref_details = semantic_scholar_paper_details("ss", ID)
-
-
-def semantic_scholar_paper_details(id_type: str, ID: str, data_dir: str,
-                                   ss_cache: Cache, force: bool) -> Union[str, bytes]:
-    """Get semantic scholar paper details
-
-    The Semantic Scholar cache is checked first and if it's a miss then the
-    details are fetched from the server.
-
-    Args:
-        id_type: type of the paper identifier one of
-                 `['ss', 'doi', 'mag', 'arxiv', 'acl', 'pubmed', 'corpus']`
-        ID: paper identifier
-        data_dir: Directory where the cache is loacaded
-        ss_cache: The Semantic Scholar cache
-        force: Force fetch from Semantic Scholar server, ignoring cache
-
-    """
-    urls = {"ss": f"https://api.semanticscholar.org/v1/paper/{ID}",
-            "doi": f"https://api.semanticscholar.org/v1/paper/{ID}",
-            "mag": f"https://api.semanticscholar.org/v1/paper/MAG:{ID}",
-            "arxiv": f"https://api.semanticscholar.org/v1/paper/arXiv:{ID}",
-            "acl": f"https://api.semanticscholar.org/v1/paper/ACL:{ID}",
-            "pubmed": "https://api.semanticscholar.org/v1/paper/PMID:{ID}",
-            "corpus": f"https://api.semanticscholar.org/v1/paper/CorpusID:{ID}"}
-    if id_type not in urls:
-        return json.dumps("INVALID ID TYPE")
-    else:
-        if id_type == "ss" and not force and ID in os.listdir(data_dir):
-            print(f"Fetching from disk for {id_type}, {ID}")
-            with open(os.path.join(data_dir, ID)) as f:
-                return json.load(f)
-        elif (id_type in {"doi", "acl", "arxiv", "corpus"}
-              and ID in ss_cache[id_type] and ss_cache[id_type][ID]
-              and not force):
-            print(f"Fetching from cache for {id_type}, {ID}")
-            with open(os.path.join(data_dir, ss_cache[id_type][ID])) as f:
-                return json.load(f)
+        """
+        urls = {"ss": f"https://api.semanticscholar.org/v1/paper/{ID}",
+                "doi": f"https://api.semanticscholar.org/v1/paper/{ID}",
+                "mag": f"https://api.semanticscholar.org/v1/paper/MAG:{ID}",
+                "arxiv": f"https://api.semanticscholar.org/v1/paper/arXiv:{ID}",
+                "acl": f"https://api.semanticscholar.org/v1/paper/ACL:{ID}",
+                "pubmed": f"https://api.semanticscholar.org/v1/paper/PMID:{ID}",
+                "corpus": f"https://api.semanticscholar.org/v1/paper/CorpusID:{ID}"}
+        if id_type not in urls:
+            return json.dumps("INVALID ID TYPE")
         else:
-            acl_id = ""
-            if id_type == "acl":
-                acl_id = ID
-            if not force:
-                print(f"Data not in cache for {id_type}, {ID}. Fetching")
+            if id_type == "ss" and not force and ID in os.listdir(self._root):
+                print(f"Fetching from disk for {id_type}, {ID}")
+                with open(os.path.join(self._root, ID)) as f:
+                    return json.load(f)
+            elif (id_type in {"doi", "acl", "arxiv", "corpus"}
+                  and ID in self._cache[id_type] and self._cache[id_type][ID]
+                  and not force):
+                print(f"Fetching from cache for {id_type}, {ID}")
+                with open(os.path.join(self._root, self._cache[id_type][ID])) as f:
+                    return json.load(f)
             else:
-                print(f"Forced Fetching for {id_type}, {ID}")
-            url = urls[id_type] + "?include_unknown_references=true"
-            response = requests.get(url)
-            if response.status_code == 200:
-                save_data(json.loads(response.content), Path(data_dir), ss_cache, acl_id)
-                return response.content  # already JSON
-            else:
-                print(f"Server error. Could not fetch")
-                return json.dumps(None)
+                acl_id = ""
+                if id_type == "acl":
+                    acl_id = ID
+                if not force:
+                    print(f"Data not in cache for {id_type}, {ID}. Fetching")
+                else:
+                    print(f"Forced Fetching for {id_type}, {ID}")
+                url = urls[id_type] + "?include_unknown_references=true"
+                response = requests.get(url)
+                if response.status_code == 200:
+                    save_data(json.loads(response.content), Path(self._root), self._cache, acl_id)
+                    return response.content  # already JSON
+                else:
+                    print(f"Server error. Could not fetch")
+                    return json.dumps(None)
+
 
 
 class SemanticSearch:
