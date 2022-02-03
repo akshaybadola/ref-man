@@ -224,3 +224,10 @@
    - In ~ref-man-py~:
      - In ~ref-man-py-get-system-python~ we can detect if we're in a virtualenv
        and warn user.
+
+** [2022-02-03 Thu 17:42]
+   - Added ~save-excursion~ in ~ref-man--org-bibtex-write-ref-from-ss-ref~
+   - ~ref-man-py~ now requires python version at least ~3.7~.
+   - Added functions for separate ~ref-man-py-home-dir~.
+
+

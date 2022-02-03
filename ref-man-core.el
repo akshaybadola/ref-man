@@ -1224,74 +1224,78 @@ after current.
 
 Don't insert abstract with optional non-nil NO-ABSTRACT."
   ;; NOTE: insert only when title exists
-  (when (a-get entry 'title)
-    ;; NOTE: insert heading only when not updating current heading
-    (unless update-current
-      (org-insert-heading-after-current))
-    (org-edit-headline (a-get entry 'title))
-    ;; FIXME: beg is same as current point
-    (when (and (not no-abstract) (a-get entry 'abstract))
-      (ref-man-org-insert-abstract (a-get entry 'abstract) nil t))
-    (pcase-let ((`(,beg ,_ ,has-text) (ref-man-org-text-bounds))
-                (author-str (mapconcat (lambda (x)
-                                         (a-get x 'name))
-                                       (a-get entry 'authors) ", "))
-                (level (org-current-level)))
-      (goto-char beg)
-      (unless has-text
-        (unless (and (looking-at "\n") (looking-back "\n" 1))
-          (insert "\n"))
-        (insert (format "%s- Authors: %s" (make-string (1+ level) ? ) author-str))
-        (org-insert-item)
-        (insert (concat (a-get entry 'venue) ", " (format "%s" (a-get entry 'year)))))
-      (org-insert-property-drawer)
-      (cl-loop for ent in entry
-            do
-            (cond ((or (eq (car ent) 'author) (eq (car ent) 'authors))
-                   (when (not (string-empty-p author-str))
-                     (org-set-property "AUTHOR"
-                                       (ref-man--invert-accents
-                                        (ref-man--replace-non-ascii
-                                         (ref-man--fix-curly
-                                          (ref-man--build-bib-author author-str)))))))
-                  ((eq (car ent) 'isInfluential)
-                   (if (not (eq (cdr ent) 't))
-                       (org-set-property "ISINFLUENTIAL" "nil")
-                     (outline-back-to-heading)
-                     (org-set-tags ":influential:")
-                     (org-set-property "ISINFLUENTIAL" "t")))
-                  ((and (eq (car ent) 'url) update-current)
-                   (org-set-property "SS_URL"
-                                     (ref-man--replace-non-ascii
-                                      (ref-man--fix-curly (format "%s" (cdr ent))))))
-                  ((and (not (member (car ent) '(abstract references citations corpusId
-                                                          fieldsOfStudy is_open_access
-                                                          topics is_publisher_licensed)))
-                        (cdr ent))
-                   (org-set-property (upcase (symbol-name (car ent)))
-                                     (ref-man--replace-non-ascii
-                                      (ref-man--fix-curly (format "%s" (cdr ent))))))))
-      (let ((key (ref-man-parse-bib-property-key)))
-        (unless (or key ignore-errors)
-          (debug)
-          ;; FIXME: This function should filter the user read key
-          ;; ref-man--build-bib-key-from-plist
-          (setq key (read-from-minibuffer (format "Could not parse key:\nauthor: %s\ntitle: %s\nyear: %s"
-                                                  (org-entry-get (point) "AUTHOR")
-                                                  (org-entry-get (point) "TITLE")
-                                                  (org-entry-get (point) "YEAR")))))
-        (when key
-          (org-set-property "CUSTOM_ID" key)))
-      (org-set-property "BTYPE" "article"))
-    (when update-current
-      (unless (org-at-heading-p)
-        (outline-previous-heading))
-      (beginning-of-line)
-      (forward-whitespace 1)
-      (just-one-space)
-      (unless (eolp)
-        (kill-line))
-      (insert (cdr (assoc 'title entry))))))
+  (save-excursion
+    (when (a-get entry 'title)
+      ;; NOTE: insert heading only when not updating current heading
+      (unless update-current
+        (org-insert-heading-after-current))
+      (org-edit-headline (a-get entry 'title))
+      ;; FIXME: beg is same as current point
+      (when (and (not no-abstract) (a-get entry 'abstract))
+        (ref-man-org-insert-abstract (a-get entry 'abstract) nil t))
+      (pcase-let ((`(,beg ,_ ,has-text) (ref-man-org-text-bounds))
+                  (author-str (mapconcat (lambda (x)
+                                           (a-get x 'name))
+                                         (a-get entry 'authors) ", "))
+                  (level (org-current-level)))
+        (goto-char beg)
+        (unless has-text
+          (unless (and (looking-at "\n") (looking-back "\n" 1))
+            (insert "\n"))
+          (insert (format "%s- Authors: %s" (make-string (1+ level) ? ) author-str))
+          (org-insert-item)
+          (insert (concat (a-get entry 'venue) ", " (format "%s" (a-get entry 'year)))))
+        (org-insert-property-drawer)
+        (cl-loop for ent in entry
+                 do
+                 (cond ((or (eq (car ent) 'author) (eq (car ent) 'authors))
+                        (when (not (string-empty-p author-str))
+                          (org-set-property "AUTHOR"
+                                            (ref-man--invert-accents
+                                             (ref-man--replace-non-ascii
+                                              (ref-man--fix-curly
+                                               (ref-man--build-bib-author author-str)))))))
+                       ((eq (car ent) 'isInfluential)
+                        (if (not (eq (cdr ent) 't))
+                            (org-set-property "ISINFLUENTIAL" "nil")
+                          (outline-back-to-heading)
+                          (org-set-tags ":influential:")
+                          (org-set-property "ISINFLUENTIAL" "t")))
+                       ((and (eq (car ent) 'url) update-current)
+                        (org-set-property "SS_URL"
+                                          (ref-man--replace-non-ascii
+                                           (ref-man--fix-curly (format "%s" (cdr ent))))))
+                       ((and (not (member (car ent) '(abstract references citations corpusId
+                                                               fieldsOfStudy is_open_access
+                                                               topics is_publisher_licensed)))
+                             (cdr ent))
+                        (org-set-property (upcase (symbol-name (car ent)))
+                                          (ref-man--replace-non-ascii
+                                           (ref-man--fix-curly (format "%s" (cdr ent))))))))
+        (let ((key (ref-man-parse-bib-property-key)))
+          (unless (or key ignore-errors)
+            (debug)
+            ;; FIXME: This function should filter the user read key
+            ;; ref-man--build-bib-key-from-plist
+            (setq key (read-from-minibuffer (format "Could not parse key:\nauthor: %s\ntitle: %s\nyear: %s"
+                                                    (org-entry-get (point) "AUTHOR")
+                                                    (org-entry-get (point) "TITLE")
+                                                    (org-entry-get (point) "YEAR")))))
+          (when key
+            (org-set-property "CUSTOM_ID" key)))
+        (org-set-property "BTYPE" "article"))
+      ;; CHECK: Why are we doing this? When org edit headline is called earlier
+      ;; anyway? COMMENTED
+      ;; (when update-current
+      ;;   (unless (org-at-heading-p)
+      ;;     (outline-previous-heading))
+      ;;   (beginning-of-line)
+      ;;   (forward-whitespace 1)
+      ;;   (just-one-space)
+      ;;   (unless (eolp)
+      ;;     (kill-line))
+      ;;   (insert (cdr (assoc 'title entry))))
+      )))
 
 (defun ref-man--org-bibtex-write-ref-from-assoc (entry &optional ignore-errors
                                                        update-current no-abstract)
