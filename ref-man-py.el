@@ -331,10 +331,7 @@ nil, `ref-man-py-data-dir' respectively by
 This is sent via http and lets the server exit gracefully."
   (interactive)
   (let ((buf (url-retrieve-synchronously (ref-man-py-url "shutdown"))))
-    (with-current-buffer buf
-      (goto-char (point-min))
-      (re-search-forward "\r?\n\r?\n")
-      (message (buffer-substring-no-properties (point) (point-max))))))
+    (message (util/url-buffer-string buf))))
 
 (defun ref-man-py-kill-internal-process ()
   "Kill the internal python process process by sending SIGKILL."

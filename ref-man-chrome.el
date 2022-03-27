@@ -1129,9 +1129,12 @@ DATA may or may not be present."
 ;; same tab there'll be duplicate sockets for same tabs.
 (defun ref-man-chrome-connect (id-or-indx &optional is-id)
   "Connect to a chromium tab's debugger websocket.
-ID-OR-INDX could is internal tab indx to the chromium tab.  Optional IS-ID
-means consider the ID-OR-INDX as chrome tab id instead of
-internal tab indx.  Open the socket if it doesn't exist in
+ID-OR-INDX could is internal tab indx to the chromium tab.
+
+Optional IS-ID means consider the ID-OR-INDX as chrome tab id
+instead of internal tab indx.
+
+Open the socket if it doesn't exist in
 `ref-man-chrome-socket-alist'."
   (let* ((fn (if is-id #'ref-man-chrome-get-socket-url-for-tab-id
                #'ref-man-chrome-get-socket-url-for-tab-indx))

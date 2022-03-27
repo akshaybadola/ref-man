@@ -144,13 +144,14 @@ The default value is
 clean up function replacing multiple spaces with a single space.")
 
 (defvar ref-man-export-metadata-hook '(ref-man-export-get-paper-metadata
-                                       ref-man-export-get-journal-metadata)
+                                       ref-man-export-get-article-metadata)
   "Hook to run while exporting org properties as pandoc metadata.
 
 The functions in this hook should modify
 `ref-man-export-metadata' by appending to it an alist of any
-custom metadata extraction method.  See
-`ref-man-export-get-paper-metadata' and
+custom metadata extraction method.
+
+See `ref-man-export-get-paper-metadata' and
 `ref-man-export-get-journal-metadata' for examples.")
 
 (defvar ref-man-export-journal-specific-metadata-hook nil
@@ -162,6 +163,14 @@ custom metadata extraction method.  See
 (defcustom ref-man-export-pdflatex-env-vars ""
   "Environment variables for pdflatex."
   :type 'string
+  :group 'ref-man)
+
+(defcustom ref-man-export-paper-version-org-file nil
+  "Save current org version file to disk for output type 'paper.
+
+When non-nil write an org file with md5 sum suffix also along
+with markdown file.  Only for output type 'paper."
+  :type 'boolean
   :group 'ref-man)
 
 (defcustom ref-man-export-no-confirm-overwrite nil
@@ -207,18 +216,18 @@ Files are searched in `ref-man-export-pandoc-csl-dir'"
 ;; TODO: This should be a macro
 (defun ref-man-export-pdf-template ()
   "Get template for PDF generation."
-  (concat "--template=" (a-get (ref-man-export-templates)
-                               (or (org-entry-get (point) "TEMPLATE") "latex"))))
+  (a-get (ref-man-export-templates)
+         (or (org-entry-get (point) "TEMPLATE") "latex")))
 
 (defun ref-man-export-paper-template ()
   "Get template for paper generation."
-  (concat "--template=" (a-get (ref-man-export-templates)
-                               (or (org-entry-get (point) "TEMPLATE") "ieee"))))
+  (a-get (ref-man-export-templates)
+         (or (org-entry-get (point) "TEMPLATE") "ieee")))
 
 (defun ref-man-export-html-template ()
   "Get template for html generation."
-  (concat "--template=" (a-get (ref-man-export-templates)
-                               (or (org-entry-get (point) "TEMPLATE") "blog"))))
+  (a-get (ref-man-export-templates)
+         (or (org-entry-get (point) "TEMPLATE") "blog")))
 
 ;; NOTE: For customization of filtering various org elements
 (org-export-define-derived-backend 'ref-md 'html
@@ -267,7 +276,7 @@ Files are searched in `ref-man-export-pandoc-csl-dir'"
     (:md-footnotes-section nil nil org-md-footnotes-section)
     (:md-headline-style nil nil org-md-headline-style)))
 
-(defun ref-man-export-org-to-md (&optional subtree)
+(defun ref-man-export-org-to-md (&optional subtree output-org-file)
   "Copy the org buffer to temp buffer and export to markdown.
 
 With optional non-nil SUBTREE, export only subtree.
@@ -286,6 +295,17 @@ is called just before calling `org-export-to-buffer'."
         (erase-buffer)
         (insert buf-string)
         (org-mode)
+        ;; NOTE: Promote subtree to top level
+        (while (progn (goto-char (point-min))
+                      (and (or (org-at-heading-p)
+                               (outline-next-heading))
+                           (> (org-current-level) 1)))
+          (while (re-search-forward "\\(^\\*+\\)\\( +\\)\\(.+\\)" nil t)
+            (beginning-of-line)
+            (delete-char 1)
+            (end-of-line)))
+        (when output-org-file
+          (write-region (point-min) (point-max) output-org-file))
         (goto-char (point-min))
         (while (re-search-forward link-re nil t)
           (pcase-let ((`(,a ,b) (list (match-string 1) (match-string 2))))
@@ -319,14 +339,22 @@ Don't include bibliography when NO-REFS is non-nil."
                               (cons bib-file ref-man-bib-files)
                             ref-man-bib-files))))
     (when (eq type 'blog)
-      (setq opts (a-assoc opts
-            "date" (time-stamp-string "%Y-%m-%d")
-            "category" (or (util/org-get-tree-prop "CATEGORY_ROOT" t)
-                           (downcase (ref-man-org-ask-to-set-property "BLOG_CATEGORY")))
-            "tags" (or (org-get-tags nil t)
-                       (downcase (ref-man-org-ask-to-set-property "BLOG_TAGS")))
-            "keywords" (downcase (or (ref-man-org-ask-to-set-property "BLOG_KEYWORDS")
-                                     (ref-man-org-ask-to-set-property "BLOG_TAGS"))))))
+      (setq opts
+            (a-assoc opts
+                     "date" (time-stamp-string "%Y-%m-%d")
+                     "category" (or (util/org-get-tree-prop "CATEGORY_ROOT" t)
+                                    (downcase (let ((category (ref-man-org-ask-to-set-property "BLOG_CATEGORY")))
+                                                (if (and category (not (string-empty-p category)))
+                                                    category
+                                                  (user-error "Cannot export to blog without category")))))
+
+                     "tags" (or (org-get-tags nil t)
+                                (downcase (let ((blog-tags (ref-man-org-ask-to-set-property "BLOG_TAGS")))
+                                            (if (and blog-tags (not (string-empty-p blog-tags)))
+                                                blog-tags
+                                              (user-error "Cannot export to blog without tags")))))
+                     "keywords" (downcase (or (ref-man-org-ask-to-set-property "BLOG_KEYWORDS")
+                                              (ref-man-org-ask-to-set-property "BLOG_TAGS"))))))
     opts))
 
 (defun ref-man-export-bibtexs (bibtexs citeproc &optional tmp-bib-file no-gdrive)
@@ -404,7 +432,7 @@ default author alist."
       ("affiliation" . ,ref-man-export-author-affiliation))))
 
 
-(defun ref-man-export-get-journal-metadata (type)
+(defun ref-man-export-get-article-metadata (type)
   "Extract keywords and standard metadata for journal.
 TYPE has to be 'paper for this hook to run."
   (when (eq type 'paper)
@@ -417,12 +445,20 @@ TYPE has to be 'paper for this hook to run."
                                          author)))))
       (setq ref-man-export-metadata
             (-concat ref-man-export-metadata
-                     `(("journal" . ,(a-get props "JOURNAL"))
-                       ("author" . ,author)
+                     `(("author" . ,author)
                        ("keywords" . ,(split-string (a-get props "KEYWORDS") ","))
-                       ("template" . ,(a-get props "TEMPLATE"))
                        ("caption" . ,(a-get props "CAPTION"))
-                       ("affiliations" . ,affiliations))
+                       ("affiliations" . ,affiliations)))))))
+
+(defun ref-man-export-get-journal-metadata (type)
+  "Extract keywords and standard metadata for journal.
+TYPE has to be 'paper for this hook to run."
+  (when (eq type 'paper)
+    (let* ((props (org-entry-properties)))
+      (setq ref-man-export-metadata
+            (-concat ref-man-export-metadata
+                     `(("journal" . ,(a-get props "JOURNAL"))
+                       ("template" . ,(a-get props "TEMPLATE")))
                      (a-get ref-man-export-journal-args (a-get props "JOURNAL")))))))
 
 (defun ref-man-export-get-paper-metadata (type)
@@ -563,7 +599,7 @@ See `ref-man-export-docproc-article' for details."
   (interactive)
   (ref-man-export-docproc-article buffer (or type (and current-prefix-arg 'html) 'pdf) t))
 
-(defun ref-man-export-paper-no-urls (&optional buffer plain)
+(defun ref-man-export-paper-no-urls (&optional pref-arg buffer)
   "Export BUFFER as a research article.
 
 BUFFER defaults to `current-buffer'.  Optional PLAIN specifies to
@@ -571,21 +607,23 @@ export as a plain research article without any journal/conference
 templates.
 
 See `ref-man-export-docproc-article' for details."
-  (interactive)
-  (let ((doc-root (util/org-get-tree-prop "DOC_ROOT")))
+  (interactive "p")
+  (let ((doc-root (util/org-get-tree-prop "DOC_ROOT"))
+        (no-cite (> pref-arg 1))
+        (force (> pref-arg 4)))
     (unless doc-root
       (user-error "For generation of a research article, a DOC_ROOT must be specified"))
     (save-excursion
       (goto-char doc-root)
       (message "Exporting to PDF...")
-      (ref-man-export-docproc-article buffer 'paper t t nil current-prefix-arg plain))))
+      (ref-man-export-docproc-article buffer 'paper t t nil no-cite force))))
 
 (defun ref-man-export-paper-plain-no-urls (&optional buffer)
   "Export BUFFER as a plain research article.
 
 See `ref-man-export-paper-no-urls'."
   (interactive)
-  (ref-man-export-paper-no-urls nil t))
+  (ref-man-export-docproc-article buffer 'paper t t nil nil nil t))
 
 (defcustom ref-man-export-latex-table-template "\\begin{table}
 \\centering
@@ -599,40 +637,68 @@ The table is inserted at %s and formatted with `format'."
   :type 'string
   :group 'ref-man)
 
+(defcustom ref-man-export-latex-table-no-caption-template "\\begin{table}
+\\centering
+%s
+\\end{table}
+"
+  "Template for inserting table with `ref-man-export-table-to-latex'.
+
+This one doesn't require the caption package.  The table is
+inserted at %s and formatted with `format'."
+  :type 'string
+  :group 'ref-man)
+
 (defvar ref-man-export-latex-table-minipage-template
   "\\begin{minipage}{\\linewidth}
 \\captionof{table}{CAPTION} \\label{}
 %s
 \\end{minipage}
-")
+"
+  "Template for to export an table via LaTeX with minipage.")
 
-(defun ref-man-export-table-to-latex ()
+(defvar ref-man-export-latex-table-document-template
+  "\\documentclass{article}
+\\usepackage{bbm,amssymb,amsmath,amsfonts}
+\\usepackage{algorithm,algpseudocode}
+\\begin{document}
+%s
+\\end{document}"
+  "Template for exporting an org table via LaTeX to a standalone document.
+
+Includes basic maths packages.")
+
+(defun ref-man-export-table-to-latex (&optional no-caption)
   "Export an org or table mode table in region to latex."
   (interactive)
-  (let ((org-export-with-broken-links 'mark)
-        org-export-show-temporary-export-buffer
-        table)
-    (save-excursion
-      (save-restriction
-        (org-mark-element)
-        (narrow-to-region (region-beginning) (region-end))
-        (org-export-to-buffer 'latex "*Latex Export*" nil nil nil nil)
-        (setq table (with-current-buffer "*Latex Export*"
-                      (goto-char (point-min))
-                      (re-search-forward (rx "\\begin{tabular}"))
-                      (beginning-of-line)
-                      (prog1 (format ref-man-export-latex-table-template
-                                     (buffer-substring-no-properties
-                                      (point)
-                                      (progn (re-search-forward (rx "\\end{tabular}"))
-                                             (point))))
-                        (kill-buffer (current-buffer)))))
-        (goto-char (region-end))
-        (when mark-active
-          (deactivate-mark))
-        (insert table)
-        (insert "\n\n")
-        (org-indent-region (- (point) (length table)) (point))))))
+  (if (org-at-table-p)
+      (let ((org-export-with-broken-links 'mark)
+            org-export-show-temporary-export-buffer
+            table)
+        (save-excursion
+          (save-restriction
+            (narrow-to-region (org-table-begin) (org-table-end))
+            (org-export-to-buffer 'latex "*Latex Export*" nil nil nil nil)
+            (setq table (with-current-buffer "*Latex Export*"
+                          (goto-char (point-min))
+                          (re-search-forward (rx "\\begin{tabular}"))
+                          (beginning-of-line)
+                          (prog1 (format (if no-caption
+                                             ref-man-export-latex-table-no-caption-template
+                                           ref-man-export-latex-table-template)
+                                         (buffer-substring-no-properties
+                                          (point)
+                                          (progn (re-search-forward (rx "\\end{tabular}"))
+                                                 (point))))
+                            (kill-buffer (current-buffer)))))))
+        (if current-prefix-arg
+            (kill-new (format ref-man-export-latex-table-document-template table))
+          (goto-char (org-table-end))
+          (while (org-at-TBLFM-p)
+            (forward-line))
+          (insert "\n" table "\n")
+          (org-indent-region (- (point) (length table)) (point))))
+    (user-error "Not at an org table")))
 
 (defun ref-man-export-parse-references (type &optional no-warn-types)
   "Parse the references from org text.
@@ -658,12 +724,14 @@ NO-WARN-TYPES can be passed as a list of (string) link types."
                        (lambda () (concat "*" (org-get-heading t t t t))) t)))
           bibtexs)
       (goto-char (point-min))
-      ;; NOTE: Generate bibtexs from fuzzy links ONLY
+      ;; NOTE: Generate bibtexs from org links only
       (while (re-search-forward util/org-text-link-re nil t nil)
-        ;; NOTE: Don't insert link if it's of an internal section
+        ;; NOTE: Don't insert link if it's of an internal section OR
+        ;;       if we're in a comment
         ;; FIXME: How to fix for dup titles if they are for different papers (and bibs)?
         ;;        We should either report them as dups or store them with custom_ids
-        (unless (member (match-string 1) sections)
+        (unless (or (member (match-string 1) sections)
+                    (eq (org-element-type (org-element-context)) 'comment-block))
           (let ((bib (ref-man-org-get-bib-from-org-link t t t))
                 (title-keys (mapcar (lambda (x) (-take 2 x)) bibtexs)))
             ;; NOTE: Append _a to duplicate bibtex key
@@ -672,7 +740,7 @@ NO-WARN-TYPES can be passed as a list of (string) link types."
                 (let* ((link (org-element-context))
                        (link-type (org-element-property :type link)))
                   (unless (member link-type no-warn-types)
-                    (warn "No bib found for %s" (car bib))))
+                    (warn "No bib found for match string %s and bib %s" (match-string 0) (car bib))))
               (when (-any #'identity (mapcar (lambda (x) (and title-keys
                                                               (string= (cadr x) (cadr bib))
                                                               (not (string= (car x) (car bib)))))
@@ -701,7 +769,7 @@ METADATA is the metadata to be inserted in the markdown file.
 REFS-STRING is references in yaml format."
   (replace-regexp-in-string
    "\n+" "\n"
-   (concat "---"
+   (concat "---\n"
            (if (eq type 'paper) (concat "\nabstract: >\n" abstract) "")
            (with-current-buffer
                (ref-man--post-json-synchronous (ref-man-py-url "get_yaml") metadata)
@@ -711,11 +779,33 @@ REFS-STRING is references in yaml format."
            (or refs-string "\n")
            "---")))
 
+(defun ref-man-export-delete-md-toc (buf)
+  "Delete TOC in a markdown buffer BUF."
+  (with-current-buffer buf
+    (goto-char (point-min))
+    (let (toc-min toc-max)
+      (re-search-forward "# Table of Contents")
+      (beginning-of-line)
+      (setq toc-min (point))
+      (forward-paragraph 2)
+      (setq toc-max (point))
+      (delete-region toc-min toc-max))))
+
+(defun ref-man-export-find-file-other-window-no-ask (file &optional noselect)
+  "Find FILE in other window without any questions."
+  (let ((win (ref-man--get-or-create-window-on-side))
+          query-about-changed-file)
+    (unless (string= (buffer-file-name (window-buffer win)) (f-filename file))
+      (set-window-buffer win (if noselect
+                                 (find-file-noselect file)
+                               (find-file file))))))
 
 ;; TODO: Use a pndconf server instead
 ;; TODO: Export can take a while and it would be better to do
 ;;       it in an async process.
-(defun ref-man-export-docproc-article (buffer type &optional no-urls no-gdrive with-toc no-cite plain)
+;; TODO: Should convert these args to keywords
+(defun ref-man-export-docproc-article (buffer type &optional no-urls no-gdrive
+                                              with-toc no-cite force plain)
   "Export current org buffer subtree as an article.
 
 Export to markdown first and then use pandoc and `pndconf' or
@@ -777,29 +867,37 @@ preprints."
          (citeproc "biblatex")
          (mathjax-path ref-man-export-mathjax-dir)
          (pandocwatch "-m pndconf")
-         (checksum (save-restriction
-                     (org-narrow-to-subtree)
-                     (md5 (buffer-substring-no-properties (point-min) (point-max)))))
-         ;; (pandocwatch (path-join docs-dir "pandocwatch.py"))
+         (checksum (if buffer
+                       (md5 (buffer-substring-no-properties (point-min) (point-max)))
+                     (save-restriction
+                       (org-narrow-to-subtree)
+                       (md5 (buffer-substring-no-properties (point-min) (point-max))))))
          (python ref-man-export-python-executable)
          (title (substring-no-properties (org-get-heading t t t t)))
          (title-words (split-string (downcase (ref-man--remove-punc title t))))
-         (out-dir (path-join (pcase type
-                               ('blog ref-man-export-blog-dir)
-                               (_ docs-dir))
-                             (string-join title-words "-")))
-         (md-file (path-join out-dir (concat (string-join (-take 3 title-words) "-")
-                                             "-" (substring checksum 0 10) ".md")))
+         (out-dir (pcase type
+                    ('blog ref-man-export-blog-dir)
+                    (_ (path-join (if (org-entry-get (point) "MD_OUTPUT_DIR")
+                                      (f-expand (org-entry-get (point) "MD_OUTPUT_DIR"))
+                                    docs-dir)
+                                  (string-join title-words "-")))))
+         ;; CHECK: Should we still export `md-file' like this for blog
+         ;;        etc. also?
+         ;;
+         ;;        We probably don't need as github can do version
+         ;;        control by itself
+         (md-file (pcase type
+                    ('blog
+                     (path-join out-dir (concat (string-join title-words "-") ".md")))
+                    (_ (path-join out-dir (concat (string-join (-take 3 title-words) "-")
+                                                  "-" (substring checksum 0 10) ".md")))))
+         (org-file (path-join out-dir (concat (string-join (-take 3 title-words) "-")
+                                              "-" (substring checksum 0 10) ".org")))
          (out-file (pcase type
                      ((or 'pdf 'paper)
                       (path-join out-dir (concat (f-base md-file) ".pdf")))
-                     ('html (path-join docs-dir (concat (f-base md-file) ".html")))
+                     ('html (path-join out-dir (concat (f-base md-file) ".html")))
                      (_ nil)))
-         (extra-opts (pcase type
-                       ('paper (concat " " (ref-man-export-paper-template) " "))
-                       ('pdf (concat " " (ref-man-export-pdf-template) " "))
-                       ('html (concat " " (ref-man-export-html-template) " "))
-                       (_ "")))
          (metadata (ref-man-export-get-opts type title tmp-bib-file
                                             mathjax-path csl-file))
          (bib-no-warn-types '((blog . ("http" "https"))))
@@ -811,34 +909,63 @@ preprints."
                         ("t" "--no-citeproc")
                         ("nil" "")
                         (_ "")))
-         (no-cite (if no-cite "--no-cite-cmd" ""))
+         (no-cite-cmd (if no-cite "--no-cite-cmd" ""))
          (current-prefix-arg nil)
          (yaml-header "")
-         abstract bibtexs)
+         (ref-man-export-metadata-hook
+          ;; NOTE: Get journal specific metadata only if not exporting as plain
+          (if plain
+              ref-man-export-metadata-hook
+            (-concat ref-man-export-metadata-hook '(ref-man-export-get-journal-metadata))))
+         abstract bibtexs template-opt)
+    (when (and (f-exists? md-file) (f-exists? out-file) (not force)
+               (not (eq type 'blog)))
+      (ref-man-export-find-file-other-window-no-ask (or out-file md-file) out-file)
+      (user-error "Text hasn't changed. Nothing to do here"))
+    ;; NOTE: Process article metadata
     (setq ref-man-export-metadata nil)
     (run-hook-with-args 'ref-man-export-metadata-hook type)
-    (run-hook-with-args 'ref-man-export-journal-specific-metadata-hook type)
-    (setq metadata (a-merge metadata ref-man-export-metadata))
+    (pcase type
+      ('paper (unless plain
+                (run-hook-with-args 'ref-man-export-journal-specific-metadata-hook type)))
+      (_ nil))
     (unless (f-exists? out-dir)
       (f-mkdir out-dir))
+    (setq metadata (-filter #'cdr (a-merge metadata ref-man-export-metadata)))
+    (let* ((template (a-get metadata "template"))
+           (template (or template
+                         ;; NOTE: For blog there's a custom template and it's inserted separately
+                         (pcase type
+                           ('paper (ref-man-export-paper-template))
+                           ('pdf (ref-man-export-pdf-template))
+                           ('html (ref-man-export-html-template))
+                           (_ nil)))))
+      (when template
+        (setq metadata (a-assoc metadata "template" template)))
+      (when template
+        (unless (f-exists? template)
+          (setq template-opt (format " --template=%s " (a-get (ref-man-export-templates) template))))))
     (when (and (f-exists? md-file) (not no-confirm))
       (unless (y-or-n-p (format "The file with name %s exists.  Replace? "
                                 (f-filename md-file)))
         (user-error "Aborted")))
     (save-restriction
       (save-mark-and-excursion
+        ;; NOTE: Get bounds of article
+        ;; FIXME: `buffer' may not be required for paper export.
+        ;;        Is the code too intermingled?
         (unless buffer
           (org-narrow-to-subtree)
-          (let ((beg (a-get metadata "sections-beg"))
-                (end (a-get metadata "sections-end"))
-                (doc-root (a-get metadata "doc-root")))
-            ;; NOTE: When it's a paper, first paragraph is abstract and we
-            ;;       go to first subheading
-            (setq abstract (a-get metadata "abstract"))
-            (pcase type
-              ('paper (narrow-to-region beg end))
-              (_ (narrow-to-region doc-root end)))
-            (setq metadata (a-dissoc metadata "abstract" "doc-root" "sections-beg" "sections-end"))))
+          (pcase type
+            ('paper (let ((beg (a-get metadata "sections-beg"))
+                          (end (a-get metadata "sections-end"))
+                          (doc-root (a-get metadata "doc-root")))
+                      ;; NOTE: When it's a paper, first paragraph is abstract and we
+                      ;;       go to first subheading
+                      (setq abstract (a-get metadata "abstract"))
+                      (narrow-to-region beg end)
+                      (setq metadata (a-dissoc metadata "abstract" "doc-root" "sections-beg" "sections-end"))))
+            (_ nil)))
         (setq bibtexs (ref-man-export-parse-references type (a-get bib-no-warn-types type)))
         (setq bibtexs (mapcar (lambda (x)
                                 `(,(car x) ,(nth 1 x) ,(replace-regexp-in-string "venue=" "booktitle=" (nth 2 x))))
@@ -849,18 +976,13 @@ preprints."
                                                     bibtexs citeproc tmp-bib-file no-gdrive)))
         (goto-char (point-min))
         ;; NOTE: export to markdown in ref-man-export-temp-md-buf
-        (ref-man-export-org-to-md)
+        (if (eq type 'paper)
+            (ref-man-export-org-to-md nil (and ref-man-export-paper-version-org-file org-file))
+          (ref-man-export-org-to-md))
         (with-current-buffer ref-man-export-temp-md-buf
           ;; NOTE: Remove TOC if asked
           (unless with-toc
-            (goto-char (point-min))
-            (let (toc-min toc-max)
-              (re-search-forward "# Table of Contents")
-              (beginning-of-line)
-              (setq toc-min (point))
-              (forward-paragraph 2)
-              (setq toc-max (point))
-              (delete-region toc-min toc-max)))
+            (ref-man-export-delete-md-toc (current-buffer)))
           ;; NOTE: Repace "BROKEN LINK"s with bibtexs
           (goto-char (point-min))
           (while (re-search-forward "\\[BROKEN LINK: \\(.+?\\)]" nil t) ; Insert links
@@ -886,16 +1008,37 @@ preprints."
           (goto-char (point-min))
           (insert (concat yaml-header "\n"))
           (write-region (point-min) (point-max) md-file))))
+    (when no-cite
+      (let* ((md-dir (f-parent md-file))
+             (files (f-files md-dir))
+             (bbl-files (-sort (lambda (x y) (not (time-less-p (cdr x) (cdr y))))
+                               (-filter (lambda (file) (or (f-ext? (car file) "bbl")
+                                                           (f-ext? (car file) "blg")))
+                                        (mapcar (lambda (file)
+                                                  `(,file . ,(file-attribute-modification-time
+                                                              (file-attributes file))))
+                                                files)))))
+        (when bbl-files
+          (seq-do
+           (lambda (x)
+             (let* ((ext (f-ext x))
+                    (filename (f-no-ext (f-filename x)))
+                    (old-checksum (-last-item (split-string filename "-")))
+                    (file-prefix (string-remove-suffix (concat "-" old-checksum) filename))
+                    (newname (concat file-prefix "-" (substring checksum 0 10) "." ext)))
+               (unless (f-exists? (f-join md-dir newname))
+                 (copy-file x (f-join md-dir newname)))))
+           (mapcar #'car (list (car bbl-files) (nth 1 bbl-files)))))))
     (unless (eq type 'blog)
       (let* ((type (pcase type
                      ('both "html,pdf")
                      ('paper "pdf")
                      (_ type)))
              (cmd (string-join `(,(s-lex-format "cd ${docs-dir} && ${python} ${pandocwatch}")
-                                 ,(s-lex-format "convert ${md-file} ${no-cite} --same-output-dir")
+                                 ,(s-lex-format "convert ${md-file} ${no-cite-cmd} --same-output-dir")
                                  ,(s-lex-format "-c ${config-file} ${no-citeproc} -g ${type}")
                                  ,(s-lex-format "--pandoc-path ${pandoc} --templates-dir ${templates-dir} --csl-dir ${csl-dir}")
-                                 ,extra-opts)
+                                 ,template-opt)
                                " "))
              (process-environment (mapcar
                                    (lambda (x) (split-string x "="))
@@ -914,12 +1057,26 @@ preprints."
           (ansi-color-apply-on-region (point-min) (point-max))))
       (when tmp-bib-file
         (delete-file tmp-bib-file)))
-    (let ((win (ref-man--get-or-create-window-on-side))
-          query-about-changed-file)
-      (if out-file
-          (unless (string= (buffer-file-name (window-buffer win)) (f-filename out-file))
-            (set-window-buffer win (find-file-noselect out-file)))
-        (find-file md-file)))))
+    (ref-man-export-find-file-other-window-no-ask (or out-file md-file) out-file)))
+
+;; TODO: This is buggy probably because of (util/org "util-org") kind of names
+;; (defvar ref-man-export-async-paths
+;;   (let ((matches (shell-command-to-string
+;;                   (format "grep \"(require\" %s"
+;;                           (string-join (-filter (lambda (x) (string-match-p "ref-man-.*\\.el$" x))
+;;                                                 (f-files (f-parent load-file-name)))
+;;                                        " "))))
+;;         packages)
+;;     (with-temp-buffer
+;;       (insert matches)
+;;       (goto-char (point-min))
+;;       (while (re-search-forward "(require '\\(.+?\\))" nil t)
+;;         (push (match-string 1) packages)))
+;;     (-uniq
+;;      (mapcar (lambda (x)
+;;                (f-parent (find-library-name (string-trim (-last-item (split-string x)) "\"" "\""))))
+;;              packages)))
+;;   "All the paths required to be appended for async call.")
 
 (provide 'ref-man-export)
 

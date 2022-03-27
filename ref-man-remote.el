@@ -117,10 +117,13 @@ disk."
       ;; NOTE: Timer not implemented
       ;; (setq ref-man-remote-cache-update-check-timer
       ;;       (run-at-time 5 60 #'ref-man-remote-check-cache-updated))
-      (with-current-buffer buf
-        (goto-char (point-min))
-        (re-search-forward "\r?\n\r?\n")
-        (message (buffer-substring-no-properties (point) (point-max)))))))
+      (message (util/url-buffer-string buf)))))
+
+(defun ref-man-remote-stop-update ()
+  "Stop updating the links cache and write to file."
+  (interactive)
+  (let ((buf (url-retrieve-synchronously (ref-man-py-url "force_stop_update_cache"))))
+    (message (util/url-buffer-string buf))))
 
 (defun ref-man-remote-cancel-cache-update-timers ()
   "Cancel the timers which call `ref-man-check-cache-updated'."

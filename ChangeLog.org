@@ -230,4 +230,29 @@
    - ~ref-man-py~ now requires python version at least ~3.7~.
    - Added functions for separate ~ref-man-py-home-dir~.
 
-
+** [2022-03-27 Sun 12:36]
+   - In ~ref-man-core~
+     - Added function ~ref-man-check-duplicate-pubs-current-heading~
+     - Renamed ~ref-man-parse-bib-property-key~ to ~ref-man-parse-properties-for-bib-key~
+     - Added function ~ref-man-org-add-new-url~
+     - Decomposed ~ref-man-fetch-ss-data-for-entry~ and a new function
+       ~~ref-man-fetch-ss-data~
+     - New function ~ref-man-safe-update-org-prop~
+   - In ~ref-man-export~
+     - Added new function ~ref-man-export-get-article-metadata~ to
+       ~ref-man-export-metadata-hook~ to more accurately reflect the fact that
+       we're getting metadata from properties even when there's no journal
+     - ~ref-man-export-get-journal-metadata~ is now added dynamically as required
+     - Added ~ref-man-export-paper-version-org-file~ to control automatic saving
+       of org file with md5 checksum suffix as versioning
+     - Fixed a bug with templates being fetched
+     - Added optional argument ~output-org-file~ to ~ref-man-export-org-to-md~
+     - Changes to arguments for ~ref-man-export-docproc-article~ and associated
+       functions
+     - New variable ~ref-man-export-latex-table-no-caption-template~ to export a
+       table without requiring ~caption~ package.
+     - New subrs:
+       - ~ref-man-export-delete-md-toc~
+       - ~ref-man-export-find-file-other-window-no-ask~
+     - Bug fixes in ~~ref-man-export-docproc-article~
+   - Some minor changes in other files

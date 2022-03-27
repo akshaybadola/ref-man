@@ -52,6 +52,17 @@ localhost specified by this port."
   '(acl arxiv neurips mlr aaai acm doi-cvpr cvf cvf-old openreview ss)
   "List of supported sites for fetching pdf.")
 
+(defun ref-man-meta-url (url)
+  "Return if the URL is a meta url.
+Meta url is from one of the three sites:
+1. arxiv.org
+2. semanticscholar.org
+3. doi.org."
+  (cond ((string-match-p "arxiv.org" url) 'arxiv)
+        ((string-match-p "semanticscholar.org/paper" url) 'ss)
+        ((string-match-p "^https?://dx.doi.org/.+$" url) 'doi)
+        (t nil)))
+
 (defun ref-man-url-to-arxiv-id (url)
   "Get arxivid from an arxiv.org URL."
   (when (eq (ref-man-url-get-site-from-url url) 'arxiv)
@@ -487,21 +498,21 @@ ARGS is for compatibility and not used."
 (defun ref-man-url-get-site-from-url (url)
   "Helper function to determine site from URL."
   (cond ((string-match-p "arxiv.org" url) 'arxiv)
-      ((string-match-p "aclanthology.info\\|aclweb.org" url) 'acl)
-      ((and (string-match-p "doi.org" url)
-            (string-match-p "cvpr" (-last-item (split-string url "/" t))))
-       'doi-cvpr)
-      ((string-match-p "papers.nips.cc\\|proceedings.neurips.cc" url) 'neurips)
-      ((string-match-p "mlr.press" url) 'mlr)
-      ((string-match-p "openaccess.thecvf.com" url) 'cvf)
-      ((string-match-p "ieeexplore.ieee.org" url) 'ieee)
-      ((string-match-p "cv-foundation.org" url) 'old-cvf)
-      ((string-match-p "aaai.org" url) 'aaai)
-      ((string-match-p "acm.org" url) 'acm)
-      ((string-match-p "openreview.net" url) 'openreview)
-      ((string-match-p "semanticscholar.org/paper" url) 'ss)
-      ((string-match-p "doi.org" url) 'doi)
-      (t nil)))
+        ((string-match-p "semanticscholar.org/paper" url) 'ss)
+        ((string-match-p "^https?://dx.doi.org/.+$" url) 'doi)
+        ((string-match-p "aclanthology.info\\|aclweb.org" url) 'acl)
+        ((and (string-match-p "doi.org" url)
+              (string-match-p "cvpr" (-last-item (split-string url "/" t))))
+         'doi-cvpr)
+        ((string-match-p "papers.nips.cc\\|proceedings.neurips.cc" url) 'neurips)
+        ((string-match-p "mlr.press" url) 'mlr)
+        ((string-match-p "openaccess.thecvf.com" url) 'cvf)
+        ((string-match-p "ieeexplore.ieee.org" url) 'ieee)
+        ((string-match-p "cv-foundation.org" url) 'old-cvf)
+        ((string-match-p "aaai.org" url) 'aaai)
+        ((string-match-p "acm.org" url) 'acm)
+        ((string-match-p "openreview.net" url) 'openreview)
+        (t nil)))
 
 (defun ref-man-url--sort-best-subroutine (x)
   "Sort best subroutines for a given '(site . url) X."
