@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 28 January 2022 20:11:32 PM IST>
+;; Time-stamp:	<Monday 11 April 2022 09:44:11 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -52,7 +52,7 @@ localhost specified by this port."
   '(acl arxiv neurips mlr aaai acm doi-cvpr cvf cvf-old openreview ss)
   "List of supported sites for fetching pdf.")
 
-(defun ref-man-meta-url (url)
+(defun ref-man-url-meta-url (url)
   "Return if the URL is a meta url.
 Meta url is from one of the three sites:
 1. arxiv.org
@@ -62,6 +62,14 @@ Meta url is from one of the three sites:
         ((string-match-p "semanticscholar.org/paper" url) 'ss)
         ((string-match-p "^https?://dx.doi.org/.+$" url) 'doi)
         (t nil)))
+
+(defvar ref-man-url-types '(("^https?://arxiv.org/.+" . arxiv)
+                            ("^https?://semanticscholar.org/.+" . ss)
+                            ("^https?://dx.doi.org/.+" . doi)
+                            ("^https?://github.com/.+". github))
+  "Alist of recognized url regex and types.
+The keys of the alist are regexps and the values are the types of URL.")
+
 
 (defun ref-man-url-to-arxiv-id (url)
   "Get arxivid from an arxiv.org URL."

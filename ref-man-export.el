@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 28 January 2022 20:11:32 PM IST>
+;; Time-stamp:	<Monday 11 April 2022 09:44:20 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -494,7 +494,7 @@ Optional BUFFER specifies the org buffer."
         (goto-char doc-root)
         (save-restriction
           (org-narrow-to-subtree)
-          (while (re-search-forward "\\includegraphics\\(?:\\[.+?]\\){\\(.+\\)}" nil t)
+          (while (re-search-forward "\\includegraphics\\(?:\\[.+?]\\){\\(.+?\\)}" nil t)
             (push (substring-no-properties (match-string 1)) imgs))))
       imgs)))
 
@@ -511,49 +511,50 @@ Requires the bib and other files to be generated once with
 `ref-man-export-docproc-article'."
   ;; NOTE: Perhaps output to a different directory also?
   (interactive)
-  (pcase-let* ((imgs (ref-man-export-get-all-imgs))
-         (out-dir ref-man-export-output-dir)
+  (let* ((imgs (ref-man-export-get-all-imgs))
          (doc-root (util/org-get-tree-prop "DOC_ROOT"))
-         (`(,title ,checksum) (if doc-root
-                                  (save-excursion
-                                    (goto-char doc-root)
-                                    (save-restriction
-                                      (org-narrow-to-subtree)
-                                      (list (substring-no-properties (org-get-heading t t t t))
-                                            (md5 (buffer-substring-no-properties (point-min) (point-max))))))
-                                (user-error "For generation of a research article, a DOC_ROOT must be specified")))
+         (docs-dir ref-man-export-output-dir)
+         (title (if doc-root
+                    (save-excursion
+                      (goto-char doc-root)
+                      (substring-no-properties (org-get-heading t t t t)))
+                  (user-error "For generation of a research article, a DOC_ROOT must be specified")))
+         (title-words (split-string (downcase (ref-man--remove-punc title t))))
+         (checksum (save-restriction
+                     (org-narrow-to-subtree)
+                     (md5 (buffer-substring-no-properties (point-min) (point-max)))))
          (doc-name (concat (string-join
-                            (-take 3 (split-string (downcase (ref-man--remove-punc title t)))) "-")
+                            (-take 3 title-words) "-")
                            "-" (substring checksum 0 10)))
-         (doc-dir (concat (string-remove-suffix "/" (path-join out-dir doc-name)) "/"))
-         (imgs-dir (concat (string-remove-suffix "/" (path-join doc-dir "imgs")) "/"))
-         (sty-dir (concat (string-remove-suffix "/" (path-join doc-dir "sty")) "/"))
-         ;; (files (-filter (lambda (x) (and (f-file? x)
-         ;;                                  (string-match-p (format "^%s\\..*" doc-name) (f-filename x))))
-         ;;                 (f-files out-dir)))
-         (files (mapcar (lambda (x) (path-join out-dir (concat doc-name x)))
+         (existing-files-dir (f-join docs-dir (string-join title-words "-")))
+         (out-dir  (concat existing-files-dir "-standalone/"))
+         (files (mapcar (lambda (x) (path-join existing-files-dir (concat doc-name x)))
                         '(".tex" ".bib")))
-         (compile-cmd (s-lex-format "pdflatex ${doc-name}.tex && bibtex ${doc-name}.aux && pdflatex ${doc-name}.tex && pdflatex ${doc-name}.tex && rm *.out *.aux *.log *.blg")))
+         (compile-cmd (s-lex-format "pdflatex ${doc-name}.tex && bibtex ${doc-name}.aux && pdflatex ${doc-name}.tex && pdflatex ${doc-name}.tex && rm *.out *.aux *.log *.blg"))
+         article-file)
     (unless (-all? (lambda (x) (and (f-exists? x) (f-file? x))) files)
       (user-error "Some files for document are missing.  Generate first?"))
-    (when (f-exists? doc-dir)
-      (f-delete doc-dir t))
-    (f-mkdir doc-dir)
-    (f-mkdir imgs-dir)
-    ;; (f-mkdir sty-dir)
-    (seq-do (lambda (x) (copy-file x doc-dir t)) files)
-    (seq-do (lambda (x) (copy-file x imgs-dir t)) imgs)
-    (copy-file "/usr/share/texlive/texmf-dist/tex/latex/base/article.cls" doc-dir t)
-    (let ((buf (find-file-noselect (path-join doc-dir (concat doc-name ".tex")))))
+    (when (f-exists? out-dir)
+      (f-delete out-dir t))
+    (f-mkdir out-dir)
+    (seq-do (lambda (x) (copy-file x out-dir t)) files)
+    (seq-do (lambda (x) (copy-file x out-dir t)) imgs)
+    (let ((buf (find-file-noselect (path-join out-dir (concat doc-name ".tex")))))
       (with-current-buffer buf
         (goto-char (point-min))
-        (while (re-search-forward "\\(\\includegraphics\\(?:\\[.+?]\\)?\\){\\(.+\\)}" nil t)
-          (replace-match (format "\\1{%s}" (concat "./imgs/" (f-filename (match-string 2))))))
+        (re-search-forward "\\documentclass\\[.*?]{\\(.+?\\)}")
+        (setq article-file (string-trim (shell-command-to-string
+                                         (format "kpsewhich %s.cls"
+                                                 (substring-no-properties (match-string 1))))))
+        (copy-file article-file out-dir t)
+        (goto-char (point-min))
+        (while (re-search-forward "\\(\\includegraphics\\(?:\\[.+?]\\)?\\){\\(.+?\\)}" nil t)
+          (replace-match (format "\\1{%s}" (concat "./" (f-filename (match-string 2))))))
         (seq-do (lambda (x)
                   (goto-char (point-min))
                   (when (re-search-forward (format "\\(\\usepackage\\(?:\\[.+?]\\)?\\){%s}" (car x)) nil t)
                     (replace-match (format "\\1{%s}" (format "%s" (car x)))) ; (format "sty/%s" (car x))
-                    (copy-file (cdr x) doc-dir)))
+                    (copy-file (cdr x) out-dir)))
                 '(("authblk" .  "/home/joe/texmf/tex/latex/authblk.sty")
                   ("algorithm2e" . "/usr/share/texlive/texmf-dist/tex/latex/algorithm2e/algorithm2e.sty")
                   ("algorithmic" . "/usr/share/texlive/texmf-dist/tex/latex/algorithms/algorithmic.sty")

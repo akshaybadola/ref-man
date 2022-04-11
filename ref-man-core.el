@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 28 January 2022 20:11:32 PM IST>
+;; Time-stamp:	<Monday 11 April 2022 09:44:15 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -2775,7 +2775,7 @@ ArXiv"
         (kill-new (buffer-string))
         (message "Killed entry as org heading")))))
 
-(defun ref-man-org-add-new-url (url)
+(defun ref-man-org-add-url-property (url)
   "Add a new URL property to an org heading.
 
 If an existing url exists in the properties and is different from
@@ -2788,21 +2788,26 @@ the current url, then it is handled as following:
   URL.
 - If none of the above then it's renamed to ALT_URL."
   (let* ((existing (org-entry-get (point) "URL"))
-         (site-a (when existing (or (ref-man-meta-url existing) 'alt)))
-         (site-b (when existing (or (ref-man-meta-url url) 'alt))))
-    (when (and existing (not (string= url existing)))
-      (cond
-       ((and (eq site-a 'alt) (eq site-b 'alt))
-        (org-entry-put (point) "ALT_URL" existing))
-       ((and (memq site-a '(arxiv ss doi)) (eq site-b 'alt))
-        (org-entry-put (point) (format "%s_URL" (upcase (symbol-name site-a))) existing)
-        (org-entry-put (point) "URL" url))
-       ((and (eq site-a 'alt) (memq site-b '(arxiv ss doi)))
-        (org-entry-put (point) (format "%s_URL" (upcase (symbol-name site-b))) url))
-       ((and (memq site-a '(arxiv ss doi)) (memq site-b '(arxiv ss doi)))
-        (org-entry-put (point) (format "%s_URL" (upcase (symbol-name site-a))) existing)
-        (org-entry-put (point) (format "%s_URL" (upcase (symbol-name site-b))) url))
-       (t (org-entry-put (point) url))))))
+         (site-a (when existing (or (ref-man-url-meta-url existing) 'alt)))
+         (site-b (when existing (or (ref-man-url-meta-url url) 'alt)))
+         (type (cdr (-first (lambda (x) (string-match-p (car x) url))
+                            ref-man-url-types))))
+    (if (and existing (not (string= url existing)))
+        (cond
+         ((and (eq site-a 'alt) (eq site-b 'alt))
+          (org-entry-put (point) "ALT_URL" existing))
+         ((and (memq site-a '(arxiv ss doi)) (eq site-b 'alt))
+          (org-entry-put (point) (format "%s_URL" (upcase (symbol-name site-a))) existing)
+          (org-entry-put (point) "URL" url))
+         ((and (eq site-a 'alt) (memq site-b '(arxiv ss doi)))
+          (org-entry-put (point) (format "%s_URL" (upcase (symbol-name site-b))) url))
+         ((and (memq site-a '(arxiv ss doi)) (memq site-b '(arxiv ss doi)))
+          (org-entry-put (point) (format "%s_URL" (upcase (symbol-name site-a))) existing)
+          (org-entry-put (point) (format "%s_URL" (upcase (symbol-name site-b))) url))
+         (t (org-entry-put (point) "URL" url)))
+      (if type
+          (org-entry-put (point) (format "%s_URL" (upcase (symbol-name type))) url)
+        (org-entry-put (point) "URL" url)))))
 
 (defun ref-man--update-props-from-assoc (props-alist)
   "Update a heading and property drawer from a PROPS-ALIST.
@@ -2815,7 +2820,7 @@ the heading."
               (pcase a
                 ("ABSTRACT" nil)
                 ("AUTHOR" (org-entry-put (point) a (ref-man--invert-accents b)))
-                ("URL" (ref-man-org-add-new-url b))
+                ("URL" (ref-man-org-add-url-property b))
                 (_ (org-entry-put (point) a b)))))
           props-alist)
   (let ((key (ref-man-parse-properties-for-bib-key)))
@@ -3242,6 +3247,11 @@ org entry after downloading."
                      (goto-char ref-man--org-gscholar-launch-point)
                      (ref-man--insert-org-pdf-file-property file)))))
               ((and (not file) args)
+               (when (and buf pt)
+                 (with-current-buffer buf
+                   (save-excursion
+                     (goto-char pt)
+                     (org-set-property "PDF_URL" (ref-man-url-maybe-unproxy url)))))
                (ref-man--download-pdf-redirect-new
                 #'ref-man--eww-pdf-download-callback-store-new url args))
               ((and (not file) (not args))
@@ -3502,7 +3512,7 @@ property drawer as the URL property."
                                                                              (point-at-eol)))))
                    (delete-region (point-at-bol) (+ 1 (point-at-eol)))))
             (outline-previous-heading)
-            (org-entry-put (point) "URL"  url))
+            (ref-man-org-add-url-property url))
           (setq url-prop url)))
       url-prop)))
 
@@ -3603,11 +3613,16 @@ as the value."
   (let* ((url-keys '(pdf-url-prop url-prop arxiv-url-prop alt-url-prop ss-url-prop))
          (url (-first (lambda (x) (a-get urls x)) url-keys))
          (url (a-get urls url))
-         (same (if (string= (replace-regexp-in-string "\\[\\|\\]" "" pdf-file)
-                            (ref-man-files-filename-from-url url))
-                   (s-lex-format "And is the same as URL ${url}")
-                 (s-lex-format "But is different from URL ${url}")))
-         (msg (s-lex-format "[ref-man] PDF already exists. ${same}")))
+         (pdf-file (if (string-match util/org-file-link-re pdf-file)
+                       (match-string 1 pdf-file)
+                     pdf-file))
+         (same-msg (when url
+                     (if (string= pdf-file (ref-man-files-filename-from-url url))
+                         (s-lex-format "And is the same as URL ${url}")
+                       (s-lex-format "But is different from URL ${url}"))))
+         (msg (if same-msg
+                  (s-lex-format "[ref-man] PDF already exists. ${same-msg}")
+                "[ref-man] No PDF URL here.")))
     msg))
 
 ;; TODO: Link (arxiv, ACL, DOI) to SS_IDs for papers also, minimize redundancy
@@ -3619,6 +3634,7 @@ as the value."
 ;;       extracted and stored from the website itself.
 ;; TODO: What if entry exists but the file doesn't?
 ;; TODO: What if the buffer gets killed before the pdf/bib is fetched?
+;; FIXME: When downloading from a redirect from SS-URL we should update PDF-URL
 (defun ref-man-try-fetch-and-store-pdf-in-org-entry (&optional interactivep)
   "Try to fetch and store pdf for current entry in an org buffer.
 Optional INTERACTIVEP is to check the `interactive' call."
@@ -3665,13 +3681,8 @@ Optional INTERACTIVEP is to check the `interactive' call."
         (setq msg-str
               (concat msg-str
                       (cond ((and pdf-file (-any #'cdr urls))
-                             ;; (concat "[ref-man] PDF already exists."
-                             ;;         (if (string= (replace-regexp-in-string "\\[\\|\\]" "" pdf-file)
-                             ;;                      (ref-man-files-filename-from-url (or pdf-url-prop url-prop)))
-                             ;;             " And is the same as URL"
-                             ;;           (format " But is different from URL [%s]"
-                             ;;                   (ref-man-files-filename-from-url (or pdf-url-prop url-prop)))))
-                             (ref-man-fetch-pdf-check-pdf-file pdf-file urls))
+                             (concat (ref-man-fetch-pdf-check-pdf-file pdf-file urls)
+                                     (if pdf-file " But there was some URL and file exists!" "")))
                             ((and pdf-file (not (-any #'cdr urls)))
                              "[ref-man] PDF exists, but no URL! What to do?!!")
                             ((and (not pdf-file) (-any #'cdr urls))

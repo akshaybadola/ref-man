@@ -256,3 +256,15 @@
        - ~ref-man-export-find-file-other-window-no-ask~
      - Bug fixes in ~~ref-man-export-docproc-article~
    - Some minor changes in other files
+
+** [2022-04-11 Mon 09:39]
+   - In ~ref-man-core~:
+     - Changed ~ref-man-org-add-new-url~ to ~ref-man-org-add-url-property~
+       Instead of ~ref-man-org-add-new-url~ now ~ref-man-org-add-url-property~
+       is referenced everywhere.
+     - Some fixes to ~ref-man-try-fetch-and-store-pdf-in-org-entry~ and
+       associated functions
+   - In ~ref-man-export~:
+     - Fixes to ~ref-man-export-generate-standalone~
+   - In ~ref-man-url~:
+     - Added variable ~ref-man-url-types~ to keep track of alt_urls.
