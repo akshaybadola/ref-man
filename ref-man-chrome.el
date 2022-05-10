@@ -1,11 +1,11 @@
 ;;; ref-man-chrome.el --- Module to route the eww requests through chromium so that google doesn't complain about lack of javascript. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021
+;; Copyright (C) 2018,2019,2020,2021,2022
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 28 January 2022 20:11:31 PM IST>
+;; Time-stamp:	<Tuesday 10 May 2022 09:07:17 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.

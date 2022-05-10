@@ -1,11 +1,11 @@
 ;;; ref-man-url.el --- url utilities and functions for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021
+;; Copyright (C) 2018,2019,2020,2021,2022
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 11 April 2022 09:44:11 AM IST>
+;; Time-stamp:	<Tuesday 10 May 2022 09:07:17 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -70,14 +70,19 @@ Meta url is from one of the three sites:
   "Alist of recognized url regex and types.
 The keys of the alist are regexps and the values are the types of URL.")
 
+(defvar ref-man-url-org-prop-types
+  '("URL" "DOI_URL" "PDF_URL" "ARXIV_URL" "ALT_URL")
+  "Keys of org property considered as a URL.")
+
+(defvar ref-man-url-maybe-pdf-url-prop-types
+  '("URL" "PDF_URL" "ARXIV_URL" "ALT_URL")
+  "Keys of org property considered as a URL.")
 
 (defun ref-man-url-to-arxiv-id (url)
   "Get arxivid from an arxiv.org URL."
   (when (eq (ref-man-url-get-site-from-url url) 'arxiv)
-    (let ((suffix (car (last (split-string url "/")))))
-      (if (string-match-p "pdf" suffix)
-          (replace-in-string suffix ".pdf" "")
-        suffix))))
+    (replace-regexp-in-string "\\(.+?\\)\\(v[0-9]+\\)?\\(\\.pdf\\)?" "\\1"
+                              (-last-item (split-string url "/")))))
 
 ;; TODO: Unify arxiv functions url into a single one
 (defun ref-man-url-from-arxiv-id ()

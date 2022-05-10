@@ -1,13 +1,13 @@
 ;;; ref-man.el --- Manage bibliographic references and associated documents in  emacs. Integrates with org-mode to fetch, retrieve and manage the documents and metadata. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021
+;; Copyright (C) 2018,2019,2020,2021,2022
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 11 April 2022 09:44:37 AM IST>
+;; Time-stamp:	<Tuesday 10 May 2022 09:07:17 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org-mode, eww
-;; Version:     0.7.7
+;; Version:     0.7.8
 ;; Package-Requires: ((a "0.1.1") (async "1.9.4") (org "9.5") (biblio-core "0.2.1") (gscholar-bibtex "0.3.1")
 ;;                    (find-file-in-project "6.2.1") (websocket "1.12") (dash "2.18.0") (bind-key "2.4")
 ;;                    (org-ref "1.1.1") (yaml "0.1.0"))

@@ -1,11 +1,11 @@
 ;;; ref-man-core.el --- Core Components for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021
+;; Copyright (C) 2018,2019,2020,2021,2022
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 11 April 2022 09:44:15 AM IST>
+;; Time-stamp:	<Tuesday 10 May 2022 09:07:17 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -92,6 +92,7 @@
 (require 'ref-man-url)
 (require 'ref-man-web)
 (require 'ref-man-py)
+(require 'ref-man-ss)
 
 (defgroup ref-man nil
   "Bibliography Manager."
@@ -751,17 +752,6 @@ callback which will be called after parsing the JSON data."
   (setq ref-man--json-data (json-read))
   (apply callback (list ref-man--json-data)))
 
-(defun ref-man--post-json-synchronous (url data)
-  "Send an HTTP POST request to URL with DATA.
-DATA should be an alist of key-value pairs.  The request is sent
-content-type as application/json and DATA is encoded as json."
-  (let ((url-request-extra-headers
-         `(("Content-Type" . "application/json")))
-        (url-request-method "POST")
-        (url-request-data
-         (encode-coding-string (json-encode-alist data) 'utf-8)))
-    (url-retrieve-synchronously url)))
-
 (defun ref-man--post-json (url queries callback)
   "Send an HTTP POST with JSON data request to URL.
 QUERIES is a list of strings which is encoded as json.  The
@@ -1291,6 +1281,15 @@ Don't insert abstract with optional non-nil NO-ABSTRACT."
                           (outline-back-to-heading)
                           (org-set-tags ":influential:")
                           (org-set-property "ISINFLUENTIAL" "t")))
+                       ((eq (car ent) 'externalIds)
+                        (seq-do
+                         (lambda (x)
+                           (unless (eq (car x) 'CorpusId)
+                             (org-set-property (if (string= (upcase (format "%s" (car x))) "ARXIV")
+                                                   "ARXIVID"
+                                                 (upcase (format "%s" (car x))))
+                                               (format "%s" (cdr x)))))
+                         (cdr ent)))
                        ((and (eq (car ent) 'url) update-current)
                         (org-set-property "SS_URL"
                                           (ref-man--replace-non-ascii
@@ -2397,7 +2396,7 @@ This function uses arxiv api with python server as an intermediary."
          (message "[ref-man] No way to get bib buffer for %s" url)
          nil)))
 
-(defun ref-man--ss-id ()
+(defun ref-man-org-get-ss-id ()
   "Get one of possible IDs to fetch from Semantic Scholar.
 Return a cons of `id-type' and `id'.  Possible values for
 `id-type' are (\"ss\" \"doi\" \"arxiv\" \"acl\" \"mag\"
@@ -2413,12 +2412,12 @@ Return a cons of `id-type' and `id'.  Possible values for
          (cons 'arxiv (org-entry-get (point) "ARXIVID")))
         ((org-entry-get (point) "EPRINT")
          (cons 'arxiv (org-entry-get (point) "EPRINT")))
-        ((org-entry-get (point) "URL")
-         (let ((url (org-entry-get (point) "URL")))
+        (t
+         (let ((url (-some (lambda (x) (org-entry-get (point) x)) ref-man-url-org-prop-types)))
            (when url
              (cond ((string-match-p "[http\\|https]://.*?doi" url)
                     (cons 'doi (string-join (last (split-string url "/") 2) "/")))
-                   ((string-match-p "https://arxiv.org" url)
+                   ((string-match-p "https?://arxiv.org" url)
                     (cons 'arxiv (ref-man-url-to-arxiv-id url)))
                    ((string-match-p "aclweb.org\\|aclanthology.info\\|aclanthology.org" url)
                     (cons 'acl
@@ -2427,8 +2426,7 @@ Return a cons of `id-type' and `id'.  Possible values for
                            (car (last (split-string (string-remove-suffix "/" url) "/"))))))
                    ((string-match-p "semanticscholar.org" url)
                     (cons 'ss (-last-item (split-string (string-remove-suffix "/" url) "/"))))
-                   (t nil)))))
-        (t nil)))
+                   (t nil)))))))
 
 (defun ref-man--insert-refs-from-seq (data name seqtype &optional ignore-errors no-abstract)
   "Insert references from a given sequence at cursor.
@@ -2472,7 +2470,7 @@ Non-nil NO-ABSTRACT means to not insert the abstract."
       (delete-blank-lines)
       (outline-previous-heading))))
 
-(defun ref-man-insert-ss-data-subr (ss-data &optional buf where ignore-errors only
+(defun ref-man-org-insert-ss-data-subr (ss-data &optional buf where ignore-errors only
                                             no-abstract current)
   "Insert Semantic Scholar Data SS-DATA into an org buffer.
 
@@ -2843,48 +2841,24 @@ the heading."
              (y-or-n-p "Heading and Title differ.  Update? "))
     (org-edit-headline (a-get props-alist "TITLE"))))
 
-;; START: Semantic Scholar Functions
+;; START: Org Semantic Scholar Functions
 
-(defun ref-man-fetch-ss-data (ssid &optional update-on-disk)
-  "Fetch Semantic Scholar data for ID SSID.
-
-The data is cached on the disk and if the data for entry is
-already present, the cached entry is fetched.  With optional
-argument UPDATE-ON-DISK, force update the data in cache."
-  (let* ((idtype-id ssid)
-         (opts `(("id_type" . ,(car idtype-id))
-                 ("id" . ,(cdr idtype-id))))
-         (opts (if update-on-disk
-                   (-concat opts '(("force" . "")))
-                 opts))
-         (ss-data (when idtype-id
-                    (message "[ref-man] %s Semantic Scholar Data for %s id: %s"
-                             (if update-on-disk "Force fetching" "Fetching")
-                             (car idtype-id) (cdr idtype-id))
-                    (with-current-buffer
-                        (url-retrieve-synchronously
-                         (ref-man-py-url "semantic_scholar" opts) t) ; silent
-                      (goto-char (point-min))
-                      (forward-paragraph)
-                      (json-read)))))
-    ss-data))
+(defvar ref-man-org-ss-data-insert-prefix-behaviour '(((4) . update) ((16) . display)))
 
 (defun ref-man-update-ss-data-on-disk ()
   "Fetch and force update Semantic Scholar data for org entry at point.
 See `ref-man-fetch-ss-data-for-entry' for details."
   (interactive)
-  (ref-man-fetch-ss-data (ref-man--ss-id) t))
+  (ref-man-ss-fetch-paper-details (ref-man-org-get-ss-id) t))
 
-(defvar ref-man-org-ss-data-insert-prefix-behaviour '(((4) . update) ((16) . display)))
-
-(defun ref-man-fetch-ss-data-for-entry (&optional update update-on-disk)
+(defun ref-man-org-fetch-ss-data-for-entry (&optional update update-on-disk)
   "Fetch the Semantic Scholar data for org entry at point.
 
 With one `\\[universal-argument]' update the data on disk also.
 
-See `ref-man-fetch-ss-data' for details on how it's stored and
+See `ref-man-ss-fetch-paper-details' for details on how it's stored and
 fetched."
-  (let ((ss-data (ref-man-fetch-ss-data (ref-man--ss-id) update-on-disk)))
+  (let ((ss-data (ref-man-ss-fetch-paper-details (ref-man-org-get-ss-id) update-on-disk)))
     (if (not ss-data)
         (message "[ref-man] Could not retrieve Semantic Scholar data for entry")
       (if update
@@ -2893,14 +2867,14 @@ fetched."
           (org-entry-put (point) "PAPERID" (a-get ss-data 'paperId)))
         (message "[ref-man] Fetched Semantic Scholar Data")))))
 
-(defun ref-man-update-entry-with-ss-data (&optional arg)
+(defun ref-man-org-update-entry-with-ss-data (&optional arg)
   "Update current entry with Semantic Scholar Data.
 
 Optional ARG is for interactive use.
 
 The data is fetched if required from `semanticscholar.org' and
 the properties are updated.  Citations and references are not
-displayed or inserted.  See `ref-man-fetch-ss-data-for-entry' for
+displayed or inserted.  See `ref-man-org-fetch-ss-data-for-entry' for
 details.
 
 With `\\[universal-argument]' fetch the data from
@@ -2909,10 +2883,10 @@ With `\\[universal-argument]' fetch the data from
   (util/with-check-mode
    'org-mode "[ref-man]"
    (pcase arg
-     (1 (ref-man-fetch-ss-data-for-entry t))
-     (_ (ref-man-fetch-ss-data-for-entry t t)))))
+     (1 (ref-man-org-fetch-ss-data-for-entry t))
+     (_ (ref-man-org-fetch-ss-data-for-entry t t)))))
 
-(defun ref-man-insert-ss-data ()
+(defun ref-man-org-insert-ss-data ()
   "Insert Semantic Scholar Data for org entry at point.
 
 The data is fetched if required from `semanticscholar.org' and
@@ -2921,20 +2895,20 @@ non-nil then insert only references.  Useful when the number of
 citations are really high, e.g. above 1000. Default is to insert
 both References and Citations.
 
-See `ref-man-fetch-ss-data-for-entry' for details."
+See `ref-man-org-fetch-ss-data-for-entry' for details."
   (interactive)
   (let ((only (pcase current-prefix-arg
                 ('(4) 'refs)
                 ('(16) 'cites)
                 (_ nil)))
-        (ss-data (ref-man-fetch-ss-data (ref-man--ss-id))))
+        (ss-data (ref-man-ss-fetch-paper-details (ref-man-org-get-ss-id))))
     (pcase-let ((`(,_ ,end ,_) (util/org-heading-and-body-bounds)))
       (goto-char end)
       (org-insert-heading)
-      (ref-man-insert-ss-data-subr ss-data (current-buffer) nil t only t t))))
+      (ref-man-org-insert-ss-data-subr ss-data (current-buffer) nil t only t t))))
 
 ;; TODO: The display buffer should happen in background in an async process
-(defun ref-man-display-ss-data ()
+(defun ref-man-org-display-ss-data ()
   "Display Semantic Scholar Data for an org entry.
 
 If the cursor is over a an internal org link for which SS data
@@ -2949,7 +2923,7 @@ only citations.  Useful when the number of citations are really
 high, e.g. above 1000.
 
 Default is to display both References and
-Citations.  See `ref-man-fetch-ss-data-for-entry' for details."
+Citations.  See `ref-man-org-fetch-ss-data-for-entry' for details."
   (interactive)
   (let ((link (util/org-link-get-target-for-internal))
         (only (pcase current-prefix-arg
@@ -2963,14 +2937,14 @@ Citations.  See `ref-man-fetch-ss-data-for-entry' for details."
                          (save-excursion
                            (with-current-buffer buf
                              (goto-char pt)
-                             (ref-man--ss-id))))
-                     (ref-man--ss-id)))
-             (ss-data (ref-man-fetch-ss-data ssid)))
+                             (ref-man-org-get-ss-id))))
+                     (ref-man-org-get-ss-id)))
+             (ss-data (ref-man-ss-fetch-paper-details ssid)))
         (when ss-data
           (message "[ref-man] Preparing Semantic Scholar Data for display")
-          (let ((buf (get-buffer-create "*Semantic Scholar*"))
-                (heading (a-get ss-data 'title))
-                (win (util/get-or-create-window-on-side)))
+          (let* ((heading (a-get ss-data 'title))
+                 (buf (get-buffer-create (format "*Semantic Scholar/%s*" heading)))
+                 (win (util/get-or-create-window-on-side)))
             (set-window-buffer win buf)
             (with-current-buffer buf
               (erase-buffer)
@@ -2978,42 +2952,11 @@ Citations.  See `ref-man-fetch-ss-data-for-entry' for details."
               (org-insert-heading)
               (insert heading)
               (forward-line)
-              (ref-man-insert-ss-data-subr ss-data buf nil t only)
+              (ref-man-org-insert-ss-data-subr ss-data buf nil t only)
               (message "[ref-man] Displaying Semantic Scholar Data"))
             (pop-to-buffer buf)))))))
 
-(defun ref-man-parse-ss-search-result (result)
-  "Parse the RESULT of a Semantic Scholar search.
-
-RESULT should be an alist."
-  (let ((retval nil))
-    (push `("PAPERID". ,(a-get result 'id)) retval)
-    (push `("ABSTRACT". ,(a-get (a-get result 'paperAbstract) 'text)) retval)
-    (push `("DOI". ,(a-get (a-get result 'doiInfo) 'doi)) retval)
-    (push `("URL". ,(a-get (a-get result 'primaryPaperLink) 'url)) retval)
-    (push `("YEAR". ,(a-get (a-get result 'year) 'text)) retval)
-    (push `("VENUE". ,(a-get (a-get result 'venue) 'text)) retval)
-    (when (assoc 'pubDate result)
-      (push `("MONTH" . ,(capitalize (a-get ref-man--num-to-months
-                                            (string-to-number
-                                             (nth 1 (split-string
-                                                     (a-get result 'pubDate) "-"))))))
-            retval))
-    (seq-do (lambda (x)
-              (if (eq (car x) 'name)
-                  (push `("JOURNAL". ,(cdr x)) retval)
-                (push `(,(upcase (symbol-name (car x))). ,(cdr x)) retval)))
-            (a-get result 'journal))
-    (push `("AUTHOR". ,(mapconcat (lambda (x)
-                                    (ref-man--build-bib-author
-                                     (a-get (aref x 0) 'name)))
-                                  (a-get result 'authors) " and "))
-          retval)
-    (push `("TITLE". ,(a-get (a-get result 'title) 'text)) retval)
-    (push '("TYPE" . "article") retval)
-    (-remove (lambda (x) (or (not (cdr x)) (string-empty-p (cdr x)))) retval)))
-
-(defun ref-man-search-semantic-scholar (search-string &optional insert-first args)
+(defun ref-man-org-search-semantic-scholar (search-string &optional insert-first args)
   "Search Semantic Scholar for SEARCH-STRING.
 
 Optional ARGS should be an alist of which converts to valid json.
@@ -3055,38 +2998,25 @@ pagination of results isn't supported yet."
       (cond ((> (length results) 0)
              (if insert-first
                  (ref-man--update-props-from-assoc
-                  (ref-man-parse-ss-search-result (aref results 0)))
-               (let* ((j 1)
-                      (entries (mapcar (lambda (x)
-                                         (prog1 (format "%d: %s, %s" j
-                                                        (a-get (a-get x 'title) 'text)
-                                                        (mapconcat
-                                                         (lambda (y) (a-get (aref y 0) 'name))
-                                                         (a-get x 'authors) ", "))
-                                           (setq j (+ 1 j))))
-                                       results))
+                  (ref-man-ss-parse-search-result (aref results 0)))
+               (let* ((entries (ref-man-ss-search-results-to-ido-prompts results))
                       (entry (ido-completing-read "Entry to insert: " entries))
                       (idx (- (string-to-number (car (split-string entry ":" t))) 1)))
                  (ref-man--update-props-from-assoc
-                  (ref-man-parse-ss-search-result (aref results idx))))))
+                  (ref-man-ss-parse-search-result (aref results idx))))))
             ((a-get result 'matchedPresentations)
-             (let* ((j 1)
-                    (entries (mapcar (lambda (x)
-                                       (prog1 (format "%d: %s, %s" j
-                                                      (a-get x 'title)
-                                                      (string-join (a-get x 'authors) ", "))
-                                         (setq j (+ 1 j))))
-                                     (a-get result 'matchedPresentations)))
+             (let* ((entries (ref-man-ss-search-presentations-to-ido-prompts
+                              (a-get result 'matchedPresentations)))
                     (entry (ido-completing-read "Entry to insert: " entries))
                     (id (a-get (aref (a-get result 'matchedPresentations)
                                      (- (string-to-number (car (split-string entry ":" t))) 1))
                                'id)))
-               (ref-man-safe-update-org-prop "PAPERID" id)))
+               (ref-man-org-safe-update-prop "PAPERID" id)))
             (t (message "[ref-man] Nothing from Semantic Scholar"))))))
 
-;; END: Semantic Scholar Functions
+;; END: Org Semantic Scholar Functions
 
-(defun ref-man-safe-update-org-prop (prop val &optional pt)
+(defun ref-man-org-safe-update-prop (prop val &optional pt)
   "Safely update org heading property PROP with VAL.
 
 With optional PT goto that point first."
@@ -3097,9 +3027,7 @@ With optional PT goto that point first."
       (when test
         (org-entry-put (or pt (point)) prop val)))))
 
-
-
-(defun ref-man-maybe-set-arxiv-id (pt url)
+(defun ref-man-org-maybe-set-arxiv-id (pt url)
   "Set ARXIVID If URL is an arxiv url at point PT."
   (let ((id (ref-man-url-to-arxiv-id url)))
     (when id
@@ -3124,7 +3052,7 @@ inferred."
               (y-or-n-p (format "%s is not a valid PDF url.  Add anyway? " pdf-url)))
           (with-current-buffer org-buf
             (org-entry-put org-point "PDF_URL" pdf-url)
-            (ref-man-maybe-set-arxiv-id org-point pdf-url))
+            (ref-man-org-maybe-set-arxiv-id org-point pdf-url))
         (message "[ref-man] Could not insert pdf url")))))
 
 (defun ref-man-org-set-insertion-point ()
@@ -3421,7 +3349,7 @@ RETRIEVE-TITLE has no effect at the moment."
       (while (not (eobp))
         (when (outline-next-heading)
           (cl-incf ref-man--subtree-num-entries)
-          (ref-man-try-fetch-and-store-pdf-in-org-entry t))))))
+          (ref-man-org-try-fetch-and-store-pdf t))))))
 
 (defun ref-man-convert-links-to-headings-in-subtree ()
   "Convert all links in the body of the current heading to a heading.
@@ -3635,7 +3563,7 @@ as the value."
 ;; TODO: What if entry exists but the file doesn't?
 ;; TODO: What if the buffer gets killed before the pdf/bib is fetched?
 ;; FIXME: When downloading from a redirect from SS-URL we should update PDF-URL
-(defun ref-man-try-fetch-and-store-pdf-in-org-entry (&optional interactivep)
+(defun ref-man-org-try-fetch-and-store-pdf (&optional interactivep)
   "Try to fetch and store pdf for current entry in an org buffer.
 Optional INTERACTIVEP is to check the `interactive' call."
   (interactive "p")
@@ -3651,7 +3579,7 @@ Optional INTERACTIVEP is to check the `interactive' call."
              ;; CHECK: Why're alt-url and arxiv-url not used?
              (alt-url-prop (a-get props "ALT_URL"))
              (arxiv-url-prop (or (a-get props "ARXIV_URL") (ref-man-url-from-arxiv-id)))
-             (ssidtype-id (ref-man--ss-id))
+             (ssidtype-id (ref-man-org-get-ss-id))
              (pdf-file (ref-man--check-fix-pdf-file-property))
              (bib-prop (ref-man-parse-properties-for-bib-key))
              (headingp (ref-man-check-heading-non-empty-p))

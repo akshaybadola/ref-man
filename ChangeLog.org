@@ -268,3 +268,12 @@
      - Fixes to ~ref-man-export-generate-standalone~
    - In ~ref-man-url~:
      - Added variable ~ref-man-url-types~ to keep track of alt_urls.
+
+** [2022-05-10 Tue 09:08]
+   - In ~ref-man-core~, renamed some functions by adding ~org~ to indicate
+     they're primarily ~org-mode~ functions.
+   - Separated Semantic Scholar functions to ~ref-man-ss~ and added functions
+     for ~ref-man-py~ version ~0.4.0~
+   - Added ~gfm~ export for html in ~ref-man-export~.
+   - Export options are given as a ~plist~ now.
+   - ~ref-man--post-json-synchronous~ is in ~ref-man-util~ now

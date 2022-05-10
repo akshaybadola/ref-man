@@ -1,11 +1,11 @@
 ;;; ref-man-export.el --- Document export and publishing functionality for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021
+;; Copyright (C) 2018,2019,2020,2021,2022
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 11 April 2022 09:44:20 AM IST>
+;; Time-stamp:	<Tuesday 10 May 2022 09:07:17 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -44,6 +44,7 @@
 
 (require 'util)
 (require 'ox)
+(require 'ox-gfm)
 (require 'yaml)                         ; TODO: yaml is actually not used
 (require 'ref-man-core)
 
@@ -276,7 +277,28 @@ Files are searched in `ref-man-export-pandoc-csl-dir'"
     (:md-footnotes-section nil nil org-md-footnotes-section)
     (:md-headline-style nil nil org-md-headline-style)))
 
-(defun ref-man-export-org-to-md (&optional subtree output-org-file)
+
+;; NOTE: Copied from `ox-gfm' in case modifications are needed
+(org-export-define-derived-backend 'ref-gfm 'gfm
+  :filters-alist '((:filter-parse-tree . org-md-separate-elements))
+  :menu-entry
+  '(?g "Export to Github Flavored Markdown"
+       ((?G "To temporary buffer"
+            (lambda (a s v b) (org-gfm-export-as-markdown a s v)))
+        (?g "To file" (lambda (a s v b) (org-gfm-export-to-markdown a s v)))
+        (?o "To file and open"
+            (lambda (a s v b)
+              (if a (org-gfm-export-to-markdown t s v)
+                (org-open-file (org-gfm-export-to-markdown nil s v)))))))
+  :translate-alist '((inner-template . org-gfm-inner-template)
+                     (paragraph . org-gfm-paragraph)
+                     (strike-through . org-gfm-strike-through)
+                     (src-block . org-gfm-src-block)
+                     (table-cell . org-gfm-table-cell)
+                     (table-row . org-gfm-table-row)
+                     (table . org-gfm-table)))
+
+(defun ref-man-export-org-to-md (type &optional subtree output-org-file)
   "Copy the org buffer to temp buffer and export to markdown.
 
 With optional non-nil SUBTREE, export only subtree.
@@ -290,6 +312,10 @@ is called just before calling `org-export-to-buffer'."
                         (org-narrow-to-subtree)
                         (buffer-string)))
           (link-re ref-man-file-fuzzy-custid-link-re)
+          (backend (pcase type
+                     ((or html pdf blog both) 'gfm)
+                     ('paper 'ref-md)
+                     (_ nil)))
           org-export-show-temporary-export-buffer)
       (with-current-buffer (get-buffer-create ref-man-export-temp-org-buf)
         (erase-buffer)
@@ -312,7 +338,7 @@ is called just before calling `org-export-to-buffer'."
             (replace-match
              (format "[[%s][%s]]" (replace-regexp-in-string "file:.+::" "" a) b))))
         (run-hook-with-args 'ref-man-export-pre-export-md-functions)
-        (org-export-to-buffer 'ref-md ref-man-export-temp-md-buf nil nil nil nil)))))
+        (org-export-to-buffer backend ref-man-export-temp-md-buf nil nil nil nil)))))
 
 (defun ref-man-export-get-opts (type title bib-file mathjax-path csl-file
                                             &optional no-refs)
@@ -570,7 +596,8 @@ BUFFER defaults to `current-buffer'.
 
 See `ref-man-export-docproc-article' for details."
   (interactive)
-  (ref-man-export-docproc-article buffer 'blog t (not current-prefix-arg)))
+  (ref-man-export-docproc-article buffer 'blog t (not current-prefix-arg)
+                                  '(:with-toc t :with-tables t)))
 
 (defun ref-man-export-both-no-urls (&optional buffer)
   "Export BUFFER as both 'blog and 'pdf.
@@ -579,7 +606,8 @@ BUFFER defaults to `current-buffer'.
 
 See `ref-man-export-docproc-article' for details."
   (interactive)
-  (ref-man-export-docproc-article buffer 'both t (not current-prefix-arg)))
+  (ref-man-export-docproc-article buffer 'both t (not current-prefix-arg)
+                                  '(:with-toc t :with-tables t)))
 
 (defun ref-man-export-html-no-urls (&optional buffer)
   "Export BUFFER as 'html.
@@ -588,17 +616,19 @@ BUFFER defaults to `current-buffer'.
 
 See `ref-man-export-docproc-article' for details."
   (interactive)
-  (ref-man-export-docproc-article buffer 'html t (not current-prefix-arg)))
+  (ref-man-export-docproc-article buffer 'html t (not current-prefix-arg)
+                                  '(:with-toc t :with-tables t)))
 
 (defun ref-man-export-article-no-urls (&optional buffer type)
-  "Export BUFFER as a research article.
+  "Export BUFFER as a pdf article.
 
 BUFFER defaults to `current-buffer'.
 TYPE is passed on to `ref-man-export-docproc-article'.
 
 See `ref-man-export-docproc-article' for details."
   (interactive)
-  (ref-man-export-docproc-article buffer (or type (and current-prefix-arg 'html) 'pdf) t))
+  (ref-man-export-docproc-article buffer (or type (and current-prefix-arg 'html) 'pdf) t t
+                                  '(:with-toc t :with-tables t)))
 
 (defun ref-man-export-paper-no-urls (&optional pref-arg buffer)
   "Export BUFFER as a research article.
@@ -617,14 +647,16 @@ See `ref-man-export-docproc-article' for details."
     (save-excursion
       (goto-char doc-root)
       (message "Exporting to PDF...")
-      (ref-man-export-docproc-article buffer 'paper t t nil no-cite force))))
+      (ref-man-export-docproc-article buffer 'paper t t '(:with-src (ref-man-export-remove-src-blocks))
+                                      no-cite force))))
 
 (defun ref-man-export-paper-plain-no-urls (&optional buffer)
   "Export BUFFER as a plain research article.
 
 See `ref-man-export-paper-no-urls'."
   (interactive)
-  (ref-man-export-docproc-article buffer 'paper t t nil nil nil t))
+  (ref-man-export-docproc-article buffer 'paper t t '(:with-src (ref-man-export-remove-src-blocks))
+                                  nil nil t))
 
 (defcustom ref-man-export-latex-table-template "\\begin{table}
 \\centering
@@ -726,6 +758,9 @@ NO-WARN-TYPES can be passed as a list of (string) link types."
           bibtexs)
       (goto-char (point-min))
       ;; NOTE: Generate bibtexs from org links only
+      ;;
+      ;; TODO: When encountering html links, we should either have a policy
+      ;;       defined or prompt the user for one
       (while (re-search-forward util/org-text-link-re nil t nil)
         ;; NOTE: Don't insert link if it's of an internal section OR
         ;;       if we're in a comment
@@ -785,7 +820,7 @@ REFS-STRING is references in yaml format."
   (with-current-buffer buf
     (goto-char (point-min))
     (let (toc-min toc-max)
-      (re-search-forward "# Table of Contents")
+      (when (re-search-forward "# Table of Contents" nil t))
       (beginning-of-line)
       (setq toc-min (point))
       (forward-paragraph 2)
@@ -805,8 +840,9 @@ REFS-STRING is references in yaml format."
 ;; TODO: Export can take a while and it would be better to do
 ;;       it in an async process.
 ;; TODO: Should convert these args to keywords
+;; TODO: org export opts should be a separate opts plist
 (defun ref-man-export-docproc-article (buffer type &optional no-urls no-gdrive
-                                              with-toc no-cite force plain)
+                                              ox-opts-list no-cite force plain)
   "Export current org buffer subtree as an article.
 
 Export to markdown first and then use pandoc and `pndconf' or
@@ -816,12 +852,19 @@ When argument BUFFER is non-nil, export the full buffer.  Default
 is to export the subtree.
 
 Argument TYPE specifies the output type, can be one of 'paper,
-'pdf, 'html, 'both or 'blog.  'both means both PDF and HTML files
-will be generated as targets.  Type 'paper implies that output
-type is latex and pdf, but that the first paragraph in the
-subtree is interpreted as the abstract automatically.  Types
-'blog and 'paper put additional metadata in the generated files.
-See `ref-man-export-blog-extra-opts'.
+'pdf, 'html, 'both or 'blog.  There are subtle differences in
+generation.  'pdf type is exported as an article without an
+abstract.  In all types except 'paper, code blocks and tables are
+preserved and exported without evaluation, while 'paper type
+removes them.
+
+Type 'both means both PDF and HTML files will be generated as
+targets.  Type 'paper implies that output type is latex and pdf,
+but that the first paragraph in the subtree is interpreted as the
+abstract automatically.
+
+Types 'blog and 'paper put additional metadata in the generated
+files.  See `ref-man-export-blog-extra-opts'.
 
 Optional non-nil NO-URLS means to not include URLs in generated
 bibliography, similar for NO-GDRIVE and gdrive links.  Default is
@@ -836,19 +879,21 @@ Optional PLAIN is to indicate that the document should be
 exported as a plain article and without any journal/conference
 specific formatting.  Helpful for distributing drafts and
 preprints."
-  (let* ((org-export-with-broken-links 'mark) ; mark broken links and they'll be replaced with citations
-         (org-export-with-clocks nil)
-         (org-export-with-date nil)
-         (org-export-with-drawers nil)
-         (org-export-with-latex nil)    ; Ignore latex and pandoc will handle it
-         (org-export-with-properties nil)
-         (org-export-with-sub-superscripts nil)
-         (org-export-with-tables nil)
-         (org-export-with-tags nil)
-         (org-export-with-timestamps nil)
-         (org-export-with-todo-keywords nil)
-         (org-export-with-toc t)
-         (org-export-filter-src-block-functions '(ref-man-export-remove-src-blocks))
+  (unless (memq type '(blog paper html pdf both))
+    (user-error "Type of generation must be one of [blog, paper, html, pdf, both]"))
+  (let* ((org-export-with-broken-links (or (plist-get ox-opts-list :with-broken-links) 'mark)) ; mark broken links and they'll be replaced with citations
+         (org-export-with-clocks (plist-get ox-opts-list :with-clocks))
+         (org-export-with-date (plist-get ox-opts-list :with-date))
+         (org-export-with-drawers (plist-get ox-opts-list :with-drawers))
+         (org-export-with-latex (plist-get ox-opts-list :with-latex))    ; Ignore latex and pandoc will handle it
+         (org-export-with-properties (plist-get ox-opts-list :with-properties))
+         (org-export-with-sub-superscripts (plist-get ox-opts-list :with-sub-superscripts))
+         (org-export-with-tables (plist-get ox-opts-list :with-tables))
+         (org-export-with-tags (plist-get ox-opts-list :with-tags))
+         (org-export-with-timestamps (plist-get ox-opts-list :with-timestamps))
+         (org-export-with-todo-keywords (plist-get ox-opts-list :with-keywords))
+         (org-export-with-toc (plist-get ox-opts-list :with-toc))
+         (org-export-filter-src-block-functions (plist-get ox-opts-list :with-src))
          (pandoc ref-man-pandoc-executable)
          (templates-dir ref-man-export-pandoc-templates-dir)
          (tmp-bib-file (unless (or (string= "2.14" (ref-man-pandoc-version))
@@ -888,8 +933,7 @@ preprints."
          ;;        We probably don't need as github can do version
          ;;        control by itself
          (md-file (pcase type
-                    ('blog
-                     (path-join out-dir (concat (string-join title-words "-") ".md")))
+                    ('blog (path-join out-dir (concat (string-join title-words "-") ".md")))
                     (_ (path-join out-dir (concat (string-join (-take 3 title-words) "-")
                                                   "-" (substring checksum 0 10) ".md")))))
          (org-file (path-join out-dir (concat (string-join (-take 3 title-words) "-")
@@ -968,6 +1012,7 @@ preprints."
                       (setq metadata (a-dissoc metadata "abstract" "doc-root" "sections-beg" "sections-end"))))
             (_ nil)))
         (setq bibtexs (ref-man-export-parse-references type (a-get bib-no-warn-types type)))
+        (setq bibtexs nil)
         (setq bibtexs (mapcar (lambda (x)
                                 `(,(car x) ,(nth 1 x) ,(replace-regexp-in-string "venue=" "booktitle=" (nth 2 x))))
                               bibtexs))
@@ -978,12 +1023,13 @@ preprints."
         (goto-char (point-min))
         ;; NOTE: export to markdown in ref-man-export-temp-md-buf
         (if (eq type 'paper)
-            (ref-man-export-org-to-md nil (and ref-man-export-paper-version-org-file org-file))
-          (ref-man-export-org-to-md))
+            (ref-man-export-org-to-md type nil (and ref-man-export-paper-version-org-file org-file))
+          (ref-man-export-org-to-md type))
         (with-current-buffer ref-man-export-temp-md-buf
           ;; NOTE: Remove TOC if asked
-          (unless with-toc
-            (ref-man-export-delete-md-toc (current-buffer)))
+          ;; CHECK: Changed this to ask for TOC in plist
+          ;; (unless with-toc
+          ;;   (ref-man-export-delete-md-toc (current-buffer)))
           ;; NOTE: Repace "BROKEN LINK"s with bibtexs
           (goto-char (point-min))
           (while (re-search-forward "\\[BROKEN LINK: \\(.+?\\)]" nil t) ; Insert links

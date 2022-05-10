@@ -1,11 +1,11 @@
 ;;; ref-man-util.el --- Utility variables and functions for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021
+;; Copyright (C) 2018,2019,2020,2021,2022
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 28 January 2022 20:11:32 PM IST>
+;; Time-stamp:	<Tuesday 10 May 2022 09:07:17 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -454,6 +454,17 @@ the link are added to `ref-man-headings-before-pdf-open'."
                      (t nil))))
     (when path
       (add-to-list 'ref-man-headings-before-pdf-open (list :heading heading :path path)))))
+
+(defun ref-man--post-json-synchronous (url data &optional silent)
+  "Send an HTTP POST request to URL with DATA.
+DATA should be an alist of key-value pairs.  The request is sent
+content-type as application/json and DATA is encoded as json."
+  (let ((url-request-extra-headers
+         `(("Content-Type" . "application/json")))
+        (url-request-method "POST")
+        (url-request-data
+         (encode-coding-string (json-encode-alist data) 'utf-8)))
+    (url-retrieve-synchronously url silent)))
 
 (provide 'ref-man-util)
 
