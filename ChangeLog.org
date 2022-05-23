@@ -277,3 +277,7 @@
    - Added ~gfm~ export for html in ~ref-man-export~.
    - Export options are given as a ~plist~ now.
    - ~ref-man--post-json-synchronous~ is in ~ref-man-util~ now
+
+** [2022-05-23 Mon 09:23]
+   - Much more modular ~ref-man-export-docproc-article~. Added some new
+     variables and separated functions
