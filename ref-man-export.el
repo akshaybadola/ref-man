@@ -589,14 +589,76 @@ Optional BUFFER specifies the org buffer."
             (push (substring-no-properties (match-string 1)) imgs))))
       imgs)))
 
-(defun ref-man-export-generate-standalone ()
-  "Create a folder with a self contained document.
+(defun ref-man-export-copy-standalone-files (&optional tex-file)
+  "Copy all supporting files corresponding to a TEX-FILE.
 
-Use a different template which ignores venue/journal specific
-formatting options.
+Create a new folder based on the title of the document and copy
+the img, supporting tex and bib files for easy upload to
+servers."
+  (interactive)
+  (let* ((tex-file (or tex-file
+                       (ido-read-file-name "Enter the tex file path: ")))
+         (bib-file (concat (string-remove-suffix ".tex" tex-file) ".bib"))
+         (docs-dir ref-man-export-output-dir)
+         (buf (find-file-noselect tex-file))
+         (doc-name (with-current-buffer buf
+                     (progn
+                       (goto-char (point-min))
+                       (re-search-forward "\\title{\\(\\(.\\|\n\\)?+?\\)}")
+                       (downcase
+                        (string-join
+                         (mapcar #'ref-man--remove-punc
+                                 (split-string
+                                  (substring-no-properties (match-string 1))))
+                         "-")))))
+         (old-dir (f-parent tex-file))
+         (out-dir (f-join docs-dir (concat doc-name "-standalone")))
+         (out-file (f-join out-dir (f-filename tex-file)))
+         (out-bib-file (concat (string-remove-suffix ".tex" out-file) ".bib")))
+    (kill-buffer buf)
+    (when (f-exists? out-dir)
+      (f-delete out-dir t))
+    (f-mkdir out-dir)
+    (copy-file tex-file out-file)
+    (copy-file bib-file out-bib-file)
+    (let ((buf (find-file-noselect out-file))
+          cls-file
+          sty-files
+          img-files)
+      (with-current-buffer buf
+        (goto-char (point-min))
+        (re-search-forward "\\documentclass\\[.*?]{\\(.+?\\)}")
+        (setq cls-file (string-trim (shell-command-to-string
+                                     (format "kpsewhich %s.cls"
+                                             (substring-no-properties (match-string 1))))))
+        (goto-char (point-min))
+        (while (re-search-forward "\\(\\usepackage\\(?:\\[.+?]\\)?\\){\\(.+?\\)}" nil t)
+          (push (split-string (substring-no-properties (match-string 2)) ",") sty-files))
+        (goto-char (point-min))
+        (while (re-search-forward "\\(\\includegraphics\\(?:\\[.+?]\\)?\\){\\(\\(.\\|\n\\)?+?\\)}" nil t)
+          (unless (syntax-ppss-context (syntax-ppss))
+            (push (match-string 2) img-files)
+            (replace-match (format "%s{%s}"
+                                   (match-string 1)
+                                   (concat "./" (f-filename (match-string 2)))))))
+        (seq-do (lambda (x)
+                  (copy-file (string-trim
+                              (shell-command-to-string (format "kpsewhich %s.sty" x)))
+                             (f-join out-dir (f-filename (concat x ".sty"))) t))
+                (-flatten sty-files))
+        (seq-do (lambda (x)
+                  (copy-file x
+                             (f-join out-dir (f-filename x)) t))
+                img-files)
+        (save-buffer))
+      (kill-buffer buf))))
+
+
+(defun ref-man-export-generate-standalone ()
+  "Create a folder with all files required for a self contained document.
 
 Copy the img, tex and bib files in the folder for easy upload to
-preprint servers.
+servers.
 
 Requires the bib and other files to be generated once with
 `ref-man-export-docproc-article'."
@@ -966,7 +1028,8 @@ CHECKSUM is the current data checksum."
     (when template
       ;; NOTE: When template is not a full path get path from `ref-man-export-templates'
       ;; CHECK: Why are we not simply setting it in yaml header?
-      (unless (f-exists? template)
+      (if (f-exists? template)
+          (format " --template=%s " template)
         (format " --template=%s " (a-get (ref-man-export-templates) template))))))
 
 
