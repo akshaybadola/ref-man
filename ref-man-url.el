@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Tuesday 10 May 2022 09:07:17 AM IST>
+;; Time-stamp:	<Friday 03 June 2022 15:40:05 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -334,7 +334,7 @@ predicate."
                             "/"))))))
 
 ;; NOTE: This is equivalent to run-hook-with-args-until-success
-;; TODO: This should be a pcase for brevity. The list of `site's should be separate
+;;       BUT there is recursion here for redirects
 (defun ref-man-url-get-pdf-link-helper (site url buf &optional status)
   "Helper function to get pdf link from URL given type of SITE.
 BUF is the html buffer retrieved from URL.  Optional status is a
@@ -357,76 +357,66 @@ returned.  Possible values for SITE are:
 
 In case none of them matches, then the default is to retrieve the
 first pdf link from the buffer."
-  (cond ((eq site 'acl)
-         (ref-man-url-acl-pdf-link-helper url))
-        ((eq site 'arxiv)
-         (ref-man-url-arxiv-pdf-link-helper url))
-        ((eq site 'doi)
-         (let* ((url (plist-get status :redirect))
-                (site (ref-man-url-get-site-from-url url)))
-           ;; NOTE: Call self again with new URL
-           (ref-man-url-get-pdf-link-helper site url buf)))
-        ((eq site 'neurips)
-         (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-           (when link
-             (cond ((string-match-p "^http:\\|^https:" link) link)
-                   ((string-match-p "^/paper/" link)
-                    (url-join (string-join (-take 3 (split-string url "/")) "/") link))
-                   (t nil)))))
-        ((eq site 'mlr)
-         (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-           (when (and link (string-match-p "^http:\\|^https:" link)) link)))
-        ((eq site 'aaai)
-         (let ((link (pcase (ref-man-url-get-all-links-from-html-buffer
-                             buf
-                             (lambda (x) (string-match-p (rx "http"
-                                                             (+? any)
-                                                             (or "article" "paper")
-                                                             "/" "view" (+ any))
-                                                         x)))
-                       (`(,x) x)
-                       (_ nil))))
-           (or link
-               (let ((buf (if (string-match-p "This page requires frames."
-                                              (with-current-buffer buf (buffer-string)))
-                              (url-retrieve-synchronously (ref-man-url-get-last-link-from-html-buffer buf) t)
-                            buf)))
-                 (replace-regexp-in-string "/paper/view/" "/paper/viewFile/"
-                                           (ref-man-url-get-last-link-from-html-buffer buf))))))
-        ((eq site 'acm)
-         (let ((link (ref-man-url-acm-pdf-link-helper-subr url)))
-           (if (string-match-p "/pdf/" link)
-               link
-             (ref-man-url-acm-pdf-link-helper url))))
-        ((eq site 'cvf)
-         (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-           (when link
-             (cond ((string-match-p "^http:\\|^https:" link) link)
-                   ((string-match-p "\\(\\.\\./\\)+\\(content.*\\)" link)
-                    (url-join (string-join (-take 3 (split-string url "/")) "/")
-                              (replace-regexp-in-string "\\(\\.\\./\\)+\\(content.*\\)" "/\\2" link)))
-                   ((string-match-p "^../../content_.*" link)
-                    (url-join (string-join (-take 3 (split-string url "/")) "/")
-                              (string-join (-drop 2 (split-string link "/")) "/")))
-                   (t nil)))))
-        ;; CHECK: Not sure if this is correct
-        ((eq site 'cvf-old)
-         (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-           (when link
-             (cond ((string-match-p "^http:\\|^https:" link) link)
-                   ((string-match-p "^../../content_.*" link)
-                    (url-join (string-join (-take 4 (split-string url "/")) "/")
-                              (string-join (-drop 2 (split-string link "/")) "/")))
-                   (t nil)))))
-        ((eq site 'openreview)
-         (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-           (when link
-             (if (string-match-p "^[http|https]" link)
-                 link
-               (url-join "https://openreview.net" link)))))
-        ((eq site 'ss)
-         (let* ((links (with-temp-shr-buffer buf
-                                            (ref-man-web-get-all-links (current-buffer) t)))
+  (pcase site
+    ('acl (ref-man-url-acl-pdf-link-helper url))
+    ('arxiv (ref-man-url-arxiv-pdf-link-helper url))
+    ('doi (let* ((url (plist-get status :redirect))
+                 (site (ref-man-url-get-site-from-url url)))
+            ;; Call self again with new URL
+            (ref-man-url-get-pdf-link-helper site url buf)))
+    ('neurips (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
+                (when link
+                  (cond ((string-match-p "^http:\\|^https:" link) link)
+                        ((string-match-p "^/paper/" link)
+                         (url-join (string-join (-take 3 (split-string url "/")) "/") link))
+                        (t nil)))))
+    ('mlr (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
+            (when (and link (string-match-p "^http:\\|^https:" link)) link)))
+    ('aaai (let ((link (pcase (ref-man-url-get-all-links-from-html-buffer
+                               buf
+                               (lambda (x) (string-match-p (rx "http"
+                                                               (+? any)
+                                                               (or "article" "paper")
+                                                               "/" "view" (+ any))
+                                                           x)))
+                         (`(,x) x)
+                         (_ nil))))
+             (or link
+                 (let ((buf (if (string-match-p "This page requires frames."
+                                                (with-current-buffer buf (buffer-string)))
+                                (url-retrieve-synchronously (ref-man-url-get-last-link-from-html-buffer buf) t)
+                              buf)))
+                   (replace-regexp-in-string "/paper/view/" "/paper/viewFile/"
+                                             (ref-man-url-get-last-link-from-html-buffer buf))))))
+    ('acm (let ((link (ref-man-url-acm-pdf-link-helper-subr url)))
+            (if (string-match-p "/pdf/" link)
+                link
+              (ref-man-url-acm-pdf-link-helper url))))
+    ('cvf (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
+            (when link
+              (cond ((string-match-p "^http:\\|^https:" link) link)
+                    ((string-match-p "\\(\\.\\./\\)+\\(content.*\\)" link)
+                     (url-join (string-join (-take 3 (split-string url "/")) "/")
+                               (replace-regexp-in-string "\\(\\.\\./\\)+\\(content.*\\)" "/\\2" link)))
+                    ((string-match-p "^../../content_.*" link)
+                     (url-join (string-join (-take 3 (split-string url "/")) "/")
+                               (string-join (-drop 2 (split-string link "/")) "/")))
+                    (t nil)))))
+    ;; CHECK: Not sure if this is correct
+    ('cvf-old (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
+                (when link
+                  (cond ((string-match-p "^http:\\|^https:" link) link)
+                        ((string-match-p "^../../content_.*" link)
+                         (url-join (string-join (-take 4 (split-string url "/")) "/")
+                                   (string-join (-drop 2 (split-string link "/")) "/")))
+                        (t nil)))))
+    ('openreview (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
+                   (when link
+                     (if (string-match-p "^[http|https]" link)
+                         link
+                       (url-join "https://openreview.net" link)))))
+    ('ss (let* ((links (with-temp-shr-buffer buf
+                                             (ref-man-web-get-all-links (current-buffer) t)))
                 (site-url (ref-man-url-get-best-pdf-url links))
                 (url (when site-url
                        (cond ((eq (car site-url) 'pdf)
@@ -439,13 +429,13 @@ first pdf link from the buffer."
                                          (ref-man-url-get-pdf-link-helper
                                           (car site-url)
                                           (cdr site-url)
-                                         (current-buffer))))))))))
+                                          (current-buffer))))))))))
            url))
-        (t (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
-             (when link
-               (if (string-match-p "^http:\\|^https:" link)
-                   link
-                 (ref-man-url-get-absolute-path url link)))))))
+    (_ (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
+         (when link
+           (if (string-match-p "^http:\\|^https:" link)
+               link
+             (ref-man-url-get-absolute-path url link)))))))
 
 (defun ref-man-url-acm-transform (link)
   "Transform an acm url LINK."
@@ -512,7 +502,7 @@ ARGS is for compatibility and not used."
   "Helper function to determine site from URL."
   (cond ((string-match-p "arxiv.org" url) 'arxiv)
         ((string-match-p "semanticscholar.org/paper" url) 'ss)
-        ((string-match-p "^https?://dx.doi.org/.+$" url) 'doi)
+        ((string-match-p "^https?://\\(dx.\\)?doi.org/.+$" url) 'doi)
         ((string-match-p "aclanthology.info\\|aclweb.org" url) 'acl)
         ((and (string-match-p "doi.org" url)
               (string-match-p "cvpr" (-last-item (split-string url "/" t))))
