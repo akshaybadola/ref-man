@@ -2937,24 +2937,27 @@ Citations.  See `ref-man-org-fetch-ss-data-for-entry' for details."
                          (save-excursion
                            (with-current-buffer buf
                              (goto-char pt)
-                             (ref-man-org-get-ss-id))))
+                             (or (ref-man-org-get-ss-id)
+                                 (user-error "No SSID found for entry")))))
                      (ref-man-org-get-ss-id)))
              (ss-data (ref-man-ss-fetch-paper-details ssid)))
-        (when ss-data
-          (message "[ref-man] Preparing Semantic Scholar Data for display")
-          (let* ((heading (a-get ss-data 'title))
-                 (buf (get-buffer-create (format "*Semantic Scholar/%s*" heading)))
-                 (win (util/get-or-create-window-on-side)))
-            (set-window-buffer win buf)
-            (with-current-buffer buf
-              (erase-buffer)
-              (org-mode)
-              (org-insert-heading)
-              (insert heading)
-              (forward-line)
-              (ref-man-org-insert-ss-data-subr ss-data buf nil t only)
-              (message "[ref-man] Displaying Semantic Scholar Data"))
-            (pop-to-buffer buf)))))))
+        (if ss-data
+            (progn
+              (message "[ref-man] Preparing Semantic Scholar Data for display")
+              (let* ((heading (a-get ss-data 'title))
+                     (buf (get-buffer-create (format "*Semantic Scholar/%s*" heading)))
+                     (win (util/get-or-create-window-on-side)))
+                (set-window-buffer win buf)
+                (with-current-buffer buf
+                  (erase-buffer)
+                  (org-mode)
+                  (org-insert-heading)
+                  (insert heading)
+                  (forward-line)
+                  (ref-man-org-insert-ss-data-subr ss-data buf nil t only)
+                  (message "[ref-man] Displaying Semantic Scholar Data"))
+                (pop-to-buffer buf)))
+          (user-error "Got no data to display"))))))
 
 (defun ref-man-org-search-semantic-scholar (search-string &optional insert-first args)
   "Search Semantic Scholar for SEARCH-STRING.
