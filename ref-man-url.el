@@ -225,6 +225,7 @@ downloadable one."
 
 (defmacro with-temp-shr-buffer (buf &rest body)
   "Construct a temp `shr' buffer from url buffer BUF and execute BODY."
+  (declare (indent 1) (debug t))
   (or (fboundp 'libxml-parse-html-region)
       (error "This function requires Emacs to be compiled with libxml2"))
   `(let ((temp-buf (get-buffer-create " *temp-shr-buffer*")))
@@ -243,6 +244,7 @@ downloadable one."
 Arguments BUF and BODY are same as in `with-temp-shr-buffer'.
 
 Useful when you want the buffer to persist afterwards."
+  (declare (indent 1) (debug t))
   (or (fboundp 'libxml-parse-html-region)
     (error "This function requires Emacs to be compiled with libxml2"))
   `(let ((temp-buf (get-buffer-create ,name)))
@@ -262,9 +264,9 @@ The buffer is first rendered with `shr' and then searched for
 links.  With optional PREDICATE, return links that satisfies
 predicate."
   (with-temp-shr-buffer buf
-                        (let ((predicate (or predicate #'identity)))
-                          (-filter predicate (ref-man-web-get-all-links
-                                              (current-buffer) t)))))
+    (let ((predicate (or predicate #'identity)))
+      (-filter predicate (ref-man-web-get-all-links
+                          (current-buffer) t)))))
 
 (defun ref-man-url-get-first-pdf-link-from-html-buffer (buf &optional predicate)
   "Extract first pdf link from an html response buffer BUF.
@@ -272,9 +274,9 @@ The buffer is first rendered with `shr' and then searched for
 links.  With optional PREDICATE, return first link that satisfies
 predicate."
   (with-temp-shr-buffer buf
-                        (let ((predicate (or predicate #'identity)))
-                          (-first predicate (ref-man-web-get-all-links
-                                             (current-buffer) t nil "pdf")))))
+    (let ((predicate (or predicate #'identity)))
+      (-first predicate (ref-man-web-get-all-links
+                         (current-buffer) t nil "pdf")))))
 
 (defun ref-man-url-get-last-pdf-link-from-html-buffer (buf &optional predicate)
   "Extract last pdf link from an html response buffer BUF.
@@ -282,9 +284,9 @@ The buffer is first rendered with `shr' and then searched for
 links.  With optional PREDICATE, return first link that satisfies
 predicate."
   (with-temp-shr-buffer buf
-                        (let ((predicate (or predicate #'identity)))
-                          (-last predicate (ref-man-web-get-all-links
-                                            (current-buffer) t nil "pdf")))))
+    (let ((predicate (or predicate #'identity)))
+      (-last predicate (ref-man-web-get-all-links
+                        (current-buffer) t nil "pdf")))))
 
 (defun ref-man-url-get-first-link-from-html-buffer (buf &optional predicate)
   "Extract first link from an html response buffer BUF.
@@ -292,9 +294,9 @@ The buffer is first rendered with `shr' and then searched for
 links.  With optional PREDICATE, return first link that satisfies
 predicate."
   (with-temp-shr-buffer buf
-                        (let ((predicate (or predicate #'identity)))
-                          (-first predicate (ref-man-web-get-all-links
-                                             (current-buffer) t)))))
+    (let ((predicate (or predicate #'identity)))
+      (-first predicate (ref-man-web-get-all-links
+                         (current-buffer) t)))))
 
 (defun ref-man-url-get-last-link-from-html-buffer (buf &optional predicate)
   "Extract last link from an html response buffer BUF.
@@ -302,9 +304,9 @@ The buffer is first rendered with `shr' and then searched for
 links.  With optional PREDICATE, return first link that satisfies
 predicate."
   (with-temp-shr-buffer buf
-                        (let ((predicate (or predicate #'identity)))
-                          (-last predicate (ref-man-web-get-all-links
-                                            (current-buffer) t)))))
+    (let ((predicate (or predicate #'identity)))
+      (-last predicate (ref-man-web-get-all-links
+                        (current-buffer) t)))))
 
 (defun ref-man-url-domain (url)
   "Get the domain name with protocol for URL."

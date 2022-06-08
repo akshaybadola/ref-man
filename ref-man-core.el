@@ -752,7 +752,7 @@ callback which will be called after parsing the JSON data."
   (setq ref-man--json-data (json-read))
   (apply callback (list ref-man--json-data)))
 
-(defun ref-man--post-json (url queries callback)
+(defun ref-man--post-json (url data callback)
   "Send an HTTP POST with JSON data request to URL.
 QUERIES is a list of strings which is encoded as json.  The
 request is sent with content-type as application/json.
@@ -765,7 +765,7 @@ structures and then calls CALLBACK on it."
          `(("Content-Type" . "application/json")))
         (url-request-method "POST")
         (url-request-data
-         (encode-coding-string (json-encode queries) 'utf-8)))
+         (encode-coding-string (json-encode data) 'utf-8)))
     (url-retrieve url #'ref-man--parse-json-callback
                   (list url callback))))
 
