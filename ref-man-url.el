@@ -685,16 +685,20 @@ The rendered buffer is a named buffer BUFFER-NAME."
 
 (defun ref-man-url-parse-cvf-venue (doi venue)
   "Get the correct venue from a CVF DOI and VENUE."
-  (cond ((and doi (string-match ".*\\(ICCV\\|CVPR\\).*" doi))
+  (cond ((and doi (let ((case-fold-search nil))
+                    (string-match ".*\\(ICCV\\|CVPR\\|WACV\\).*" doi)))
          (match-string 1 doi))
         (venue
-         (cond ((string-match ".*\\(ICCV\\|CVPR\\).*" venue)
-                (match-string 1 venue))
-               ((string-match-p ".*computer.*vision.*pattern.*recognition.*" venue)
-                "cvpr")
-               ((string-match-p ".*international.*conference.*computer.*vision.*" venue)
-                "iccv")
-               (t nil)))))
+         (let ((case-fold-search t))
+           (cond ((string-match ".*\\(ICCV\\|CVPR\\|WACV\\).*" venue)
+                  (match-string 1 venue))
+                 ((string-match-p ".*computer.*vision.*pattern.*recognition.*" venue)
+                  "CVPR")
+                 ((string-match-p ".*international.*conference.*computer.*vision.*" venue)
+                  "ICCV")
+                 ((string-match-p "winter.+applications.*computer.*vision" venue)
+                  "WACV")
+                 (t nil))))))
 
 (defun ref-man-url-cvf-pdf-link-helper (url &optional args)
   "Get PDF URL for a CVF url.
@@ -716,7 +720,7 @@ ARGS is a plist with keywords :heading :point :buffer"
             (user-error "No venue given")
           (ref-man-py-get-cvf-url heading venue url year))))))
 
-(defun ref-man-py-get-cvf-url (title venue &optional url year)
+(defun ref-man-url-get-cvf-url (title venue &optional url year)
   "Get the cvpr url from python server for given TITLE and VENUE.
 
 Optional YEAR if not specified but can be extracted from a DOI
@@ -724,8 +728,8 @@ URL.  If neither are given, then the pdf url for the longest regexp
 match for TITLE's first three words will be returned."
   (let* ((title (ref-man--remove-punc title t))
          (year (or year (and url (nth 1 (split-string (-last-item (split-string url "/" t)) "\\." t)))))
-         (buf (url-retrieve-synchronously (format "http://localhost:%s/get_cvf_url?title=%s&venue=%s&year=%s"
-                                                  ref-man-py-server-port title venue year)))
+         (buf (url-retrieve-synchronously
+               (ref-man-py-url "get_cvf_url" `(("title" . ,title) ("venue" . ,venue) ("year" . ,year)))))
          (buf-string (with-current-buffer buf
                        (goto-char (point-min))
                        (re-search-forward "\r?\n\r?\n")
