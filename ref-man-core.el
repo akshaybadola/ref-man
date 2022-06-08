@@ -3229,6 +3229,30 @@ subtree will be updated later."
               :status status)
         ref-man--subtree-list))
 
+(defun ref-man-maybe-fetch-from-cvf (args)
+  "Fetch pdf from pdf-url if exists in :urls property of plist ARGS.
+If pdf-url doesn't exist then check if first non-nil `cdr' of
+:urls is a downloadable pdf url.  Fetch pdf if possible."
+  (let* ((urls (plist-get args :urls))
+         (doi (org-entry-get (point) "DOI"))
+         (venue (org-entry-get (point) "VENUE"))
+         (cvf-entry (ref-man-url-parse-cvf-venue doi venue))
+         ;; (cvf-re (string-join '("cvf" "cvpr" "iccv" "wavc"
+         ;;                        "computer vision and pattern recognition"
+         ;;                        "international conference on computer vision"
+         ;;                        "winter.+computer vision")
+         ;;                      "\\|"))
+         ;; (cvf-doi-re (string-join '("cvf\\." "cvpr\\." "iccv\\." "wavc\\.")
+         ;;                          "\\|"))
+         ;; (ieee-url (or (-any (lambda (x) (string-match-p "https?://ieeexplore.+?.org" x)) urls)))
+         ;; (cvf-entry (or (and ieee-url (string-match-p
+         ;;                               (downcase (org-entry-get (point) "VENUE")) cvf-re))
+         ;;                (string-match-p cvf-doi-re (downcase (org-entry-get (point) "DOI")))))
+         )
+    (when cvf-entry
+      (ref-man-url-get-cvf-url (org-entry-get (point) "TITLE")
+                               cvf-entry nil
+                              (org-entry-get (point) "YEAR")))))
 
 (defun ref-man-fetch-pdf-from-maybe-pdf-url (args)
   "Fetch pdf from pdf-url if exists in :urls property of plist ARGS.
