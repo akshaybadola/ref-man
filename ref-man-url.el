@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 03 June 2022 15:40:05 PM IST>
+;; Time-stamp:	<Friday 22 July 2022 08:58:34 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -684,7 +684,9 @@ The rendered buffer is a named buffer BUFFER-NAME."
 ;;           (t url))))
 
 (defun ref-man-url-parse-cvf-venue (doi venue)
-  "Get the correct venue from a CVF DOI and VENUE."
+  "Get the correct venue from a CVF DOI and VENUE.
+
+DOI is checked first and if not present VENUE is checked."
   (cond ((and doi (let ((case-fold-search nil))
                     (string-match ".*\\(ICCV\\|CVPR\\|WACV\\).*" doi)))
          (match-string 1 doi))
@@ -729,7 +731,9 @@ match for TITLE's first three words will be returned."
   (let* ((title (ref-man--remove-punc title t))
          (year (or year (and url (nth 1 (split-string (-last-item (split-string url "/" t)) "\\." t)))))
          (buf (url-retrieve-synchronously
-               (ref-man-py-url "get_cvf_url" `(("title" . ,title) ("venue" . ,venue) ("year" . ,year)))))
+               (ref-man-py-url "get_cvf_url" `(("title" . ,title)
+                                               ("venue" . ,venue)
+                                               ("year" . ,year)))))
          (buf-string (with-current-buffer buf
                        (goto-char (point-min))
                        (re-search-forward "\r?\n\r?\n")

@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Tuesday 10 May 2022 09:07:17 AM IST>
+;; Time-stamp:	<Friday 22 July 2022 08:58:09 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -1093,26 +1093,32 @@ has-body indicates if any text is present."
                             (buffer-substring-no-properties beg end))))))
       (list beg end has-body))))
 
-(defun ref-man-org-insert-abstract (abs &optional buf keep-current)
-  "Insert abstract as text in entry after property drawer if it exists.
-ABS is the abstract string.  Insert to `current-buffer' if
-optional BUF is nil else to BUF.  If optional KEEP-CURRENT is
-non-nil, keep the current text after the heading, otherwise
-delete."
+(defun ref-man-org-insert-prop-list-item (prop &optional buf keep-current)
+  "Insert a paper property as text in entry after property drawer if it exists.
+
+The property PROP is a key value pair and is inserted as a list
+item after the current key-value props if they exist. They are
+all inserted as a list like \" - key: value\"
+
+Insert to `current-buffer' if optional BUF is nil else to BUF.
+
+If optional KEEP-CURRENT is non-nil, keep the current text after
+the heading, otherwise delete."
   (unless buf (setq buf (current-buffer)))
   (with-current-buffer buf
     (ref-man-org-end-of-meta-data)
-    (pcase-let* ((`(,beg ,end ,has-text) (ref-man-org-text-bounds))
+    (pcase-let* ((`(,key . ,val) prop)
+                 (`(,beg ,end ,has-text) (ref-man-org-text-bounds))
                  (text (and has-text (buffer-substring-no-properties beg end)))
                  (splits (and text (-remove #'string-empty-p (split-string text "^ +- "))))
                  (level (org-current-level)))
-      (unless (-any (lambda (x) (string-match-p "^abstract: " x)) splits)
+      (unless (-any (lambda (x) (string-match-p (format "^%s: " key) x)) splits)
         (unless keep-current
           (when (not (= beg end))
             (delete-region beg (- end 1))))
         (goto-char beg)
-        (insert (make-string (1+ level) ? ) "- Abstract: "
-                (replace-regexp-in-string "\n" "" abs))
+        (insert (make-string (1+ level) ? ) (format "- %s: " (capitalize key))
+                (replace-regexp-in-string "\n" "" val))
         (insert "\n")
         (goto-char beg)
         (org-indent-line)
@@ -1120,6 +1126,99 @@ delete."
         (forward-line)
         (when (org-at-heading-p)
           (backward-char))))))
+
+
+(defun ref-man-org-insert-abstract-list-item (abs &optional buf keep-current)
+  (ref-man-org-insert-prop-list-item abs buf keep-current))
+
+;; (defun ref-man-org-insert-abstract-list-item (abs &optional buf keep-current)
+;;   "Insert abstract as text in entry after property drawer if it exists.
+;; ABS is the abstract string.
+
+;; Insert to `current-buffer' if optional BUF is nil else to BUF.
+
+;; If optional KEEP-CURRENT is non-nil, keep the current text after
+;; the heading, otherwise delete."
+;;   (unless buf (setq buf (current-buffer)))
+;;   (with-current-buffer buf
+;;     (ref-man-org-end-of-meta-data)
+;;     (pcase-let* ((`(,beg ,end ,has-text) (ref-man-org-text-bounds))
+;;                  (text (and has-text (buffer-substring-no-properties beg end)))
+;;                  (splits (and text (-remove #'string-empty-p (split-string text "^ +- "))))
+;;                  (level (org-current-level)))
+;;       (unless (-any (lambda (x) (string-match-p "^abstract: " x)) splits)
+;;         (unless keep-current
+;;           (when (not (= beg end))
+;;             (delete-region beg (- end 1))))
+;;         (goto-char beg)
+;;         (insert (make-string (1+ level) ? ) "- Abstract: "
+;;                 (replace-regexp-in-string "\n" "" abs))
+;;         (insert "\n")
+;;         (goto-char beg)
+;;         (org-indent-line)
+;;         (fill-paragraph)
+;;         (forward-line)
+;;         (when (org-at-heading-p)
+;;           (backward-char))))))
+
+;; (defun ref-man-org-insert-author-list-item (authors &optional buf keep-current)
+;;   "Insert AUTHORS as text in entry after property drawer if it exists.
+
+;; Insert to `current-buffer' if optional BUF is nil else to BUF.
+
+;; If optional KEEP-CURRENT is non-nil, keep the current text after
+;; the heading, otherwise delete."
+;;   (unless buf (setq buf (current-buffer)))
+;;   (with-current-buffer buf
+;;     (ref-man-org-end-of-meta-data)
+;;     (pcase-let* ((`(,beg ,end ,has-text) (ref-man-org-text-bounds))
+;;                  (text (and has-text (buffer-substring-no-properties beg end)))
+;;                  (splits (and text (-remove #'string-empty-p (split-string text "^ +- "))))
+;;                  (level (org-current-level)))
+;;       (unless (-any (lambda (x) (string-match-p "^abstract: " x)) splits)
+;;         (unless keep-current
+;;           (when (not (= beg end))
+;;             (delete-region beg (- end 1))))
+;;         (goto-char beg)
+;;         (insert (make-string (1+ level) ? ) "- Abstract: "
+;;                 (replace-regexp-in-string "\n" "" abs))
+;;         (insert "\n")
+;;         (goto-char beg)
+;;         (org-indent-line)
+;;         (fill-paragraph)
+;;         (forward-line)
+;;         (when (org-at-heading-p)
+;;           (backward-char))))))
+
+;; (defun ref-man-org-insert-venue-year-list-item (venue-year &optional buf keep-current)
+;;   "Insert venue and year as text in entry after property drawer if it exists.
+;; VENUE-YEAR is a plist of venue and year.
+
+;; Insert to `current-buffer' if optional BUF is nil else to BUF.
+
+;; If optional KEEP-CURRENT is non-nil, keep the current text after
+;; the heading, otherwise delete."
+;;   (unless buf (setq buf (current-buffer)))
+;;   (with-current-buffer buf
+;;     (ref-man-org-end-of-meta-data)
+;;     (pcase-let* ((`(,beg ,end ,has-text) (ref-man-org-text-bounds))
+;;                  (text (and has-text (buffer-substring-no-properties beg end)))
+;;                  (splits (and text (-remove #'string-empty-p (split-string text "^ +- "))))
+;;                  (level (org-current-level)))
+;;       (unless (-any (lambda (x) (string-match-p "^abstract: " x)) splits)
+;;         (unless keep-current
+;;           (when (not (= beg end))
+;;             (delete-region beg (- end 1))))
+;;         (goto-char beg)
+;;         (insert (make-string (1+ level) ? ) "- Abstract: "
+;;                 (replace-regexp-in-string "\n" "" abs))
+;;         (insert "\n")
+;;         (goto-char beg)
+;;         (org-indent-line)
+;;         (fill-paragraph)
+;;         (forward-line)
+;;         (when (org-at-heading-p)
+;;           (backward-char))))))
 
 (defun ref-man--org-bibtex-write-top-heading-from-assoc (entry)
   "Generate the top level org entry for the results org buffer.
@@ -1252,7 +1351,7 @@ Don't insert abstract with optional non-nil NO-ABSTRACT."
       (org-edit-headline (a-get entry 'title))
       ;; FIXME: beg is same as current point
       (when (and (not no-abstract) (a-get entry 'abstract))
-        (ref-man-org-insert-abstract (a-get entry 'abstract) nil t))
+        (ref-man-org-insert-abstract-list-item (cons "abstract" (a-get entry 'abstract)) nil t))
       (pcase-let ((`(,beg ,_ ,has-text) (ref-man-org-text-bounds))
                   (author-str (mapconcat (lambda (x)
                                            (a-get x 'name))
@@ -2502,7 +2601,7 @@ citations after that."
   ;; abstract should just be inserted as text
   (unless no-abstract
     (let ((abs (a-get ss-data 'abstract)))
-      (when abs (ref-man-org-insert-abstract abs buf))))
+      (when abs (ref-man-org-insert-abstract-list-item abs buf))))
   ;; Delete empty lines from here till end
   ;; They should all be empty lines
   (when (= (point) (point-at-bol))
@@ -2835,11 +2934,20 @@ the heading."
       (outline-previous-heading))
     (end-of-line)
     (insert (a-get props-alist "TITLE")))
-  (when (assoc "ABSTRACT" props-alist)
-    (ref-man-org-insert-abstract (a-get props-alist "ABSTRACT") (current-buffer) t))
   (when (and (not (string= (org-get-heading t t t t) (a-get props-alist "TITLE")))
              (y-or-n-p "Heading and Title differ.  Update? "))
     (org-edit-headline (a-get props-alist "TITLE"))))
+
+(defun ref-man-org-add-list-from-assoc (props-alist keys)
+  "Add list items to a `ref-man' entry from a properties alist.
+
+List items can be venue, abstract, author etc."
+  (seq-do
+   (lambda (key)
+     (when (assoc key props-alist)
+       (ref-man-org-insert-prop-list-item `(,(downcase key) . ,(a-get props-alist key))
+                                          (current-buffer) t)))
+   (reverse keys)))
 
 ;; START: Org Semantic Scholar Functions
 
@@ -2999,14 +3107,14 @@ pagination of results isn't supported yet."
                         (user-error (format "Error occurred %s" (a-get result 'error)))
                       (a-get result 'results))))
       (cond ((> (length results) 0)
-             (if insert-first
-                 (ref-man--update-props-from-assoc
-                  (ref-man-ss-parse-search-result (aref results 0)))
-               (let* ((entries (ref-man-ss-search-results-to-ido-prompts results))
-                      (entry (ido-completing-read "Entry to insert: " entries))
-                      (idx (- (string-to-number (car (split-string entry ":" t))) 1)))
-                 (ref-man--update-props-from-assoc
-                  (ref-man-ss-parse-search-result (aref results idx))))))
+             (let* ((idx (if insert-first 0
+                           (let* ((entries (ref-man-ss-search-results-to-ido-prompts results))
+                                  (entry (ido-completing-read "Entry to insert: " entries)))
+                             (- (string-to-number (car (split-string entry ":" t))) 1))))
+                    (result (ref-man-ss-parse-search-result (aref results idx))))
+                   (ref-man--update-props-from-assoc result)
+                   (ref-man-org-add-list-from-assoc
+                    result '("ABSTRACT" "AUTHOR" "VENUE" "YEAR"))))
             ((a-get result 'matchedPresentations)
              (let* ((entries (ref-man-ss-search-presentations-to-ido-prompts
                               (a-get result 'matchedPresentations)))
@@ -3148,6 +3256,7 @@ list (url point)."
       (url-retrieve url callback (list url)))))
 
 ;; FIXME: If not file and not args then visit with EWW? What does ARGS do?
+;; FIXME: args are not optional here
 (defun ref-man--fetch-from-pdf-url-new (url &optional args)
   "Fetch pdf file if possible, from URL.
 
@@ -3163,7 +3272,9 @@ org entry after downloading."
             (buf (and args (plist-get args :buffer)))
             (pt (and args (plist-get args :point)))
             (heading (and args (plist-get args :heading))))
-        (cond ((and file (with-current-buffer buf (eq major-mode 'org-mode)))
+        (cond ((and file (not args))
+               (message "[ref-man] File already exists and no args given."))
+              ((and file args (with-current-buffer buf (eq major-mode 'org-mode)))
                (message "[ref-man] File already existed.")
                (if buf
                    (with-current-buffer buf
@@ -3229,32 +3340,24 @@ subtree will be updated later."
               :status status)
         ref-man--subtree-list))
 
-(defun ref-man-maybe-fetch-from-cvf (args)
-  "Fetch pdf from pdf-url if exists in :urls property of plist ARGS.
-If pdf-url doesn't exist then check if first non-nil `cdr' of
-:urls is a downloadable pdf url.  Fetch pdf if possible."
-  (let* ((urls (plist-get args :urls))
-         (doi (org-entry-get (point) "DOI"))
+(defun ref-man-maybe-fetch-pdf-from-cvf (args)
+  "Fetch pdf from a CVF url if present.
+
+See `ref-man-url-get-cvf-url' on how the presence of a CVF url is
+determined.
+
+ARGS are ignored in this case."
+  (let* ((doi (org-entry-get (point) "DOI"))
          (venue (org-entry-get (point) "VENUE"))
          (cvf-entry (ref-man-url-parse-cvf-venue doi venue))
-         ;; (cvf-re (string-join '("cvf" "cvpr" "iccv" "wavc"
-         ;;                        "computer vision and pattern recognition"
-         ;;                        "international conference on computer vision"
-         ;;                        "winter.+computer vision")
-         ;;                      "\\|"))
-         ;; (cvf-doi-re (string-join '("cvf\\." "cvpr\\." "iccv\\." "wavc\\.")
-         ;;                          "\\|"))
-         ;; (ieee-url (or (-any (lambda (x) (string-match-p "https?://ieeexplore.+?.org" x)) urls)))
-         ;; (cvf-entry (or (and ieee-url (string-match-p
-         ;;                               (downcase (org-entry-get (point) "VENUE")) cvf-re))
-         ;;                (string-match-p cvf-doi-re (downcase (org-entry-get (point) "DOI")))))
-         )
-    (when cvf-entry
-      (ref-man-url-get-cvf-url (org-entry-get (point) "TITLE")
-                               cvf-entry nil
-                              (org-entry-get (point) "YEAR")))))
+         (url (when cvf-entry
+                    (ref-man-url-get-cvf-url (org-entry-get (point) "TITLE")
+                                             cvf-entry nil
+                                             (org-entry-get (point) "YEAR")))))
+    (when url
+      (prog1 t (ref-man--fetch-from-pdf-url-new url args)))))
 
-(defun ref-man-fetch-pdf-from-maybe-pdf-url (args)
+(defun ref-man-maybe-fetch-pdf-from-pdf-url (args)
   "Fetch pdf from pdf-url if exists in :urls property of plist ARGS.
 If pdf-url doesn't exist then check if first non-nil `cdr' of
 :urls is a downloadable pdf url.  Fetch pdf if possible."
@@ -3265,13 +3368,15 @@ If pdf-url doesn't exist then check if first non-nil `cdr' of
     (when url
       (prog1 t (ref-man--fetch-from-pdf-url-new url args)))))
 
-(defun ref-man-try-fetch-pdf-after-redirect (args)
+(defun ref-man-maybe-fetch-pdf-after-redirect (args)
   "Fetch pdf from one of the :urls property of plist ARGS after redirect."
   (let ((url (cdr (-first #'cdr (plist-get args :urls)))))
     (ref-man-url-get-pdf-url-according-to-source url #'ref-man--fetch-from-pdf-url-new args)))
 
 (defvar ref-man-fetch-pdf-functions
-  '(ref-man-fetch-pdf-from-maybe-pdf-url ref-man-try-fetch-pdf-after-redirect)
+  '(ref-man-maybe-fetch-pdf-from-pdf-url
+    ref-man-maybe-fetch-pdf-from-cvf
+    ref-man-maybe-fetch-pdf-after-redirect)
   "Functions to fetch a PDF url and store in an org buffer.
 
 Each of the functions is called with a plist with keys:

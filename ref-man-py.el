@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Tuesday 10 May 2022 09:07:17 AM IST>
+;; Time-stamp:	<Friday 22 July 2022 08:58:28 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -113,6 +113,7 @@ Optional OPTS is an alist of additional HTTP args to send."
                                  opts "&")))
               "")))
 
+;; TODO: Add `venv' alternative to `virtualenv' in case it doesn't exist
 (defun ref-man-py-create-venv (python path)
   "Create a new `ref-man' virtual env in directory PATH.
 The python executable to use is defined by PYTHON."
@@ -191,7 +192,6 @@ install from that else, fetch from pypi."
   (if (ref-man-py-home-dir-valid-p)
       (ref-man-py-env-install-module-from-source env)
     (ref-man-py-env-install-module-from-pypi env)))
-
 
 (defun ref-man-py-env-install-module-from-source (env)
   "Install the `ref-man-py' module in virtualenv ENV from source."

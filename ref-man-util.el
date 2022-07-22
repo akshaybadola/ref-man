@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Tuesday 10 May 2022 09:07:17 AM IST>
+;; Time-stamp:	<Friday 22 July 2022 08:58:40 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -141,7 +141,12 @@ See `org-ref-nonascii-latex-replacements'")
 (defvar ref-man-file-fuzzy-custid-link-re
   (rx "[" "[" (group (seq (regexp "file.+?::") (or "*" "#") (+? nonl))) "]"
       "[" (group (+? any)) "]" "]")
-  "Org custom-id link with file prefix.")
+  "Org custom-id or fuzzy link with file prefix.")
+
+(defvar ref-man-maybe-file-fuzzy-custid-link-re
+  (rx "[" "[" (group (seq (opt "file:") (regexp ".+?::") (or "*" "#") (+? nonl))) "]"
+      "[" (group (+? any)) "]" "]")
+  "Org custom-id or fuzzy link with file prefix.")
 
 (defun ref-man-pairs-to-alist (pairs)
   "Merge cons PAIRS into an alist with first elements as keys.

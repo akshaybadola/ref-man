@@ -281,3 +281,17 @@
 ** [2022-05-23 Mon 09:23]
    - Much more modular ~ref-man-export-docproc-article~. Added some new
      variables and separated functions
+
+** [2022-07-22 Fri 08:44]
+   - In ~ref-man-core~
+     + ~ref-man-org-insert-abstract~ is now removed and a more modular function
+       ~ref-man-org-insert-prop-list-item~ is now there which can insert any kind
+       of key-value item.
+     + Better insertion of ~s2~ data with ~ref-man-org-search-semantic-scholar~
+     + Always add ~PDF_URL~ when dowloading PDF in ~ref-man--fetch-from-pdf-url-new~.
+     + Separate pdf fetch function ~ref-man-maybe-fetch-pdf-from-cvf~
+   - in ~ref-man-export~
+     + Fixes for exporting to article
+     + More options in ~ref-man-export-article-no-urls~
+     + Fix ~References~ not included in article export
+   - Minor changes elsewhere.

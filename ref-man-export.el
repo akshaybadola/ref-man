@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 23 May 2022 09:24:34 AM IST>
+;; Time-stamp:	<Friday 22 July 2022 08:58:11 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -341,7 +341,7 @@ written to it."
                           (buffer-string)
                         (org-narrow-to-subtree)
                         (buffer-string)))
-          (link-re ref-man-file-fuzzy-custid-link-re)
+          (link-re ref-man-maybe-file-fuzzy-custid-link-re)
           (backend (pcase type
                      ((or 'html 'pdf 'blog 'both) 'ref-gfm)
                      ('paper 'ref-md)
@@ -368,7 +368,7 @@ written to it."
         (while (re-search-forward link-re nil t)
           (pcase-let ((`(,a ,b) (list (match-string 1) (match-string 2))))
             (replace-match
-             (format "[[%s][%s]]" (replace-regexp-in-string "file:.+::" "" a) b))))
+             (format "[[%s][%s]]" (replace-regexp-in-string "\\(?:file:\\)?.+::" "" a) b))))
         (run-hook-with-args 'ref-man-export-pre-export-md-functions)
         (org-export-to-buffer backend ref-man-export-temp-md-buf nil nil nil nil)))))
 
@@ -746,16 +746,36 @@ See `ref-man-export-docproc-article' for details."
   (ref-man-export-docproc-article buffer 'html t (not current-prefix-arg)
                                   '(:with-toc t :with-tables t)))
 
-(defun ref-man-export-article-no-urls (&optional buffer type)
+(defun ref-man-export-article-no-urls (prefix-arg &optional buffer)
   "Export BUFFER as a pdf article.
 
 BUFFER defaults to `current-buffer'.
 TYPE is passed on to `ref-man-export-docproc-article'.
 
-See `ref-man-export-docproc-article' for details."
-  (interactive)
-  (ref-man-export-docproc-article buffer (or type (and current-prefix-arg 'html) 'pdf) t t
-                                  '(:with-tables t)))
+The output type depends on the prefix.
+1. (default) Export buffer as PDF. Don't overwrite if output
+   file exists.
+2. Export buffer as HTML. Don't overwrite.
+3. Export both HTML, PDF. Don't overwrite.
+4. Export HTML. Overwrite.
+5. Export both. Overwrite.
+
+This function calls `ref-man-export-docproc-article' with
+appropriate arguments."
+  (interactive "p")
+  (pcase prefix-arg
+    (1 (ref-man-export-docproc-article
+        buffer 'pdf t t '(:with-tables t)))
+    (2 (ref-man-export-docproc-article  ; html
+        buffer 'html t t '(:with-tables t)))
+    (3 (ref-man-export-docproc-article  ; both html pdf
+        buffer 'both t t '(:with-tables t)))
+    (4 (ref-man-export-docproc-article  ; force pdf
+        buffer 'pdf t t '(:with-tables t) nil t))
+    (5 (ref-man-export-docproc-article  ; force html
+        buffer 'html t t '(:with-tables t) nil t))
+    (5 (ref-man-export-docproc-article  ; force both
+        buffer 'both t t '(:with-tables t) nil t))))
 
 (defun ref-man-export-paper-no-urls (&optional pref-arg buffer)
   "Export BUFFER as a research article.
@@ -880,8 +900,12 @@ NO-WARN-TYPES can be passed as a list of (string) link types."
     (let ((sections (if (eq type 'paper)
                         (util/org-apply-to-buffer-headings
                          (lambda () (concat "*" (org-get-heading t t t t))))
-                      (util/org-apply-to-subtree-headings
-                       (lambda () (concat "*" (org-get-heading t t t t))) t)))
+                      (-filter 'identity (util/org-apply-to-subtree-headings
+                                          (lambda ()
+                                            (let ((heading (substring-no-properties (org-get-heading t t t t))))
+                                              (unless (string-match-p "references" heading)
+                                                heading)))
+                                          t))))
           bibtexs)
       (goto-char (point-min))
       ;; NOTE: Generate bibtexs from org links only
@@ -1031,6 +1055,18 @@ CHECKSUM is the current data checksum."
       (if (f-exists? template)
           (format " --template=%s " template)
         (format " --template=%s " (a-get (ref-man-export-templates) template))))))
+
+
+(defun ref-man-export-narrow-to-references ()
+  "Narrow from beginning of buffer to References in an org subtree."
+  (save-excursion
+    (goto-char (point-min))
+    (let ((beg (point)))
+      (while (and (outline-next-heading)
+                  (not (string= (substring-no-properties
+                                 (downcase (org-get-heading t t t t)))
+                                "references"))))
+      (narrow-to-region beg (point)))))
 
 
 ;; TODO: Exporting images directly as includegraphics in pdf
@@ -1224,6 +1260,8 @@ preprints."
         (goto-char (point-min))
         (if (eq type 'paper)
             (ref-man-export-org-to-md type nil (and ref-man-export-paper-version-org-file org-file))
+          ;; NOTE: Don't export References, they'll be added automatically
+          (ref-man-export-narrow-to-references)
           (ref-man-export-org-to-md type))))
     ;; (save-restriction
     ;;   (save-mark-and-excursion

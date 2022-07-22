@@ -6,7 +6,7 @@
   Emacs library and plugin to manage documents, primarily academic publications.
   It can manage files on disk, index them as org entries and convert to/from
   bibtex, fetch pdf and bibliography from external sources and automate many other
-  tasks.
+  tasks. A lot of the network and external API calls are made from [[https://github.com/akshaybadola/ref-man-py][ref-man-py]]
 
 * Features
   :PROPERTIES:
@@ -192,14 +192,14 @@
   and render it with HTML. It would be much more useful to the broader
   scientific community.
 
-  - Separate the python module and installation from PyPI
-  - Refactoring to make it more modular and remove redundant code.
-  - More comprehensive Documentation and Tutorial
-  - Unit/Regression testing setup
-  - Finish pending/incomplete features
-  - Full text search with [[https://solr.apache.org/][Apache solr]]
-  - A mind-map/network layer for visualization
-  - UI layer on top for non emacs users as an optional module
+  - [X] Separate the python module and installation from PyPI
+  - [ ] Refactoring to make it more modular and remove redundant code.
+  - [ ] More comprehensive Documentation and Tutorial
+  - [ ] Unit/Regression testing setup
+  - [ ] Finish pending/incomplete features
+  - [ ] Full text search with [[https://solr.apache.org/][Apache solr]]
+  - [ ] A mind-map/network layer for visualization
+  - [ ] UI layer on top for non emacs users as an optional module
 
 * License
   :PROPERTIES:
