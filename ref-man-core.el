@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 22 July 2022 08:58:09 AM IST>
+;; Time-stamp:	<Friday 29 July 2022 13:31:02 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -991,44 +991,94 @@ See for details."
                    (string= (downcase heading) (downcase (car y)))))))
 
 
-;; TODO: Make sure the property drawer is the first thing after headline.  As of
-;;       now, it consolidates the drawers but only places them after the
-;;       property drawer. If there's text between heading and property drawer
-;;       itself then that's not moved.
-(defun ref-man-org-consolidate-drawers ()
-  "Place all drawers one after other with property drawer first."
+(defun ref-man-org-drawers-balanced-p (blocks)
+  "Check if BLOCKS of drawers are balanced.
+BLOCKS is an alist of beginning and end of drawers.
+
+E.g. '((beg . 82) (end . 630) (beg . 749) (end . 1297))"
+  (= (length (-filter (lambda (x) (eq (car x) 'beg)) blocks))
+     (length (-filter (lambda (x) (eq (car x) 'end)) blocks))))
+
+(defun ref-man-org-consolidate-drawer-from-data (drawer-re data)
+  "Consolidate drawers from a list of drawer blocks DATA.
+
+The data is filtered with matching DRAWER-RE and those are combined
+into a single block.
+
+The function doesn't warn about or overwrite duplicate key-value
+pairs."
+  (let ((drawer (-filter (lambda (x) (string-match-p drawer-re x))
+                         data)))
+    (cond ((= 1 (length drawer))
+           (insert (car drawer))
+           (insert "\n"))
+          (t (let ((prop-start (car (split-string (car drawer) "\n")))
+                   (prop-end (-last-item (split-string (car drawer) "\n"))))
+               (insert prop-start "\n")
+               (seq-do (lambda (x) (insert
+                                    (string-join
+                                     (cdr (-butlast (split-string x "\n"))) "\n"))
+                         (insert "\n"))
+                       drawer)
+               (insert prop-end "\n"))))))
+
+;; TEST: (with-current-buffer "test-org-end-of-metadata.org"
+;; (ref-man-org-consolidate-drawers))
+;; post the TEST
+;; 1. all drawers should are after the heading and text after that
+;; 2. Newlines in text aren't affected
+;; 3. PROPERTIES and LOGBOOK are merged
+;; 4. Rest of the drawers aren't merged
+(defun ref-man-org-consolidate-drawers (&optional properties-only)
+  "Place all drawers one after other with property drawer first.
+When optional PROPERTIES-ONLY is non-nil, then only check for and
+consolidate property drawers."
   (interactive)
   (org-back-to-heading t)
-  (let ((beg (point))
-        (pblock (org-get-property-block))
-        (end (progn (outline-next-heading) (- (point) 1)))
-        blocks temp data)
-    (save-restriction
-      (save-excursion
-        (narrow-to-region beg end)
-        (goto-char (point-max))
-        (while (re-search-backward org-drawer-regexp nil t)
-          (if (equal (match-string 1) "END")
-              (push `(end . ,(point-at-eol)) blocks)
-            (push `(beg . ,(point-at-bol)) blocks)))
-        (when blocks
-          (if (ref-man-util-regions-contiguous-p blocks)
-              (1+ (cdr (-last-item blocks)))
-            (seq-do
-             (lambda (x)
-               (if (eq (car x) 'end)
-                   (push (cdr x) temp)
-                 (unless (string-match-p
-                          org-property-start-re
-                          (buffer-substring-no-properties (cdr x) (car temp)))
-                   (push (buffer-substring (cdr x) (car temp)) data)
-                   (delete-region (- (cdr x) 1) (car temp)))))
-             (reverse blocks))
-            (goto-char (cdr pblock))
-            (end-of-line)
-            (insert "\n")
-            (seq-do (lambda (x) (insert x)) data)
-            (1+ (point))))))))
+  (let* ((beg (point))
+         (pblock (org-get-property-block))
+         (any-block (save-restriction
+                      (org-narrow-to-subtree)
+                      (string-match-p org-drawer-regexp
+                                      (buffer-substring-no-properties (point-min) (point-max)))))
+         (end (progn (outline-next-heading) (- (point) 1)))
+         (continue (if (and properties-only pblock) pblock any-block))
+         blocks temp data)
+    (when continue
+      (save-restriction
+        (save-excursion
+          (narrow-to-region beg end)
+          (goto-char (point-max))
+          (while (re-search-backward org-drawer-regexp nil t)
+            (if (equal (match-string 1) "END")
+                (push `(end . ,(point-at-eol)) blocks)
+              (push `(beg . ,(point-at-bol)) blocks)))
+          (when blocks
+            (unless (ref-man-org-drawers-balanced-p blocks)
+              (user-error "Unbalanced drawers"))
+            (if (ref-man-util-regions-contiguous-p blocks)
+                (1+ (cdr (-last-item blocks)))
+              (seq-do
+               (lambda (x)
+                 (if (eq (car x) 'end)
+                     (push (cdr x) temp)
+                   (let ((drawer (buffer-substring-no-properties (cdr x) (car temp))))
+                     (when (and (string-match org-drawer-regexp drawer)
+                                (match-string 1 drawer))
+                       (push (buffer-substring (cdr x) (car temp)) data)
+                       (delete-region (- (cdr x) 1) (car temp))))))
+               (reverse blocks))
+              (outline-back-to-heading t)
+              (forward-line)
+              (ref-man-org-consolidate-drawer-from-data org-property-start-re data)
+              (ref-man-org-consolidate-drawer-from-data org-logbook-drawer-re data)
+              ;; NOTE: Rest of the drawers aren't combined
+              (seq-do (lambda (x) (unless (or (string-match-p org-property-drawer-re x)
+                                              (string-match-p org-logbook-drawer-re x))
+                                    (insert x)
+                                    (insert "\n")))
+                      data)
+              (point))))))))
 
 (defun ref-man-org-up-heading ()
   "Like `outline-up-heading' but go back to DOC_ROOT with \\[universal-argument]."
@@ -1037,6 +1087,14 @@ See for details."
     ((and (pred integerp) pt) (goto-char pt))
     (_ (outline-up-heading 1))))
 
+;; TEST:
+;; (with-current-buffer "test-org-end-of-metadata.org"
+;;   (goto-char (point-min))
+;;   (ref-man-org-end-of-meta-data)
+;;   )
+;; Post TEST:
+;; 1. The drawers should be merged.
+;; 2. Point should be at the end of last drawer
 (defun ref-man-org-end-of-meta-data (&optional no-consolidate no-newline)
   "Go to end of all drawers and other metadata.
 
@@ -1057,10 +1115,8 @@ of the heading content if it doesn't exist."
                                      (goto-char (point-min))
                                      (while (re-search-forward "^ +:END: *$" nil t)
                                        (push t matches))
-                                     (if matches
-                                         (+ 1 (point))
-                                       (goto-char (point-at-eol))
-                                       (unless no-newline (insert "\n"))
+                                     (when matches
+                                       (goto-char (+ 1 (point)))
                                        (point)))
                                     (t (ref-man-org-consolidate-drawers))))
              (end (progn (goto-char (point-min))
@@ -1070,11 +1126,46 @@ of the heading content if it doesn't exist."
                              (point-max)))))
         (if pt-end-metadata
             (goto-char pt-end-metadata)
-          (goto-char end)
-          (when (org-at-heading-p)
-            (unless no-newline
-              (end-of-line)
-              (insert "\n"))))))))
+          (outline-back-to-heading t)
+          (forward-line)
+          (unless no-newline
+            (when (org-at-heading-p)
+              (open-line 1)
+              (forward-line))))               ; what if we go to next heading instead?
+        (when (org-at-heading-p)
+          (end-of-line)
+          (unless no-newline
+            (unless (save-excursion
+                      (looking-at "\n[ \n]+"))
+              (insert "\n"))))
+        (point)))))
+
+;; TEST: empty text body should return nil
+;; (with-current-buffer "test-org-end-of-metadata.org"
+;;   (goto-char (point-min))
+;;   (re-search-forward "Heading with logbook and no text")
+;;   (ref-man-org-end-of-meta-data)
+;;   (pcase-let ((`(,beg ,end ,hb) (ref-man-org-text-bounds)))
+;;     (when hb (buffer-substring-no-properties beg end))))
+
+;; TEST: Text body with newlines returns correct string
+;; (let ((text "
+;;    Some text entered here but no authors or other strings
+;;    Some text entered here but no authors or other strings
+
+
+
+
+;;    Some text entered here but no authors or other strings
+
+;; "))
+;;   (with-current-buffer "test-org-end-of-metadata.org"
+;;     (goto-char (point-min))
+;;     (re-search-forward
+;;      "NormLime: A New Feature Importance Metric for Explaining Deep Neural Networks")
+;;     (ref-man-org-end-of-meta-data)
+;;     (pcase-let ((`(,beg ,end ,hb) (ref-man-org-text-bounds)))
+;;       (string= text (buffer-substring-no-properties beg end)))))
 
 (defun ref-man-org-text-bounds ()
   "Return bounds of text body if present in org subtree.
@@ -1083,7 +1174,7 @@ Return value is a triple of '(beg end has-body) where beg is the
 point after metadata, end is the point at end of subtree and
 has-body indicates if any text is present."
   (save-excursion
-    (let* ((beg (or (ref-man-org-end-of-meta-data t) (point)))
+    (let* ((beg (or (ref-man-org-end-of-meta-data t t) (point)))
            (end (progn
                   (unless (org-at-heading-p)
                     (outline-next-heading))
@@ -1093,7 +1184,9 @@ has-body indicates if any text is present."
                             (buffer-substring-no-properties beg end))))))
       (list beg end has-body))))
 
-(defun ref-man-org-insert-prop-list-item (prop &optional buf keep-current)
+(defun ref-man-org-insert-prop-list-item (prop
+                                          &optional buf keep-current
+                                          consolidate-drawers no-newline)
   "Insert a paper property as text in entry after property drawer if it exists.
 
 The property PROP is a key value pair and is inserted as a list
@@ -1106,7 +1199,10 @@ If optional KEEP-CURRENT is non-nil, keep the current text after
 the heading, otherwise delete."
   (unless buf (setq buf (current-buffer)))
   (with-current-buffer buf
-    (ref-man-org-end-of-meta-data)
+    (ref-man-org-end-of-meta-data (not consolidate-drawers)
+                                  no-newline)
+    (when (and (looking-back ":END:") (looking-at-p "[ \n]+"))
+      (insert "\n"))
     (pcase-let* ((`(,key . ,val) prop)
                  (`(,beg ,end ,has-text) (ref-man-org-text-bounds))
                  (text (and has-text (buffer-substring-no-properties beg end)))
@@ -1123,13 +1219,12 @@ the heading, otherwise delete."
         (goto-char beg)
         (org-indent-line)
         (fill-paragraph)
-        (forward-line)
+        (org-end-of-item)
         (when (org-at-heading-p)
           (backward-char))))))
 
-
 (defun ref-man-org-insert-abstract-list-item (abs &optional buf keep-current)
-  (ref-man-org-insert-prop-list-item abs buf keep-current))
+  (ref-man-org-insert-prop-list-item (if (consp abs) abs (cons "abstract" abs)) buf keep-current))
 
 ;; (defun ref-man-org-insert-abstract-list-item (abs &optional buf keep-current)
 ;;   "Insert abstract as text in entry after property drawer if it exists.
@@ -1350,20 +1445,22 @@ Don't insert abstract with optional non-nil NO-ABSTRACT."
         (org-insert-heading-after-current))
       (org-edit-headline (a-get entry 'title))
       ;; FIXME: beg is same as current point
-      (when (and (not no-abstract) (a-get entry 'abstract))
-        (ref-man-org-insert-abstract-list-item (cons "abstract" (a-get entry 'abstract)) nil t))
       (pcase-let ((`(,beg ,_ ,has-text) (ref-man-org-text-bounds))
                   (author-str (mapconcat (lambda (x)
                                            (a-get x 'name))
                                          (a-get entry 'authors) ", "))
                   (level (org-current-level)))
-        (goto-char beg)
-        (unless has-text
-          (unless (and (looking-at "\n") (looking-back "\n" 1))
-            (insert "\n"))
-          (insert (format "%s- Authors: %s" (make-string (1+ level) ? ) author-str))
-          (org-insert-item)
-          (insert (concat (a-get entry 'venue) ", " (format "%s" (a-get entry 'year)))))
+        (ref-man-org-insert-prop-list-item
+         (cons "venue" (format "%s, %s" (a-get entry 'venue) (a-get entry 'year))) nil t)
+        (ref-man-org-insert-prop-list-item (cons "authors" author-str) nil t)
+        (when (and (not no-abstract) (a-get entry 'abstract))
+          (ref-man-org-insert-abstract-list-item (cons "abstract" (a-get entry 'abstract)) nil t))
+        ;; (unless has-text
+        ;;   (unless (and (looking-at "\n") (looking-back "\n" 1))
+        ;;     (insert "\n"))
+        ;;   (insert (format "%s- Authors: %s" (make-string (1+ level) ? ) author-str))
+        ;;   (org-insert-item)
+        ;;   (insert (concat (a-get entry 'venue) ", " (format "%s" (a-get entry 'year)))))
         (org-insert-property-drawer)
         (cl-loop for ent in entry
                  do
@@ -2945,7 +3042,9 @@ List items can be venue, abstract, author etc."
   (seq-do
    (lambda (key)
      (when (assoc key props-alist)
-       (ref-man-org-insert-prop-list-item `(,(downcase key) . ,(a-get props-alist key))
+       (ref-man-org-insert-prop-list-item `(,(downcase (if (symbolp key) (symbol-name key) key))
+                                            .
+                                            ,(format "%s" (a-get props-alist key)))
                                           (current-buffer) t)))
    (reverse keys)))
 
@@ -2993,6 +3092,68 @@ With `\\[universal-argument]' fetch the data from
    (pcase arg
      (1 (ref-man-org-fetch-ss-data-for-entry t))
      (_ (ref-man-org-fetch-ss-data-for-entry t t)))))
+
+(defface ref-man-org-load-more-face
+  '((default :weight bold)
+    (((class color)) :foreground "blue"))
+  "Face used to show number of citations in Semantic Scholar
+Display buffer.")
+
+(defun ref-man-org-maybe-insert-cite-count (total-cites &optional num-cites)
+  "Insert TOTAL-CITES and current NUM-CITES for displayed SS data."
+  (let ((num-cites (or num-cites
+                       (save-excursion
+                         (goto-char (point-max))
+                         (re-search-backward (regexp-quote "** citations"))
+                         (util/org-count-subtree-children)))))
+    (when (< num-cites total-cites)
+      (goto-char (point-max))
+      (when (not (bolp))
+        (insert "\n")
+        (forward-line))
+      (insert (format "[....Showing %s out of %s entries....]" num-cites total-cites))
+      (let* ((beg (point-at-bol))
+             (end  (point-at-eol))
+             (overlay (make-overlay beg end)))
+        (add-text-properties beg end '(read-only t))
+        (overlay-put overlay 'ref-man-org-load-more-ov 'read-only)
+        (overlay-put overlay 'face 'ref-man-org-load-more-face)))))
+
+
+(defun ref-man-org-fetch-more-citations (&optional count)
+  "Insert Semantic Scholar Data for org entry at point.
+
+The data is fetched if required from `semanticscholar.org' and
+inserted in the current subtree.  If `current-prefix-arg' is
+non-nil then insert only references.  Useful when the number of
+citations are really high, e.g. above 1000. Default is to insert
+both References and Citations.
+
+See `ref-man-org-fetch-ss-data-for-entry' for details."
+  (interactive "p")
+  (pcase-let* ((count (max count 100))
+               (`(,offset ,total)
+                (mapcar #'string-to-number
+                 (save-excursion
+                   (goto-char (point-max))
+                   (re-search-backward "\\[....Showing \\([0-9]+\\) out of \\([0-9]+\\) entries....]")
+                   (list (match-string 1) (match-string 2)))))
+               (ssid (save-excursion
+                       (goto-char (point-min))
+                       (org-entry-get (point) "PAPERID")))
+               (data (ref-man-ss-fetch-paper-citations
+                      ssid `((offset . ,offset) (count . ,count)))))
+    (goto-char (point-max))
+    (re-search-backward "\\[....Showing \\([0-9]+\\) out of [0-9]+ entries....]")
+    (let ((inhibit-read-only t))
+      (remove-text-properties (match-beginning 0) (match-end 0) '(read-only t))
+      (delete-region (match-beginning 0) (match-end 0))
+      (ov-clear))
+    (outline-back-to-heading)
+    (seq-do (lambda (x)
+              (ref-man--org-bibtex-write-ref-from-ss-ref x t nil t))
+            data)
+    (ref-man-org-maybe-insert-cite-count total (+ offset count))))
 
 (defun ref-man-org-insert-ss-data ()
   "Insert Semantic Scholar Data for org entry at point.
@@ -3057,12 +3218,17 @@ Citations.  See `ref-man-org-fetch-ss-data-for-entry' for details."
                      (win (util/get-or-create-window-on-side)))
                 (set-window-buffer win buf)
                 (with-current-buffer buf
+                  (let ((inhibit-read-only t))
+                    (set-text-properties (point-min) (point-max) nil))
                   (erase-buffer)
                   (org-mode)
                   (org-insert-heading)
                   (insert heading)
+                  (org-insert-property-drawer)
+                  (org-entry-put (point) "PAPERID" (a-get ss-data 'paperId))
                   (forward-line)
                   (ref-man-org-insert-ss-data-subr ss-data buf nil t only)
+                  (ref-man-org-maybe-insert-cite-count (a-get ss-data 'citationCount))
                   (message "[ref-man] Displaying Semantic Scholar Data"))
                 (pop-to-buffer buf)))
           (user-error "Got no data to display"))))))

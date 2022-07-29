@@ -295,3 +295,13 @@
      + More options in ~ref-man-export-article-no-urls~
      + Fix ~References~ not included in article export
    - Minor changes elsewhere.
+
+** [2022-07-29 Fri 13:27]
+   - In ~ref-man-core~
+     + Added ~ref-man-org-drawers-balanced-p~
+     + Added ~ref-man-org-consolidate-drawer-from-data~
+     + Change ~ref-man-org-end-of-meta-data~ so that the point is now at the end
+       of ~:END:~
+     + Added ~ref-man-org-maybe-insert-cite-count~
+     + Added ~ref-man-org-fetch-more-citations~ and the ability to fetch
+       citations incrementally
