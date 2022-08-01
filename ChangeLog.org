@@ -305,3 +305,7 @@
      + Added ~ref-man-org-maybe-insert-cite-count~
      + Added ~ref-man-org-fetch-more-citations~ and the ability to fetch
        citations incrementally
+
+** [2022-08-01 Mon 08:53]
+   - Fixed an issue where PDF if not present on disk but present in properties
+     was not updated.

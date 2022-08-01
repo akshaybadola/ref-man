@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 29 July 2022 13:31:02 PM IST>
+;; Time-stamp:	<Monday 01 August 2022 08:53:29 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -3800,15 +3800,11 @@ The pdfs are downloaded and the file links are marked as `(file here)'"
 (defun ref-man--check-fix-pdf-file-property ()
   "Check current org entry for PDF_FILE property."
   (let* ((props (org-entry-properties))
-         (pdf-file (cond ((assoc "PDF_FILE" props)
-                          (cdr (assoc "PDF_FILE" props)))
-                         ((assoc "FILE_NAME" props)
-                          (ref-man--insert-org-pdf-file-property
-                           (replace-regexp-in-string "\\[\\|\\]" "" (cdr (assoc "FILE_NAME" props)))))
-                         (t nil))))
-    (when (assoc "FILE_NAME" props)
-      (org-delete-property "FILE_NAME"))
-    pdf-file))
+         (pdf-file-prop (a-get props "PDF_FILE"))
+         (pdf-file (replace-regexp-in-string "\\[\\|\\]" "" pdf-file-prop)))
+    (unless (f-exists? pdf-file)
+      (org-delete-property "PDF_FILE"))
+    (f-exists? pdf-file)))
 
 
 (defun ref-man--check-fix-ss-url (&optional props)
@@ -3836,19 +3832,22 @@ After checking the file return message for which url it matches.
 
 URLS is an alist of urls with the type of url as the key and url
 as the value."
-  (let* ((url-keys '(pdf-url-prop url-prop arxiv-url-prop alt-url-prop ss-url-prop))
+  (let* ((url-keys '(pdf-url url arxiv-url alt-url ss-url))
          (url (-first (lambda (x) (a-get urls x)) url-keys))
          (url (a-get urls url))
          (pdf-file (if (string-match util/org-file-link-re pdf-file)
                        (match-string 1 pdf-file)
                      pdf-file))
+         (pdf-file-exists (f-exists? pdf-file))
          (same-msg (when url
                      (if (string= pdf-file (ref-man-files-filename-from-url url))
                          (s-lex-format "And is the same as URL ${url}")
                        (s-lex-format "But is different from URL ${url}"))))
-         (msg (if same-msg
-                  (s-lex-format "[ref-man] PDF already exists. ${same-msg}")
-                "[ref-man] No PDF URL here.")))
+         (msg (cond ((and pdf-file-exists same-msg)
+                     (s-lex-format "[ref-man] PDF already exists. ${same-msg}"))
+                    ((and (not pdf-file-exists) same-msg)
+                     (s-lex-format "[ref-man] PDF does not exist. ${same-msg}"))
+                    (t "[ref-man] No PDF URL here."))))
     msg))
 
 ;; TODO: Link (arxiv, ACL, DOI) to SS_IDs for papers also, minimize redundancy
