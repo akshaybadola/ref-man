@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 01 August 2022 08:53:29 AM IST>
+;; Time-stamp:	<Monday 08 August 2022 08:44:21 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -3801,10 +3801,11 @@ The pdfs are downloaded and the file links are marked as `(file here)'"
   "Check current org entry for PDF_FILE property."
   (let* ((props (org-entry-properties))
          (pdf-file-prop (a-get props "PDF_FILE"))
-         (pdf-file (replace-regexp-in-string "\\[\\|\\]" "" pdf-file-prop)))
-    (unless (f-exists? pdf-file)
+         (pdf-file (when pdf-file-prop
+                     (replace-regexp-in-string "\\[\\|\\]" "" pdf-file-prop))))
+    (when (and pdf-file-prop (not (f-exists? pdf-file)))
       (org-delete-property "PDF_FILE"))
-    (f-exists? pdf-file)))
+    (and pdf-file-prop (f-exists? pdf-file))))
 
 
 (defun ref-man--check-fix-ss-url (&optional props)

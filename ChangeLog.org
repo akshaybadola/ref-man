@@ -309,3 +309,7 @@
 ** [2022-08-01 Mon 08:53]
    - Fixed an issue where PDF if not present on disk but present in properties
      was not updated.
+
+** [2022-08-08 Mon 08:43]
+   - ~ref-man--check-fix-pdf-file-property~ now removes the PDF_FILE property
+     if file doesn't exist on disk.
