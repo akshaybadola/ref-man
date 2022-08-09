@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 08 August 2022 08:44:21 AM IST>
+;; Time-stamp:	<Tuesday 09 August 2022 19:50:00 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -3251,36 +3251,31 @@ pagination of results isn't supported yet."
                                       (format "Search String (default %s): " ss))))
                        (read-from-minibuffer prompt ss nil nil nil ss))))
   (if (string-empty-p search-string)
-      (message "Empty Search String")
-    (let ((meh current-prefix-arg))
-      (cond ((and meh (equal meh '(4)))   ; update only
-             (setq insert-first t))
-            )
-      )
+      (user-error "Empty Search String")
     ;; TODO: fetch page from python server and can select which entry to insert.
     ;;       Should use jinja or lisp template
-    (let* ((opts (if args
-                     (-concat `(("q" . ,search-string)) args)
-                   `(("q" . ,search-string))))
-           (url (ref-man-py-url "semantic_scholar_search" opts))
-           (buf (if args (ref-man--post-json-synchronous url args)
-                  (url-retrieve-synchronously url)))
-           (result (with-current-buffer buf
-                     (goto-char (point-min))
-                     (forward-paragraph)
-                     (json-read)))
-           (results (if (eq (car result) 'error)
-                        (user-error (format "Error occurred %s" (a-get result 'error)))
-                      (a-get result 'results))))
+    (let* ((pref-arg current-prefix-arg)
+           (fetch-func (if (and  pref-arg (equal pref-arg '(4)))
+                           'ref-man-ss-search
+                         'ref-man-ss-get-results-search-semantic-scholar))
+           (results (funcall fetch-func search-string args)))
       (cond ((> (length results) 0)
-             (let* ((idx (if insert-first 0
-                           (let* ((entries (ref-man-ss-search-results-to-ido-prompts results))
+             (let* ((idx (if (or insert-first (length results)) 0
+                           (let* ((entries (pcase fetch-func
+                                             ('ref-man-ss-get-results-search-semantic-scholar
+                                              (ref-man-ss-search-results-to-ido-prompts results))
+                                             ('ref-man-ss-search
+                                              (ref-man-ss-graphsearch-results-to-ido-prompts results))))
                                   (entry (ido-completing-read "Entry to insert: " entries)))
-                             (- (string-to-number (car (split-string entry ":" t))) 1))))
-                    (result (ref-man-ss-parse-search-result (aref results idx))))
-                   (ref-man--update-props-from-assoc result)
-                   (ref-man-org-add-list-from-assoc
-                    result '("ABSTRACT" "AUTHOR" "VENUE" "YEAR"))))
+                             (- (string-to-number (car (split-string entry ":" t))) 1)))))
+               (pcase fetch-func
+                 ('ref-man-ss-get-results-search-semantic-scholar
+                  (let ((result (ref-man-ss-parse-search-result (aref results idx))))
+                    (ref-man--update-props-from-assoc result)
+                    (ref-man-org-add-list-from-assoc
+                     result '("ABSTRACT" "AUTHOR" "VENUE" "YEAR"))))
+                 ('ref-man-ss-search
+                  (ref-man--org-bibtex-write-ref-from-ss-ref (aref results idx) nil t)))))
             ((a-get result 'matchedPresentations)
              (let* ((entries (ref-man-ss-search-presentations-to-ido-prompts
                               (a-get result 'matchedPresentations)))

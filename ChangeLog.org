@@ -313,3 +313,6 @@
 ** [2022-08-08 Mon 08:43]
    - ~ref-man--check-fix-pdf-file-property~ now removes the PDF_FILE property
      if file doesn't exist on disk.
+
+** [2022-08-09 Tue 19:49]
+   - Added SS search from graph api with prefix arg

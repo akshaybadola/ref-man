@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Tuesday 10 May 2022 09:07:17 AM IST>
+;; Time-stamp:	<Tuesday 09 August 2022 19:50:03 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -120,7 +120,7 @@ RESULT should be an alist."
     (push '("TYPE" . "article") retval)
     (-remove (lambda (x) (or (not (cdr x)) (string-empty-p (cdr x)))) retval)))
 
-(defun ref-man-ss-search (search-string)
+(defun ref-man-ss-search (search-string &rest _args)
   "Search for SEARCH-STRING via Graph API on Semantic Scholar."
   (if (string-empty-p search-string)
       (user-error "Empty Search String")
@@ -135,6 +135,21 @@ RESULT should be an alist."
           (user-error (format "Error occurred %s" (a-get result 'error)))
         (a-get result 'data)))))
 
+(defun ref-man-ss-get-results-search-semantic-scholar (search-string &optional args)
+  (let* ((opts (if args
+                   (-concat `(("q" . ,search-string)) args)
+                 `(("q" . ,search-string))))
+         (url (ref-man-py-url "semantic_scholar_search" opts))
+         (buf (if args (ref-man--post-json-synchronous url args)
+                (url-retrieve-synchronously url)))
+         (result (with-current-buffer buf
+                   (goto-char (point-min))
+                   (forward-paragraph)
+                   (json-read)))
+         (results (if (eq (car result) 'error)
+                      (user-error (format "Error occurred %s" (a-get result 'error)))
+                    (a-get result 'results))))
+    results))
 
 (defun ref-man-ss-graph-search-results-to-ido-prompts (results)
   "Parse the search RESULTS from SS Graph API as `ido' prompts for user insertion."
