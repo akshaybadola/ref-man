@@ -316,3 +316,13 @@
 
 ** [2022-08-09 Tue 19:49]
    - Added SS search from graph api with prefix arg
+
+** [2022-08-16 Tue 09:51]
+   - In ~ref-man-core~
+     + Modified ~ref-man-org-fetch-more-citations~ to fetch all citations also
+     + Added ~ref-man-org-fetch-ss-data-subtree~
+     + Added ~ref-man-org-filter-ss-display~ which uses a ~sparse-tree~
+       to filter the citations (or references)
+     + Added ~ref-man-org-update-filtered-ss-citations~ which calls the service
+       to provided filtered citations
+   - Associated changes in ~ref-man-ss~

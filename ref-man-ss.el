@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Tuesday 09 August 2022 19:50:03 PM IST>
+;; Time-stamp:	<Tuesday 16 August 2022 09:54:00 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -62,25 +62,28 @@ argument UPDATE-ON-DISK, force update the data in cache."
                       (json-read)))))
     ss-data))
 
-(defun ref-man-ss-fetch-paper-citations (ssid &optional params)
+(defun ref-man-ss-fetch-paper-citations (ssid &optional params filters)
   "Fetch paper citations for SSID.
 
 Optional PARAMS specifies any filters to be added to the
 citations.  By default citations are fetched in increments of
-1000, but that can be changed with PARAMS.
+100, but that can be changed with PARAMS.
+
+Optional FILTERS are declarative filters that are applied to the
+results.
 
 PARAMS can be queried from the service.
 
-Example params alist for getting 100 citations from years 2012-2018:
+Example PARAMS and FILTERS alist for getting 100 citations from
+years 2012-2018:
 
-'((count . 100)
-  (filters . ((year . ((min . 2012) (max . 2018))))))
+PARAMS: '((count . 100))
+
+FILTERS: '((year . ((min . 2012) (max . 2018))))
 "
-  (let* ((url (ref-man-py-url (format "s2_citations/%s" ssid)
-                              (and (a-get params 'count)
-                                   `((count . ,(a-get params 'count))))))
-         (buf (if (a-get params 'filters)
-                  (ref-man--post-json-synchronous url params t)
+  (let* ((url (ref-man-py-url (format "s2_citations/%s" ssid) params))
+         (buf (if (and filters (cdr filters))
+                  (ref-man--post-json-synchronous url filters t)
                 (url-retrieve-synchronously url t))))
     (prog1
         (with-current-buffer buf
@@ -94,17 +97,19 @@ Example params alist for getting 100 citations from years 2012-2018:
 
 RESULT should be an alist."
   (let ((retval nil))
+    (when-let ((cites (a-get result 'citationStats)))
+      (push `("CITATIONCOUNT". ,(number-to-string (a-get cites 'numCitations))) retval)
+      (push `("INFLUENTIALCITATIONCOUNT". ,(number-to-string (a-get cites 'numKeyCitations))) retval))
     (push `("PAPERID". ,(a-get result 'id)) retval)
     (push `("ABSTRACT". ,(a-get (a-get result 'paperAbstract) 'text)) retval)
     (push `("DOI". ,(a-get (a-get result 'doiInfo) 'doi)) retval)
     (push `("URL". ,(a-get (a-get result 'primaryPaperLink) 'url)) retval)
     (push `("YEAR". ,(a-get (a-get result 'year) 'text)) retval)
     (push `("VENUE". ,(a-get (a-get result 'venue) 'text)) retval)
-    (when (assoc 'pubDate result)
+    (when-let ((date (a-get result 'pubDate)))
       (push `("MONTH" . ,(capitalize (a-get ref-man--num-to-months
                                             (string-to-number
-                                             (nth 1 (split-string
-                                                     (a-get result 'pubDate) "-"))))))
+                                             (nth 1 (split-string date "-"))))))
             retval))
     (seq-do (lambda (x)
               (if (eq (car x) 'name)

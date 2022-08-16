@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Tuesday 09 August 2022 19:50:00 PM IST>
+;; Time-stamp:	<Tuesday 16 August 2022 09:53:56 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -3074,6 +3074,26 @@ fetched."
           (org-entry-put (point) "PAPERID" (a-get ss-data 'paperId)))
         (message "[ref-man] Fetched Semantic Scholar Data")))))
 
+(defun ref-man-org-fetch-ss-data-subtree ()
+  "Fetch and store SS data for org entries.
+
+With a prefix arg, fetch for all headings in buffer.  Default is
+to fetch for the subtree under point."
+  (interactive)
+  (save-excursion
+    (save-restriction
+      (goto-char (point-min))
+      (unless current-prefix-arg
+        (org-narrow-to-subtree))
+      (while (outline-next-heading)
+        (let* ((props (org-entry-properties))
+               (title (cdr (assoc "TITLE" props)))
+               (author (cdr (assoc "AUTHOR" props)))
+               (year (cdr (assoc "YEAR" props))))
+          (if (and title author year)
+              (message "Skipping entry %s" title)
+            (ref-man-org-update-entry-with-ss-data 1)))))))
+
 (defun ref-man-org-update-entry-with-ss-data (&optional arg)
   "Update current entry with Semantic Scholar Data.
 
@@ -3119,8 +3139,7 @@ Display buffer.")
         (overlay-put overlay 'ref-man-org-load-more-ov 'read-only)
         (overlay-put overlay 'face 'ref-man-org-load-more-face)))))
 
-
-(defun ref-man-org-fetch-more-citations (&optional count)
+(defun ref-man-org-fetch-more-citations (&optional count all)
   "Insert Semantic Scholar Data for org entry at point.
 
 The data is fetched if required from `semanticscholar.org' and
@@ -3142,7 +3161,7 @@ See `ref-man-org-fetch-ss-data-for-entry' for details."
                        (goto-char (point-min))
                        (org-entry-get (point) "PAPERID")))
                (data (ref-man-ss-fetch-paper-citations
-                      ssid `((offset . ,offset) (count . ,count)))))
+                      ssid `((offset . ,offset) (count . ,(if all total count))))))
     (goto-char (point-max))
     (re-search-backward "\\[....Showing \\([0-9]+\\) out of [0-9]+ entries....]")
     (let ((inhibit-read-only t))
@@ -3153,7 +3172,11 @@ See `ref-man-org-fetch-ss-data-for-entry' for details."
     (seq-do (lambda (x)
               (ref-man--org-bibtex-write-ref-from-ss-ref x t nil t))
             data)
-    (ref-man-org-maybe-insert-cite-count total (+ offset count))))
+    (ref-man-org-maybe-insert-cite-count total (+ offset (if all total count)))))
+
+(defun ref-man-org-fetch-all-citations ()
+  (interactive)
+  (ref-man-org-fetch-more-citations 0 t))
 
 (defun ref-man-org-insert-ss-data ()
   "Insert Semantic Scholar Data for org entry at point.
@@ -3175,6 +3198,161 @@ See `ref-man-org-fetch-ss-data-for-entry' for details."
       (goto-char end)
       (org-insert-heading)
       (ref-man-org-insert-ss-data-subr ss-data (current-buffer) nil t only t t))))
+
+(defun ref-man-filter-org-ss--min-max-num (x v)
+  (and (> (string-to-number x) (string-to-number (car v)))
+       (if (cdr v) (< (string-to-number x) (string-to-number (cdr v))) t)))
+
+(defun ref-man-org-filter-ss--regexp (x v &rest _)
+  (let ((case-fold-search t))
+    (string-match-p x (car v))))
+
+(defun ref-man-org-filter-ss--read-min-max (prop)
+  (let ((v (split-string (read-from-minibuffer
+                          (format "Enter [min]-[max] value for %s: " prop))
+                         "-")))
+    `(,(car v) . ,(nth 1 v))))
+
+(defun ref-man-org-filter-ss--read-regexp (prop)
+  (read-from-minibuffer
+   (format "Enter regexp for %s: " prop)))
+
+(defun ref-man-org-filter-ss--read-words-list (prop)
+  (split-string
+   (read-from-minibuffer
+    (format "Enter space separated list of words for %s: " prop))))
+
+(defun ref-man-org-filter-ss-display ()
+  "Filter Semantic Scholar Data based on one of the properties.
+
+Four properties CITATIONCOUNT, INFLUENTIALCITATIONCOUNT, YEAR,
+VENUE are currently supported.
+
+The function can't support more complex filters without hydras,
+as such one can work around that like this:
+
+(with-current-buffer some-buffer
+  (let ((cc '(\"80\" . \"100\"))
+        (yy '(\"2020\" . \"2022\")))
+    (org-scan-tags 'sparse-tree (lambda (todo tags-list level)
+                                  (setq org-cached-props nil)
+                                  (let ((cite-count (org-cached-entry-get nil \"CITATIONCOUNT\"))
+                                        (year (org-cached-entry-get nil \"YEAR\")))
+                                    (when (and cite-count year)
+                                      (and (funcall 'ref-man-filter-ss--min-max-num cite-count cc)
+                                           (funcall 'ref-man-filter-ss--min-max-num year yy)))))
+                   nil)))
+"
+  (interactive)
+  (pcase-let* ((c (read-char-exclusive "Filter Property:  [c]itation_count  [i]nfluential_citation_count [y]ear  [v]enue (regexp)"))
+               (`(,prop ,fn) (pcase c
+                               (?c (list "CITATIONCOUNT" 'ref-man-filter-ss--min-max-num))
+                               (?i (list "INFLUENTIALCITATIONCOUNT" 'ref-man-filter-ss--min-max-num))
+                               (?y (list "YEAR" 'ref-man-filter-ss--min-max-num))
+                               (?v (list "VENUE" 'ref-man-filter-ss--regexp))))
+               (bounds (pcase c
+                         ((or ?c ?i ?y)
+                          (ref-man-org-filter-ss--read-min-max prop))
+                         (_ (ref-man-org-filter-ss--read-regexp prop)))))
+    (org-scan-tags 'sparse-tree (lambda (todo tags-list level)
+                                  (setq org-cached-props nil)
+                                  (let ((prop-val (org-cached-entry-get nil prop)))
+                                    (when prop-val
+                                      (funcall fn prop-val bounds))))
+                   nil)))
+
+(defconst ref-man-org-filter-key-alist
+  '((?y . "year")
+    (?c . "citationcount")
+    (?i . "influentialcitationcount")
+    (?t . "title")
+    (?v . "venue"))
+  "Convenience alist of key to filter names.
+
+See `ref-man-org-update-filtered-ss-citations'.")
+
+(defun ref-man-org-filter-conversion-vals (f)
+  "Convenience function for conversion of user input for filters.
+
+F is an element of filters as input by user.  See
+`ref-man-org-update-filtered-ss-citations' for how it's used."
+  (pcase (car f)
+    ((and (or 'year 'citationcount 'influentialcitationcount) c)
+     `(,c
+       (min . ,(if (numberp (cadr f)) (cadr f) (string-to-number (cadr f))))
+       (max . ,(if (numberp (caddr f)) (caddr f) (string-to-number (caddr f))))))
+    ((and 'venue c) `(venue (venues ,(cdr f))))
+    ((and 'title c) `(title_re  ,(cadr f)))
+    (_ (user-error "Uknown filter %s" (car f)))))
+
+(defun ref-man-org-filter-conversion (f)
+  "Convenience function for conversion of user input for filters.
+
+F is an element of filters as input by user.  See
+`ref-man-org-update-filtered-ss-citations' for how it's used."
+  (pcase (car f)
+    ((and (or ?c ?i ?y) c)
+     `(,(a-get ref-man-org-filter-key-alist c)
+       (min . ,(string-to-number (cadr f)))
+       (max . ,(and (cddr f) (string-to-number (cddr f))))))
+    ((and ?v c) `((venues . ,(cdr f))))
+    ((and ?t c) `((title_re . ,(cadr f))))
+    (_ (user-error "Uknown filter %s" (car f)))))
+
+(defun ref-man-org-update-filtered-subr (data &optional abstract)
+  (if (length data)
+      (progn
+        (goto-char (point-min))
+        (re-search-forward (regexp-quote "** citations") nil t)
+        (let ((inhibit-read-only t))
+          (remove-text-properties (point) (point-max) '(read-only t))
+          (delete-region (point) (point-max))
+          (ov-clear))
+        (outline-back-to-heading)
+        (org-insert-heading-after-current)
+        (org-do-demote)
+        (seq-do-indexed (lambda (x i)
+                          (ref-man--org-bibtex-write-ref-from-ss-ref x t (= i 0) (not abstract)))
+                        data)
+        (message "Inserted %d citations" (length data)))
+    (message "No citations found for those filters")))
+
+(defun ref-man-org-update-filtered-ss-citations (&optional count)
+  "Filter and update the citations subtree of ref-man buffer.
+
+Filters are applied by the python service and only the citations
+subtree is modified.
+
+Current allowed filters are defined in `ref-man-org-filter-key-alist'.
+
+See also `ref-man-org-filter-ss-display' which makes a sparse
+tree according to requirements."
+  (interactive)
+  (let ((ssid (save-excursion
+                (goto-char (point-min))
+                (org-entry-get (point) "PAPERID")))
+        (fchars (string-to-list (read-from-minibuffer
+                                 "Enter the characters for filters: {y-year,c-cite_count} etc.: ")))
+        (count (or count 20))
+        filters)
+    (unless (= (length (-uniq fchars)) (length fchars))
+      (user-error "Filters should not repeat"))
+    (seq-do (lambda (c)
+              (pcase c
+                ((or ?c ?i ?y)
+                 (push `(,c . ,(ref-man-org-filter-ss--read-min-max
+                                (a-get ref-man-org-filter-key-alist c)))
+                       filters))
+                (?t (push `(,c . ,(ref-man-org-filter-ss--read-regexp
+                                   (a-get ref-man-org-filter-key-alist c)))
+                          filters))
+                (?v (push `(,c . ,(ref-man-org-filter-ss--read-words-list
+                                   (a-get ref-man-org-filter-key-alist c)))
+                          filters))))
+            fchars)
+    (setq filters (mapcar #'ref-man-org-filter-conversion filters))
+    (let ((data (ref-man-ss-fetch-paper-citations ssid `((count . ,count)) `((filters . ,filters)))))
+      (ref-man-org-update-filtered-subr data))))
 
 ;; TODO: The display buffer should happen in background in an async process
 (defun ref-man-org-display-ss-data ()
@@ -3265,7 +3443,7 @@ pagination of results isn't supported yet."
                                              ('ref-man-ss-get-results-search-semantic-scholar
                                               (ref-man-ss-search-results-to-ido-prompts results))
                                              ('ref-man-ss-search
-                                              (ref-man-ss-graphsearch-results-to-ido-prompts results))))
+                                              (ref-man-ss-graph-search-results-to-ido-prompts results))))
                                   (entry (ido-completing-read "Entry to insert: " entries)))
                              (- (string-to-number (car (split-string entry ":" t))) 1)))))
                (pcase fetch-func
