@@ -326,3 +326,11 @@
      + Added ~ref-man-org-update-filtered-ss-citations~ which calls the service
        to provided filtered citations
    - Associated changes in ~ref-man-ss~
+
+** [2022-08-21 Sun 11:37]
+   - In ~ref-man-core~:
+     + In ~ref-man-org-bibtex-kill-headline-as-bibtex~
+       ~ref-man-org-bibtex-read-from-headline~ is now called with CLEAN
+     + Added removing journal "CoRR" in ~ref-man-bibtex-remove-arxiv~
+     + ~ref-man-org-bibtex-insert-headline-as-bib-to-file~ only inserts headline
+       now and doesn't kill. There's a separate function for that.

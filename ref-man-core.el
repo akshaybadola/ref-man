@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Tuesday 16 August 2022 09:53:56 AM IST>
+;; Time-stamp:	<Sunday 21 August 2022 11:36:04 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -1682,18 +1682,22 @@ FILENAME where the suffix .bib is replaced with .org."
 (defun ref-man-org-bibtex-kill-headline-as-bibtex ()
   "Parse the headline at point, convert to a bib entry and append to `kill-ring'.
 Only for interactive use.  Same as
-`ref-man-org-bibtex-read-from-headline' except it returns nothing
-and kills the entry as bibtex.
+`ref-man-org-bibtex-read-from-headline' with CLEAN argument,
+except it returns nothing and kills the entry as bibtex.
 
-With \\[universal-argument] misc entries are also parsed"
+With a single prefix \\[universal-argument], misc entries are also parsed.
+
+See also, `ref-man-org-bibtex-insert-headline-as-bib-to-file'."
   (interactive)
-  (ref-man-org-bibtex-read-from-headline t nil current-prefix-arg))
+  (ref-man-org-bibtex-read-from-headline t nil current-prefix-arg t))
 
 (defun ref-man-org-bibtex-kill-headline-as-yaml ()
   "Parse the headline at point, convert to yaml and append to `kill-ring'.
 Only for interactive use.  Same as
 `ref-man-org-bibtex-read-from-headline' except it returns nothing
-and kills the entry as yaml to be used with pandoc."
+and kills the entry as yaml to be used with pandoc.
+
+See also, `ref-man-org-bibtex-kill-headline-as-bibtex'."
   (interactive)
   (let* ((bib (ref-man-org-bibtex-read-from-headline))
          (yaml (replace-regexp-in-string
@@ -1770,9 +1774,10 @@ ignore the venue key."
 (defun ref-man-bibtex-remove-arxiv (bib-alist)
   "Remove ArXiv from a BIB-ALIST unless it's the only venue."
   (let ((only-arxiv (ref-man-bibtex-bib-is-only-arxiv-p bib-alist)))
-    (unless only-arxiv                  ; should change with CoRR
+    (unless only-arxiv
       (when (and (a-get bib-alist "journal")
-                 (string= (downcase (a-get bib-alist "journal")) "arxiv"))
+                 (or (string= (downcase (a-get bib-alist "journal")) "arxiv")
+                     (string= (downcase (a-get bib-alist "journal")) "corr")))
         (setq bib-alist
               (a-dissoc bib-alist "journal")))
       (when (and (a-get bib-alist "venue")
@@ -1894,7 +1899,7 @@ For the rest of the optional arguments see
     bib-str))
 
 ;; TODO: prefix arg should insert to temp-file in interactive mode
-(defun ref-man-org-bibtex-kill-or-insert-headline-as-bib-to-file (&optional file)
+(defun ref-man-org-bibtex-insert-headline-as-bib-to-file (&optional file)
   "Export current headline as bibtex.
 
 Where to export depends on various facts.  When optional FILE is
@@ -1903,19 +1908,18 @@ find the file and open it.  If FILE is not given then insert to
 `ref-man-temp-bib-file-path'.
 
 In all cases the bibtex entry is inserted at the top of the
-buffer."
+buffer.
+
+See also, `ref-man-org-bibtex-kill-headline-as-bibtex'."
   (interactive)
   (let* ((result (ref-man-org-bibtex-read-from-headline)))
-    (if file
-        (let* ((bib-file-path (if file file ref-man-temp-bib-file-path))
-               (bib-file-name (file-name-nondirectory bib-file-path))
-               (buf (if (get-buffer bib-file-name) (get-buffer bib-file-name)
-                      (find-file-noselect bib-file-path))))
-          (with-current-buffer buf
-            (goto-char (point-min)) (insert result)
-            (message "Inserted entry to %s" bib-file-name)))
-      (kill-new result)
-      (message "Inserted entry to kill ring"))))
+    (let* ((bib-file-path (if file file ref-man-temp-bib-file-path))
+           (bib-file-name (file-name-nondirectory bib-file-path))
+           (buf (if (get-buffer bib-file-name) (get-buffer bib-file-name)
+                  (find-file-noselect bib-file-path))))
+      (with-current-buffer buf
+        (goto-char (point-min)) (insert result)
+        (message "Inserted entry to %s" bib-file-name)))))
 
 (defun ref-man-org-bibtex-yank-bib-to-property (&optional new)
   "Yank the `current-kill' to org entry properties.
@@ -3061,7 +3065,7 @@ See `ref-man-fetch-ss-data-for-entry' for details."
 (defun ref-man-org-fetch-ss-data-for-entry (&optional update update-on-disk)
   "Fetch the Semantic Scholar data for org entry at point.
 
-With one `\\[universal-argument]' update the data on disk also.
+With one prefix \\[universal-argument] update the data on disk also.
 
 See `ref-man-ss-fetch-paper-details' for details on how it's stored and
 fetched."
@@ -3104,7 +3108,7 @@ the properties are updated.  Citations and references are not
 displayed or inserted.  See `ref-man-org-fetch-ss-data-for-entry' for
 details.
 
-With `\\[universal-argument]' fetch the data from
+With a single prefix \\[universal-argument] fetch the data from
 `semanticscholar.org' even if it's present in cache."
   (interactive "p")
   (util/with-check-mode
@@ -3364,8 +3368,8 @@ exists goto that heading else, the current org entry.
 The data is fetched if required from `semanticscholar.org' and
 displayed in a new org buffer named \"*Semantic Scholar*\".
 
-With a single `\\[universal-argument]' prefix, display only
-references.  With two `\\[universal-argument]' prefix, display
+With a single \\[universal-argument] prefix, display only
+references.  With two \\[universal-argument] prefix, display
 only citations.  Useful when the number of citations are really
 high, e.g. above 1000.
 
@@ -3438,7 +3442,7 @@ pagination of results isn't supported yet."
                          'ref-man-ss-get-results-search-semantic-scholar))
            (results (funcall fetch-func search-string args)))
       (cond ((> (length results) 0)
-             (let* ((idx (if (or insert-first (length results)) 0
+             (let* ((idx (if (and insert-first (length results)) 0
                            (let* ((entries (pcase fetch-func
                                              ('ref-man-ss-get-results-search-semantic-scholar
                                               (ref-man-ss-search-results-to-ido-prompts results))
