@@ -3285,7 +3285,7 @@ F is an element of filters as input by user.  See
      `(,c
        (min . ,(if (numberp (cadr f)) (cadr f) (string-to-number (cadr f))))
        (max . ,(if (numberp (caddr f)) (caddr f) (string-to-number (caddr f))))))
-    ((and 'venue c) `(venue (venues ,(cdr f))))
+    ((and 'venue c) `(venue . ((venues . ,(cdr f)))))
     ((and 'title c) `(title_re  ,(cadr f)))
     (_ (user-error "Uknown filter %s" (car f)))))
 
