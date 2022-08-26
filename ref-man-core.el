@@ -3017,9 +3017,9 @@ the heading."
             (pcase-let ((`(,a . ,b) x))
               (pcase a
                 ("ABSTRACT" nil)
-                ("AUTHOR" (org-entry-put (point) a (ref-man--invert-accents b)))
-                ("URL" (ref-man-org-add-url-property b))
-                (_ (org-entry-put (point) a b)))))
+                ("AUTHOR" (org-set-property a (ref-man--invert-accents (string-trim b))))
+                ("URL" (ref-man-org-add-url-property (string-trim b)))
+                (_ (org-entry-put (point) a (string-trim b))))))
           props-alist)
   (let ((key (ref-man-parse-properties-for-bib-key)))
     (unless key
