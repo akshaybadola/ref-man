@@ -134,6 +134,11 @@
   :type 'file
   :group 'ref-man)
 
+(defcustom ref-man-always-update-heading-if-different nil
+  "Always update entry heading if different from fetched data."
+  :type 'boolean
+  :group 'ref-man)
+
 (defvar ref-man-key-list
   '(authors title venue volume number pages year doi ee)
   "Only these keys from bibtex are retained (I think).")
@@ -961,19 +966,28 @@ buffer with that filename."
             (message "[ref-man] Opened buffer but is empty.")))
         (ref-man--generate-org-buffer-content org-buf refs-list entry-alist visiting-filename)))))
 
-(defun ref-man-check-duplicate-pubs-current-heading ()
-  "List duplicate pubs for current heading."
+(defun ref-man-org-find-duplicate-headings ()
+  "Find duplicate headings for current heading or link under point.
+Display the entries if any found in a helm buffer."
   (interactive)
-  (let* ((pt (save-excursion (org-back-to-heading t)
-                             (beginning-of-line)
-                             (point)))
-         (heading (org-get-heading t t t t))
-         (cid (org-entry-get (point) "CUSTOM_ID"))
-         (buf-name (buffer-name))
-         (headings (-keep (lambda (x)
-                            (unless (and (= pt (nth 4 x)) (string= (nth 2 x) buf-name))
-                              `(,(car x) . ,(list (nth 2 x) (nth 4 x)))))
-                          (ref-man-org-check-for-duplicate-pub heading cid))))
+  (pcase-let* ((link (util/org-link-get-target-for-internal))
+               (`(,buf ,pt) (if link
+                                `(,(find-file-noselect (plist-get link :file))
+                                  ,(plist-get link :point))
+                              `(,(current-buffer) ,(save-excursion
+                                                     (org-back-to-heading t)
+                                                     (beginning-of-line)
+                                                     (point)))))
+               (`(,heading ,cid ,buf-name) (with-current-buffer buf
+                                             (save-excursion
+                                               (goto-char pt)
+                                               `(,(org-get-heading t t t t)
+                                                 ,(org-entry-get (point) "CUSTOM_ID")
+                                                 ,(buffer-name)))))
+               (headings (-keep (lambda (x)
+                                  (unless (and (= pt (nth 4 x)) (string= (nth 2 x) buf-name))
+                                    `(,(car x) . ,(list (nth 2 x) (nth 4 x)))))
+                                (ref-man-org-check-for-duplicate-pub heading cid))))
     (if headings
         (util/helm-org-headings nil headings)
       (message "No duplicate headings found"))))
@@ -3007,6 +3021,7 @@ the current url, then it is handled as following:
           (org-entry-put (point) (format "%s_URL" (upcase (symbol-name type))) url)
         (org-entry-put (point) "URL" url)))))
 
+;; TODO: There are multiple subroutines which update data
 (defun ref-man--update-props-from-assoc (props-alist)
   "Update a heading and property drawer from a PROPS-ALIST.
 For the properties of a heading we preserve the non ascii
@@ -3036,7 +3051,8 @@ the heading."
     (end-of-line)
     (insert (a-get props-alist "TITLE")))
   (when (and (not (string= (org-get-heading t t t t) (a-get props-alist "TITLE")))
-             (y-or-n-p "Heading and Title differ.  Update? "))
+             (or ref-man-always-update-heading-if-different
+                 (y-or-n-p "Heading and Title differ.  Update? ")))
     (org-edit-headline (a-get props-alist "TITLE"))))
 
 (defun ref-man-org-add-list-from-assoc (props-alist keys)
@@ -3125,11 +3141,13 @@ Display buffer.")
 
 (defun ref-man-org-maybe-insert-cite-count (total-cites &optional num-cites)
   "Insert TOTAL-CITES and current NUM-CITES for displayed SS data."
-  (let ((num-cites (or num-cites
-                       (save-excursion
-                         (goto-char (point-max))
-                         (re-search-backward (regexp-quote "** citations"))
-                         (util/org-count-subtree-children)))))
+  (let* ((show-citations (re-search-backward (regexp-quote "** citations") nil t))
+         (num-cites (when show-citations
+                      (or num-cites
+                          (save-excursion
+                            (goto-char (point-max))
+                            (re-search-backward (regexp-quote "** citations"))
+                            (util/org-count-subtree-children))))))
     (when (< num-cites total-cites)
       (goto-char (point-max))
       (when (not (bolp))
@@ -3359,7 +3377,7 @@ tree according to requirements."
       (ref-man-org-update-filtered-subr data))))
 
 ;; TODO: The display buffer should happen in background in an async process
-(defun ref-man-org-display-ss-data ()
+(defun ref-man-org-display-ss-data (&optional pref-arg)
   "Display Semantic Scholar Data for an org entry.
 
 If the cursor is over a an internal org link for which SS data
@@ -3375,11 +3393,12 @@ high, e.g. above 1000.
 
 Default is to display both References and
 Citations.  See `ref-man-org-fetch-ss-data-for-entry' for details."
-  (interactive)
-  (let ((link (util/org-link-get-target-for-internal))
-        (only (pcase current-prefix-arg
-                ('(4) 'refs)
-                ('(16) 'cites)
+  (interactive "p")
+  (let ((link (let (current-prefix-arg)
+                (util/org-link-get-target-for-internal)))
+        (only (pcase pref-arg
+                (4 'refs)
+                (16 'cites)
                 (_ nil))))
     (save-excursion
       (let* ((ssid (if link
@@ -3982,7 +4001,8 @@ The pdfs are downloaded and the file links are marked as `(file here)'"
                      (replace-regexp-in-string "\\[\\|\\]" "" pdf-file-prop))))
     (when (and pdf-file-prop (not (f-exists? pdf-file)))
       (org-delete-property "PDF_FILE"))
-    (and pdf-file-prop (f-exists? pdf-file))))
+    (when (and pdf-file-prop (f-exists? pdf-file))
+      pdf-file-prop)))
 
 
 (defun ref-man--check-fix-ss-url (&optional props)

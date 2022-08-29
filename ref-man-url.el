@@ -44,6 +44,13 @@ localhost specified by this port."
   :type 'boolean
   :group 'ref-man)
 
+(defcustom ref-man-pdf-proxy-ignore-sites nil
+  "Don't use the proxy for these sites while fetching PDF.
+
+See `ref-man-pdf-proxy-port'."
+  :type '(repeat symbol)
+  :group 'ref-man)
+
 ;; NOTE: External variables
 (defvar ref-man-py-server-port)     ; from `ref-man-py'
 (defvar ref-man-documents-dir)          ; from `ref-man-files'

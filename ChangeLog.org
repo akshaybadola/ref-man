@@ -334,3 +334,13 @@
      + Added removing journal "CoRR" in ~ref-man-bibtex-remove-arxiv~
      + ~ref-man-org-bibtex-insert-headline-as-bib-to-file~ only inserts headline
        now and doesn't kill. There's a separate function for that.
+
+** [2022-08-29 Mon 14:04]
+   - In ~ref-man-core~
+     + Added variable ~ref-man-always-update-heading-if-different~ which always updates
+       heading from SS if they're different.
+     + Different implementation for ~ref-man-org-find-duplicate-headings~
+     + Some other minor bug fixes
+   - In ~ref-man-url~
+     + Added variable ~ref-man-pdf-proxy-ignore-sites~ to ignore certain cites
+       while fetching PDF from a proxy port (doesn't work for now LOL).
