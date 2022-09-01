@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Sunday 21 August 2022 11:36:04 AM IST>
+;; Time-stamp:	<Thursday 01 September 2022 09:49:06 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -2727,8 +2727,12 @@ citations after that."
   (org-demote)                          ; demote only once
   (pcase only
     ('refs (ref-man--insert-refs-from-seq
-            (a-get ss-data 'references) "references" 'ss ignore-errors t))
-    ('cites (ref-man--insert-refs-from-seq
+            (a-get ss-data 'references) "references" 'ss ignore-errors t)
+           (org-insert-heading-respect-content)
+           (ref-man--insert-refs-from-seq nil "citations" 'ss ignore-errors t))
+    ('cites (ref-man--insert-refs-from-seq nil "citations" 'ss ignore-errors t)
+            (org-insert-heading-respect-content)
+            (ref-man--insert-refs-from-seq
              (a-get ss-data 'citations) "citations" 'ss ignore-errors t))
     (_ (ref-man--insert-refs-from-seq
         (a-get ss-data 'references) "references" 'ss ignore-errors t)
@@ -3148,7 +3152,7 @@ Display buffer.")
                             (goto-char (point-max))
                             (re-search-backward (regexp-quote "** citations"))
                             (util/org-count-subtree-children))))))
-    (when (< num-cites total-cites)
+    (when (and num-cites (< num-cites total-cites))
       (goto-char (point-max))
       (when (not (bolp))
         (insert "\n")
