@@ -344,3 +344,7 @@
    - In ~ref-man-url~
      + Added variable ~ref-man-pdf-proxy-ignore-sites~ to ignore certain cites
        while fetching PDF from a proxy port (doesn't work for now LOL).
+
+** [2022-09-12 Mon 08:53]
+   - Fixed a bug in ~ref-man-org-maybe-insert-cite-count~ where citation count
+     was not being inserted.

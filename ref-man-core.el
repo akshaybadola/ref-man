@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Thursday 01 September 2022 09:49:06 AM IST>
+;; Time-stamp:	<Monday 12 September 2022 08:52:52 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -3145,12 +3145,13 @@ Display buffer.")
 
 (defun ref-man-org-maybe-insert-cite-count (total-cites &optional num-cites)
   "Insert TOTAL-CITES and current NUM-CITES for displayed SS data."
-  (let* ((show-citations (re-search-backward (regexp-quote "** citations") nil t))
+  (let* ((show-citations (save-excursion
+                           (goto-char (point-max))
+                           (re-search-backward (regexp-quote "** citations") nil t)))
          (num-cites (when show-citations
                       (or num-cites
                           (save-excursion
-                            (goto-char (point-max))
-                            (re-search-backward (regexp-quote "** citations"))
+                            (goto-char show-citations)
                             (util/org-count-subtree-children))))))
     (when (and num-cites (< num-cites total-cites))
       (goto-char (point-max))
@@ -4082,10 +4083,10 @@ Optional INTERACTIVEP is to check the `interactive' call."
              (pdf-file (ref-man--check-fix-pdf-file-property))
              (bib-prop (ref-man-parse-properties-for-bib-key))
              (headingp (ref-man-check-heading-non-empty-p))
-             (urls `((url . ,url-prop)
-                     (pdf-url . ,pdf-url-prop)
-                     (alt-url . ,alt-url-prop)
+             (urls `((pdf-url . ,pdf-url-prop)
                      (arxiv-url . ,arxiv-url-prop)
+                     (url . ,url-prop)
+                     (alt-url . ,alt-url-prop)
                      (ss-url . ,ss-url-prop)))
              retrieve-bib retrieve-pdf retrieve-title
              (msg-str ""))
@@ -4197,7 +4198,7 @@ Only works for internal org links."
                   (-keep (lambda (x)
                            (when (member (car x)
                                          '("TITLE" "AUTHOR" "JOURNAL" "VENUE"
-                                           "YEAR" "NUMCITEDBY" "BOOKTITLE"))
+                                           "YEAR" "CITATIONCOUNT" "NUMCITEDBY" "BOOKTITLE"))
                              (format "%s: %s" (capitalize (car x)) (cdr x))))
                          props))
                  "\n\n")))
