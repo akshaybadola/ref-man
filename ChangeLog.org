@@ -348,3 +348,15 @@
 ** [2022-09-12 Mon 08:53]
    - Fixed a bug in ~ref-man-org-maybe-insert-cite-count~ where citation count
      was not being inserted.
+
+** [2022-09-26 Mon 08:59]
+   - In ~ref-man-core~ NUMCITEDBY is replaced with CITATIONCOUNT when entry is updated.
+   - In ~ref-man-ss~, added WIP functions and variables:
+     + ~ref-man-ss-nonascii-punc-chars~
+     + ~ref-man-ss-fix-nonascii-chars-in-entry~ to fix non ascii chars
+     + ~ref-man-ss-replace-nonascii-punc-chars~ to fix non ascii punctuation chars
+     + WIP ~ref-man-ss-filter-selected-buffer~
+     + WIP ~ref-man-ss-citation-filter-widget~
+     + WIP ~ref-man-ss-citation-filter-widget-handler~
+   - In ~ref-man-url~ fixed bug where punctuation was replaced with empty string
+     in title while getting CVF URL

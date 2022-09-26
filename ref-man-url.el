@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 22 July 2022 08:58:34 AM IST>
+;; Time-stamp:	<Monday 26 September 2022 09:03:10 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -735,7 +735,7 @@ ARGS is a plist with keywords :heading :point :buffer"
 Optional YEAR if not specified but can be extracted from a DOI
 URL.  If neither are given, then the pdf url for the longest regexp
 match for TITLE's first three words will be returned."
-  (let* ((title (ref-man--remove-punc title t))
+  (let* ((title (replace-regexp-in-string "[^0-9a-z ]" " " title))
          (year (or year (and url (nth 1 (split-string (-last-item (split-string url "/" t)) "\\." t)))))
          (buf (url-retrieve-synchronously
                (ref-man-py-url "get_cvf_url" `(("title" . ,title)

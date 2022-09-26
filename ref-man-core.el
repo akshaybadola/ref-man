@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 12 September 2022 08:52:52 AM IST>
+;; Time-stamp:	<Monday 26 September 2022 09:03:10 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -1476,6 +1476,9 @@ Don't insert abstract with optional non-nil NO-ABSTRACT."
         ;;   (org-insert-item)
         ;;   (insert (concat (a-get entry 'venue) ", " (format "%s" (a-get entry 'year)))))
         (org-insert-property-drawer)
+        (when (and (a-get entry 'citationCount)
+                   (org-entry-get (point) "NUMCITEDBY"))
+          (org-entry-delete (point) "NUMCITEDBY"))
         (cl-loop for ent in entry
                  do
                  (cond ((or (eq (car ent) 'author) (eq (car ent) 'authors))
@@ -3309,7 +3312,7 @@ F is an element of filters as input by user.  See
        (min . ,(if (numberp (cadr f)) (cadr f) (string-to-number (cadr f))))
        (max . ,(if (numberp (caddr f)) (caddr f) (string-to-number (caddr f))))))
     ((and 'venue c) `(venue . ((venues . ,(cdr f)))))
-    ((and 'title c) `(title_re  ,(cadr f)))
+    ((and 'title c) `(title  . ((title_re  . ,(nth 1 f)) (invert . ,(nth 2 f)))))
     (_ (user-error "Uknown filter %s" (car f)))))
 
 (defun ref-man-org-filter-conversion (f)

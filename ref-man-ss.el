@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Tuesday 16 August 2022 09:54:00 AM IST>
+;; Time-stamp:	<Monday 26 September 2022 09:03:10 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -34,8 +34,77 @@
 ;; process doing a bunch of things.
 
 
+(require 'widget)
+(eval-when-compile
+  (require 'wid-edit))
+
 (require 'ref-man-py)
 (require 'ref-man-util)
+
+(defvar ref-man-ss-citation-filter-preferred-venues nil
+  "Alist of preferred venues.
+
+They should be in format ((symbol (\"list\" \"of\" \"keywords\"))).")
+
+(defvar ref-man-ss-nonascii-punc-chars
+  '(("â" . "-")
+    ("â" . "-")
+    ("â" . "\"")
+    ("â" . "\"")
+    ("â" . "-")
+    ("Ã¢ÂÂ" . "--")
+    ("Ã¢ÂÂ" . "--")
+    ("Ã¢ÂÂ" . " ")
+    ("Ã¢ÂÂ" . "\"")
+    ("Ã¢ÂÂ" . "\"")))
+
+
+(defvar ref-man-ss-nonascii-special-chars
+  '(("ÃÂ»" . "λ")
+    ("Å" . "ł")
+    ("ÃÂ²" . "β")))
+
+(defun ref-man-ss-fix-nonascii-chars-in-entry ()
+  "Fix nonascii chars in current org entry.
+
+These chars would be introduced due to encoding issues with SS
+data."
+  (interactive)
+  (let ((regexp (mapconcat
+                 (lambda (x) (format "\\(%s\\)" (car x)))
+                 ref-man-ss-nonascii-punc-chars "\\|"))
+        (n (length ref-man-ss-nonascii-punc-chars))
+        (vecmap (apply #'vector ref-man-ss-nonascii-punc-chars)))
+    (save-excursion
+      (save-restriction
+        (org-narrow-to-subtree)
+        (goto-char (point-min))
+        (while (re-search-forward regexp nil t)
+          (let ((idx (cl-loop
+                      for i from 1 to n
+                      until (match-string i)
+                      finally return (- i 1))))
+            (replace-match (cdr (aref vecmap idx)))))))))
+
+
+(defun ref-man-ss-replace-nonascii-punc-chars (str)
+  "Replace nonascii chars due to SS encoding errors in string STR."
+  (interactive)
+  (let ((regexp (mapconcat
+                 (lambda (x) (format "\\(%s\\)" (car x)))
+                 ref-man-ss-nonascii-punc-chars "\\|"))
+        (n (length ref-man-ss-nonascii-punc-chars))
+        (vecmap (apply #'vector ref-man-ss-nonascii-punc-chars)))
+    (with-temp-buffer
+      (insert str)
+      (goto-char (point-min))
+      (while (re-search-forward regexp nil t)
+        (let ((idx (cl-loop
+                    for i from 1 to n
+                    until (match-string i)
+                    finally return (- i 1))))
+          (replace-match (cdr (aref vecmap idx)))))
+      (buffer-string))))
 
 
 (defun ref-man-ss-fetch-paper-details (ssid &optional update-on-disk)
@@ -191,5 +260,137 @@ In this case the `matchedPresentations' key is extracted."
                              (string-join (a-get x 'authors) ", "))
                 (setq j (+ 1 j))))
             results)))
+
+
+(setq ref-man-ss-citation-filters `((author)
+                                    ;; (title "transfer")
+                                    (year 2020 2022)
+                                    ;; ,(cons 'venue (ref-man-ss-citation-filter-get-venues))
+                                    (citationcount 100 100000)
+                                    ;; (influentialcitationcount 1 100)
+                                    )
+      ref-man-ss-filter-count 200)
+
+(defun ref-man-ss-citation-filter-get-venues ()
+  (-flatten (a-vals ref-man-ss-citation-filter-venues)))
+
+(defun ref-man-ss-filter-selected-buffer ()
+  (interactive)
+  (let* ((buffer (if current-prefix-arg
+                     (ido-completing-read
+                      "Semantic Scholar Buffer: "
+                      (-keep (lambda (x) (and (string-match-p "^*Semantic Scholar/.+" (buffer-name x))
+                                              (buffer-name x)))
+                             (buffer-list)))
+                   (current-buffer)))
+         (default-filters ref-man-ss-citation-filters)
+         (count ref-man-ss-filter-count)
+         (filters (mapcar #'ref-man-org-filter-conversion-vals (-filter (lambda (x) (cdr x))
+                                                                        default-filters)))
+         (ssid (with-current-buffer buffer
+                 (save-excursion
+                   (goto-char (point-min))
+                   (org-entry-get (point) "PAPERID"))))
+         (data (ref-man-ss-fetch-paper-citations ssid `((count . ,count)) `(filters ,filters))))
+    (with-current-buffer buffer
+      (ref-man-org-update-filtered-subr data t))))
+
+(defun ref-man-ss-citation-filter-widget-handler (from wid changed &rest args)
+  (let ((enabled (plist-get (cdr wid) :value)))
+    (message
+     (pcase from
+       ('author "Authors %s")
+       ('title "Title Regexp %s")
+       ('year "Year Range %s")
+       ('venues "Preferred Venues %s")
+       ('cite-count "Citation Count %s")
+       ('inf-cite-count "Influential Citation Count %s")
+       (_ (debug)))
+     (if enabled "Enabled" "Disabled"))))
+
+(defun ref-man-ss-citation-filter-widget (buf-name)
+  (switch-to-buffer (format "*filter citations settings for %s*" buf-name))
+  (kill-all-local-variables)
+  (let ((inhibit-read-only t))
+    (erase-buffer))
+  (remove-overlays)
+  (widget-insert "Ref Man Filter Semantic Scholar Citations.\n")
+
+  (widget-insert "\n")
+  (widget-create 'checkbox
+                 :notify (lambda (from changed &rest args)
+                           (my/ref-man-filter-handler 'author from changed args))
+                 nil)
+  (widget-insert " Author Filter\n")
+  (widget-create 'editable-list
+                 :size 13
+                 :notify (lambda (from changed &rest args)
+                           (my/ref-man-filter-handler 'author-item from changed args))
+                 :entry-format "%i %d %v" ; Text after the field!
+                 :indent 2
+                 '(editable-field :value "author-id"))
+
+  (widget-insert "\n")
+  (widget-create 'checkbox
+                 :notify (lambda (from changed &rest args)
+                           (my/ref-man-filter-handler 'title from changed args))
+                 nil)
+  (widget-create 'editable-field :size 1 :format " Title regexp: %v" "")
+
+  (widget-insert "\n")
+  (widget-create 'checkbox
+                 :notify (lambda (from changed &rest args)
+                           (my/ref-man-filter-handler 'venues from changed args))
+                 nil)
+
+  (widget-insert " Preferred Venues:  ")
+  (seq-do (lambda (x)
+            (widget-insert (format "%s: " x))
+            (widget-create 'checkbox
+                           :notify (lambda (from changed &rest args)
+                                     (my/ref-man-filter-handler (cons 'venue x) from changed args))
+                           t)
+            (widget-insert ", "))
+          (-butlast (a-keys my/ref-man-ss-citation-filter-venues)))
+  (let ((x (-last-item (a-keys my/ref-man-ss-citation-filter-venues))))
+    (widget-insert (format "%s: " x))
+    (widget-create 'checkbox
+                   :notify (lambda (from changed &rest args)
+                             (my/ref-man-filter-handler (cons 'venue x) from changed args))
+                   t))
+
+  (widget-insert "\n")
+  (widget-create 'checkbox
+                 :notify (lambda (from changed &rest args)
+                           (my/ref-man-filter-handler 'year from changed args))
+                 nil)
+  (widget-insert " Year Range: ")
+  (widget-create 'editable-field :size 4 :format "min = %v" "2000")
+  (widget-create 'editable-field :size 4 :format "  max = %v" "2022")
+
+  (widget-insert "\n")
+  (widget-create 'checkbox
+                 :notify (lambda (from changed &rest args)
+                           (my/ref-man-filter-handler 'cite-count from changed args))
+                 nil)
+  (widget-insert  " Citation Count: ")
+  (widget-create 'editable-field :size 4 :format "min = %v" "1")
+  (widget-create 'editable-field :size 4 :format "  max = %v" "1000")
+
+  (widget-insert "\n")
+  (widget-create 'checkbox
+                 :notify (lambda (from changed &rest args)
+                           (my/ref-man-filter-handler 'inf-cite-count from changed args))
+                 t)
+  (widget-insert  " Influential Citation Count: ")
+  (widget-create 'editable-field :size 4 :format "min = %v" "1")
+  (widget-create 'editable-field :size 4 :format "  max = %v" "1000")
+
+  (widget-create 'editable-field :size 2 :format "\nNumber of Results = %v" "30"
+                 :notify (lambda (from changed &rest args)
+                           (my/ref-man-filter-handler 'num-results from changed args)))
+  (use-local-map widget-keymap)
+  (widget-setup))
+
 
 (provide 'ref-man-ss)

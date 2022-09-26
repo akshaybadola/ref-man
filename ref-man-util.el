@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 22 July 2022 08:58:40 AM IST>
+;; Time-stamp:	<Monday 26 September 2022 09:03:10 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -296,16 +296,15 @@ Identical to `ref-man--trim-whitespace' but remove quotes also."
 Argument CHANGE-LIST is an alist of regexps, `(A . B)' changes
 from A to B.
 
-With optional non-nil INVERSE, do the opposite and change B to
-A."
+With optional non-nil INVERSE, do the opposite and change B to A."
   (let* ((content str)
          (change-list (or change-list bibtex-autokey-transcriptions))
          (keys (if inverse (a-vals change-list) (a-keys change-list)))
          (vals (if inverse (a-keys change-list) (a-vals change-list)))
          (alist (-zip keys vals)))
     (when (string-match-p (string-join keys "\\|") str)
-        (pcase-dolist (`(,a . ,b) alist)
-          (setq content (replace-regexp-in-string a b content t))))
+      (pcase-dolist (`(,a . ,b) alist)
+        (setq content (replace-regexp-in-string a b content t))))
     content))
 
 (defun ref-man-util-regions-contiguous-p (regions)
