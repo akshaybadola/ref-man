@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 26 September 2022 09:03:10 AM IST>
+;; Time-stamp:	<Friday 07 October 2022 03:59:03 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -147,6 +147,10 @@
   nil
   "List to store parsed bibtex entries when they're not killed.")
 
+(defvar ref-man-org-entry-post-update-hook '(ref-man-org-find-duplicate-headings)
+  "Hook to run after a `ref-man-org' entry is updated.
+The functions in the hook are called with no arguments.")
+
 ;; NOTE: External functions
 (declare-function ref-man-try-start-science-parse-server "ref-man")
 (declare-function ref-man-kill-science-parse-process "ref-man")
@@ -244,11 +248,6 @@
     ("jair" . "Journal of Artificial Intelligence Research")
     ("jmlr" . "Journal of Machine Learning Research"))
   "Alist of venues and their abbreviations.")
-
-(defconst ref-man--num-to-months
-  '((1 . "Jan") (2 . "Feb") (3 . "Mar") (4 . "Apr")
-    (5 . "May") (6 . "Jun") (7 . "Jul") (8 . "Aug")
-    (9 . "Sep") (10 . "Oct") (11 . "Nov") (12 . "Dec")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END ref-man constants  ;;
@@ -1457,7 +1456,8 @@ Don't insert abstract with optional non-nil NO-ABSTRACT."
       ;; NOTE: insert heading only when not updating current heading
       (unless update-current
         (org-insert-heading-after-current))
-      (org-edit-headline (a-get entry 'title))
+      (unless (org-entry-get (point) "NO_UPDATE_TITLE")
+        (org-edit-headline (a-get entry 'title)))
       ;; FIXME: beg is same as current point
       (pcase-let ((`(,beg ,_ ,has-text) (ref-man-org-text-bounds))
                   (author-str (mapconcat (lambda (x)
@@ -2814,6 +2814,26 @@ With optional non-nil ALLOW-MISC @misc bibs are also parsed."
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ;; START org commands ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;
+(defvar ref-man-org-browse-use-external-browser t
+  "Always use external browser for external URLs.")
+
+(defun ref-man-org-browse-paper-via-doi ()
+  "Browse the paper via DOI redirect if DOI exists in entry.
+
+If \\[universal-argument] is given, then inver the value of
+`ref-man-org-browse-use-external-browser' while browsing."
+  (interactive)
+  (util/with-org-mode
+   (let* ((doi (org-entry-get (point) "DOI"))
+          (url (and doi (format "https://dx.doi.org/%s" doi)))
+          (use-external-browser
+           (xor current-prefix-arg
+                ref-man-org-browse-use-external-browser)))
+     (when url
+       (if use-external-browser
+           (eww-browse-with-external-browser url)
+         (eww url))))))
+
 (defun ref-man-fix-drawers-deleted-files ()
   "Remove files missing from `ref-man-documents-dir' in property drawers."
   (interactive)
@@ -3138,7 +3158,8 @@ With a single prefix \\[universal-argument] fetch the data from
    'org-mode "[ref-man]"
    (pcase arg
      (1 (ref-man-org-fetch-ss-data-for-entry t))
-     (_ (ref-man-org-fetch-ss-data-for-entry t t)))))
+     (_ (ref-man-org-fetch-ss-data-for-entry t t)))
+   (run-hook-with-args 'ref-man-org-entry-post-update-hook)))
 
 (defface ref-man-org-load-more-face
   '((default :weight bold)
@@ -3484,7 +3505,8 @@ pagination of results isn't supported yet."
                     (ref-man-org-add-list-from-assoc
                      result '("ABSTRACT" "AUTHOR" "VENUE" "YEAR"))))
                  ('ref-man-ss-search
-                  (ref-man--org-bibtex-write-ref-from-ss-ref (aref results idx) nil t)))))
+                  (ref-man--org-bibtex-write-ref-from-ss-ref (aref results idx) nil t))))
+             (run-hook-with-args 'ref-man-org-entry-post-update-hook))
             ((a-get result 'matchedPresentations)
              (let* ((entries (ref-man-ss-search-presentations-to-ido-prompts
                               (a-get result 'matchedPresentations)))
@@ -3492,7 +3514,8 @@ pagination of results isn't supported yet."
                     (id (a-get (aref (a-get result 'matchedPresentations)
                                      (- (string-to-number (car (split-string entry ":" t))) 1))
                                'id)))
-               (ref-man-org-safe-update-prop "PAPERID" id)))
+               (ref-man-org-safe-update-prop "PAPERID" id))
+             (run-hook-with-args 'ref-man-org-entry-post-update-hook))
             (t (message "[ref-man] Nothing from Semantic Scholar"))))))
 
 ;; END: Org Semantic Scholar Functions

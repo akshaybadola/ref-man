@@ -360,3 +360,15 @@
      + WIP ~ref-man-ss-citation-filter-widget-handler~
    - In ~ref-man-url~ fixed bug where punctuation was replaced with empty string
      in title while getting CVF URL
+
+** [2022-10-07 Fri 03:55]
+   - In ~ref-man-core~
+     + Added hook ~ref-man-org-entry-post-update-hook~
+     + Command ~ref-man-org-browse-paper-via-doi~
+   - In ~ref-man-py~
+     + Implemented ~ref-man-py-pypi-update-available-p~
+     + Separated ~ref-man-py-installed-version-string~
+   - In ~ref-man-ss~
+     + Changes to WIP on ~ref-man-ss-citation-filter-widget~
+   - In ~ref-man-util~
+     + Moved ~ref-man--num-to-months~ from ~ref-man-core~

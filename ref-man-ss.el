@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 26 September 2022 09:03:10 AM IST>
+;; Time-stamp:	<Friday 07 October 2022 03:59:03 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -52,6 +52,7 @@ They should be in format ((symbol (\"list\" \"of\" \"keywords\"))).")
     ("â" . "\"")
     ("â" . "\"")
     ("â" . "-")
+    ("â" . "--")
     ("Ã¢ÂÂ" . "--")
     ("Ã¢ÂÂ" . "--")
     ("Ã¢ÂÂ" . " ")
@@ -261,18 +262,18 @@ In this case the `matchedPresentations' key is extracted."
                 (setq j (+ 1 j))))
             results)))
 
-
-(setq ref-man-ss-citation-filters `((author)
-                                    ;; (title "transfer")
-                                    (year 2020 2022)
-                                    ;; ,(cons 'venue (ref-man-ss-citation-filter-get-venues))
-                                    (citationcount 100 100000)
-                                    ;; (influentialcitationcount 1 100)
-                                    )
-      ref-man-ss-filter-count 200)
-
 (defun ref-man-ss-citation-filter-get-venues ()
-  (-flatten (a-vals ref-man-ss-citation-filter-venues)))
+  (-flatten (a-vals ref-man-ss-citation-filter-preferred-venues)))
+
+(eval-when-compile
+  (defvar ref-man-ss-citation-filters
+    `((author)
+      (title)
+      (year)
+      ,(cons 'venue (ref-man-ss-citation-filter-get-venues))
+      (citationcount)
+      (influentialcitationcount))))
+(defvar ref-man-ss-filter-count 30)
 
 (defun ref-man-ss-filter-selected-buffer ()
   (interactive)
@@ -292,6 +293,7 @@ In this case the `matchedPresentations' key is extracted."
                    (goto-char (point-min))
                    (org-entry-get (point) "PAPERID"))))
          (data (ref-man-ss-fetch-paper-citations ssid `((count . ,count)) `(filters ,filters))))
+    ;; (ref-man-ss-citation-filter-widget (buffer-name buffer) default-filters)
     (with-current-buffer buffer
       (ref-man-org-update-filtered-subr data t))))
 
@@ -308,89 +310,95 @@ In this case the `matchedPresentations' key is extracted."
        (_ (debug)))
      (if enabled "Enabled" "Disabled"))))
 
-(defun ref-man-ss-citation-filter-widget (buf-name)
-  (switch-to-buffer (format "*filter citations settings for %s*" buf-name))
-  (kill-all-local-variables)
-  (let ((inhibit-read-only t))
-    (erase-buffer))
-  (remove-overlays)
-  (widget-insert "Ref Man Filter Semantic Scholar Citations.\n")
+(defun ref-man-ss--widget-action-func (what)
+  (lambda (from changed &rest args)
+    (ref-man-ss-citation-filter-widget-handler what from changed args)))
 
-  (widget-insert "\n")
-  (widget-create 'checkbox
-                 :notify (lambda (from changed &rest args)
-                           (my/ref-man-filter-handler 'author from changed args))
-                 nil)
-  (widget-insert " Author Filter\n")
-  (widget-create 'editable-list
-                 :size 13
-                 :notify (lambda (from changed &rest args)
-                           (my/ref-man-filter-handler 'author-item from changed args))
-                 :entry-format "%i %d %v" ; Text after the field!
-                 :indent 2
-                 '(editable-field :value "author-id"))
+(defun ref-man-ss--widget-notify-func (what)
+  (lambda (from changed &rest args)
+    (ref-man-ss-citation-filter-widget-handler what from changed args)))
 
-  (widget-insert "\n")
-  (widget-create 'checkbox
-                 :notify (lambda (from changed &rest args)
-                           (my/ref-man-filter-handler 'title from changed args))
-                 nil)
-  (widget-create 'editable-field :size 1 :format " Title regexp: %v" "")
+(defun ref-man-ss-citation-filter-widget (buf-name default-filters)
+  (let ((buf (get-buffer-create
+              (format "*SS Filters - %s" (cadr (split-string buf-name "/")))))
+        (win (util/get-or-create-window-on-side)))
+    (with-current-buffer buf
+      (kill-all-local-variables)
+      (let ((inhibit-read-only t))
+        (erase-buffer))
+      (let ((action-func 'ref-man-ss--widget-action-func)
+            (notify-func 'ref-man-ss--widget-notify-func))
+        (remove-overlays)
+        (widget-insert "Ref Man Filter Semantic Scholar Citations.\n")
 
-  (widget-insert "\n")
-  (widget-create 'checkbox
-                 :notify (lambda (from changed &rest args)
-                           (my/ref-man-filter-handler 'venues from changed args))
-                 nil)
+        (widget-insert "\n")
+        (widget-create 'checkbox
+                       :notify (funcall action-func 'author)
+                       (cdr (a-get default-filters 'author)))
+        (widget-insert " Author Filter\n")
+        (widget-create 'editable-list
+                       :size 13
+                       :notify (lambda (from changed &rest args)
+                                 (ref-man-ss-citation-filter-widget-handler 'author-item from changed args))
+                       :entry-format "%i %d %v" ; Text after the field!
+                       :indent 2
+                       '(editable-field :value "author-id"))
 
-  (widget-insert " Preferred Venues:  ")
-  (seq-do (lambda (x)
-            (widget-insert (format "%s: " x))
-            (widget-create 'checkbox
-                           :notify (lambda (from changed &rest args)
-                                     (my/ref-man-filter-handler (cons 'venue x) from changed args))
-                           t)
-            (widget-insert ", "))
-          (-butlast (a-keys my/ref-man-ss-citation-filter-venues)))
-  (let ((x (-last-item (a-keys my/ref-man-ss-citation-filter-venues))))
-    (widget-insert (format "%s: " x))
-    (widget-create 'checkbox
-                   :notify (lambda (from changed &rest args)
-                             (my/ref-man-filter-handler (cons 'venue x) from changed args))
-                   t))
+        (widget-insert "\n")
+        (widget-create 'checkbox
+                       :notify (funcall action-func 'title)
+                       (cdr (a-get default-filters 'title)))
+        (widget-create 'editable-field :size 1
+                       :format " Title regexp: %v"
+                       :action (funcall action-func 'title-val)
+                       "")
 
-  (widget-insert "\n")
-  (widget-create 'checkbox
-                 :notify (lambda (from changed &rest args)
-                           (my/ref-man-filter-handler 'year from changed args))
-                 nil)
-  (widget-insert " Year Range: ")
-  (widget-create 'editable-field :size 4 :format "min = %v" "2000")
-  (widget-create 'editable-field :size 4 :format "  max = %v" "2022")
+        (widget-insert "\n")
+        (widget-create 'checkbox
+                       :notify (funcall notify-func 'venues)
+                       (cdr (a-get default-filters 'venue)))
+        (widget-insert " Preferred Venues:  ")
+        (let ((venue-keys (a-keys my/ref-man-ss-citation-filter-venues)))
+          (cl-loop for i from 0
+                   for x in venue-keys do
+                   (widget-insert (format "%s: " x))
+                   (widget-create 'checkbox
+                                  :notify (funcall notify-func (cons 'venue x))
+                                  t)
+                   (if (= (% (+ i 1) 5) 0)
+                       (widget-insert (concat "\n" (make-string 22 ? )))
+                     (unless (= i (- (length venue-keys) 1))
+                       (widget-insert ", ")))))
+        (widget-insert "\n")
+        (widget-create 'checkbox
+                       :notify (funcall notify-func 'year)
+                       (cdr (a-get default-filters 'year)))
+        (widget-insert " Year Range: ")
+        (widget-create 'editable-field :size 4 :format "min = %v" "2000")
+        (widget-create 'editable-field :size 4 :format "  max = %v" "2022")
 
-  (widget-insert "\n")
-  (widget-create 'checkbox
-                 :notify (lambda (from changed &rest args)
-                           (my/ref-man-filter-handler 'cite-count from changed args))
-                 nil)
-  (widget-insert  " Citation Count: ")
-  (widget-create 'editable-field :size 4 :format "min = %v" "1")
-  (widget-create 'editable-field :size 4 :format "  max = %v" "1000")
+        (widget-insert "\n")
+        (widget-create 'checkbox
+                       :notify (funcall notify-func 'cite-count)
+                       (cdr (a-get default-filters 'citationcount)))
+        (widget-insert  " Citation Count: ")
+        (widget-create 'editable-field :size 4 :format "min = %v" "1")
+        (widget-create 'editable-field :size 4 :format "  max = %v" "1000")
 
-  (widget-insert "\n")
-  (widget-create 'checkbox
-                 :notify (lambda (from changed &rest args)
-                           (my/ref-man-filter-handler 'inf-cite-count from changed args))
-                 t)
-  (widget-insert  " Influential Citation Count: ")
-  (widget-create 'editable-field :size 4 :format "min = %v" "1")
-  (widget-create 'editable-field :size 4 :format "  max = %v" "1000")
+        (widget-insert "\n")
+        (widget-create 'checkbox
+                       :notify (funcall notify-func 'inf-cite-count)
+                       (cdr (a-get default-filters 'influentialcitationcount)))
+        (widget-insert  " Influential Citation Count: ")
+        (widget-create 'editable-field :size 4 :format "min = %v" "1")
+        (widget-create 'editable-field :size 4 :format "  max = %v" "1000")
 
-  (widget-create 'editable-field :size 2 :format "\nNumber of Results = %v" "30"
-                 :notify (lambda (from changed &rest args)
-                           (my/ref-man-filter-handler 'num-results from changed args)))
-  (use-local-map widget-keymap)
-  (widget-setup))
+        (widget-create 'editable-field :size 2 :format "\nNumber of Results = %v"
+                       :action (funcall action-func 'num-results)
+                       (number-to-string ref-man-ss-filter-count))
+        (use-local-map widget-keymap)
+        (widget-setup))
+      (set-window-buffer win buf))))
 
 
 (provide 'ref-man-ss)

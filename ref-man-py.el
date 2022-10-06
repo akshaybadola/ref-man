@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 22 July 2022 08:58:28 AM IST>
+;; Time-stamp:	<Friday 07 October 2022 03:59:03 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -166,16 +166,29 @@ Source dir is given by `ref-man-py-home-dir'."
 
 (defun ref-man-py-pypi-update-available-p ()
   "Check pypi for updates."
-  (user-error "[ref-man] `ref-man-py-pypi-update-available-p' Not implemented"))
+  (let* ((pkg-name "ref-man-py")
+         (url (format "https://pypi.org/pypi/%s/json" pkg-name))
+         (pkg-info (with-current-buffer (url-retrieve-synchronously url)
+                     (goto-char (point-min))
+                     (re-search-forward "\r?\n\r?\n")
+                     (json-read)))
+         (version-available (a-get-in pkg-info '(info version)))
+         (version-installed (ref-man-py-installed-version-string)))
+    (version< version-installed version-available)))
+
+(defun ref-man-py-installed-version-string ()
+  "Return string version of the installed module."
+  (string-trim (replace-regexp-in-string
+                "ref-man.*? version \\(.*\\)" "\\1"
+                (ref-man-py-installed-mod-version
+                 (path-join ref-man-py-env-dir "bin" "python")))))
+
 
 (defun ref-man-py-env-needs-update-p ()
   "Check if `ref-man-py' module needs to be updated."
   (if (ref-man-py-home-dir-valid-p)
       (not (equal (ref-man-py-file-mod-version)
-                  (string-trim (replace-regexp-in-string
-                                "ref-man.*? version \\(.*\\)" "\\1"
-                                (ref-man-py-installed-mod-version
-                                 (path-join ref-man-py-env-dir "bin" "python"))))))
+                  (ref-man-py-installed-version-string)))
     (ref-man-py-pypi-update-available-p)))
 
 (defun ref-man-py-env-uninstall-module (env)

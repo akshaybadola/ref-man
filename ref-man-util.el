@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 26 September 2022 09:03:10 AM IST>
+;; Time-stamp:	<Friday 07 October 2022 03:59:03 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -45,6 +45,11 @@
     "t" "than" "that" "the" "then" "there" "these"
     "through" "to" "too" "under" "up" "very" "was" "were"
     "what" "when" "where" "which" "who" "why" "will" "with"))
+
+(defconst ref-man--num-to-months
+  '((1 . "Jan") (2 . "Feb") (3 . "Mar") (4 . "Apr")
+    (5 . "May") (6 . "Jun") (7 . "Jul") (8 . "Aug")
+    (9 . "Sep") (10 . "Oct") (11 . "Nov") (12 . "Dec")))
 
 (defvar ref-man-bibtex-ascii-replacement-strings
   '(("í" . "{\\\\'i}")
