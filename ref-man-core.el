@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 07 October 2022 03:59:03 AM IST>
+;; Time-stamp:	<Wednesday 16 November 2022 09:26:01 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -2722,9 +2722,11 @@ citations after that."
       (when abs (ref-man-org-insert-abstract-list-item abs buf))))
   ;; Delete empty lines from here till end
   ;; They should all be empty lines
-  (when (= (point) (point-at-bol))
-    (backward-char))
-  (delete-region (point) (point-max))
+  (org-end-of-meta-data)
+  (when (and (= (point) (point-at-bol))
+             (string-blank-p (buffer-substring-no-properties (point) (point-max))))
+    (backward-char)
+    (delete-region (point) (point-max)))
   (unless current
     (org-insert-heading-respect-content))
   (org-demote)                          ; demote only once

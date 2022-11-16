@@ -372,3 +372,11 @@
      + Changes to WIP on ~ref-man-ss-citation-filter-widget~
    - In ~ref-man-util~
      + Moved ~ref-man--num-to-months~ from ~ref-man-core~
+
+** [2022-11-16 Wed 09:22]
+   - In ~ref-man-core~
+     + A fix in ~ref-man-org-insert-ss-data-subr~
+   - In ~ref-man-export~
+     + ~ref-man-export-link-standalone-files~ symlinks instead of copies the files
+   - In ~ref-man-util~
+     + New function ~maybe-delete-link~

@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 22 July 2022 08:58:11 AM IST>
+;; Time-stamp:	<Wednesday 16 November 2022 09:26:01 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -190,10 +190,10 @@ See `ref-man-export-get-paper-metadata' and
   :group 'ref-man)
 
 (defcustom ref-man-export-paper-version-org-file nil
-  "Save current org version file to disk for output type 'paper.
+  "Save current org version file to disk for output type \\='paper.
 
 When non-nil write an org file with md5 sum suffix also along
-with markdown file.  Only for output type 'paper."
+with markdown file.  Only for output type \\='paper."
   :type 'boolean
   :group 'ref-man)
 
@@ -404,7 +404,7 @@ METADATA is modified and returned in a list along with bibtexs and abstract."
                                             &optional no-refs)
   "Generate alist for yaml metadata for `ref-man-export-docproc-article'.
 
-TYPE is one of 'html 'pdf 'both 'blog, TITLE is the title of the
+TYPE is one of \\='html \\='pdf \\='both \\='blog, TITLE is the title of the
 article, BIB-FILE is the additional bibliography file for
 citations, MATHJAX-PATH is the path where Mathjax scripts would
 be located and CSL-FILE is the Citation Style File.
@@ -526,7 +526,7 @@ default author alist."
 
 (defun ref-man-export-get-article-metadata (type)
   "Extract keywords and standard metadata for journal.
-TYPE has to be 'paper for this hook to run."
+TYPE has to be \\='paper for this hook to run."
   (when (eq type 'paper)
     (let* ((props (org-entry-properties))
            (author (ref-man-export-check-author (a-get props "AUTHOR")))
@@ -544,7 +544,7 @@ TYPE has to be 'paper for this hook to run."
 
 (defun ref-man-export-get-journal-metadata (type)
   "Extract journal type and template from property drawer.
-TYPE has to be 'paper for this hook to run."
+TYPE has to be \\='paper for this hook to run."
   (when (eq type 'paper)
     (let* ((props (org-entry-properties)))
       (setq ref-man-export-metadata
@@ -554,7 +554,7 @@ TYPE has to be 'paper for this hook to run."
                      (a-get ref-man-export-journal-args (a-get props "JOURNAL")))))))
 
 (defun ref-man-export-get-paper-metadata (type)
-  "Extract abstract and section demarcations for TYPE 'paper."
+  "Extract abstract and section demarcations for TYPE \\='paper."
   (when (eq type 'paper)
     (save-excursion
       (save-restriction
@@ -589,14 +589,21 @@ Optional BUFFER specifies the org buffer."
             (push (substring-no-properties (match-string 1)) imgs))))
       imgs)))
 
-(defun ref-man-export-copy-standalone-files (&optional tex-file)
+(defun ref-man-export-link-standalone-files (&optional tex-file out-dir)
   "Copy all supporting files corresponding to a TEX-FILE.
 
 Create a new folder based on the title of the document and copy
 the img, supporting tex and bib files for easy upload to
-servers."
-  (interactive)
-  (let* ((tex-file (or tex-file
+servers.
+
+With a \\[universal-argument] the name is read from the
+minibuffer, else it's determined from the \"title\" field of the
+tex file."
+  (interactive "p")
+  (unless tex-file
+    (error "Latex file must be given when calling non-interactively"))
+  (let* ((interactive-p (numberp tex-file))
+         (tex-file (or (and (not interactive-p) tex-file)
                        (ido-read-file-name "Enter the tex file path: ")))
          (bib-file (concat (string-remove-suffix ".tex" tex-file) ".bib"))
          (docs-dir ref-man-export-output-dir)
@@ -611,26 +618,27 @@ servers."
                                  (split-string
                                   (substring-no-properties (match-string 1))))
                          "-")))))
-         (old-dir (f-parent tex-file))
-         (out-dir (f-join docs-dir (concat doc-name "-standalone")))
+         (out-dir (or out-dir (f-join docs-dir (concat doc-name "-standalone/"))))
          (out-file (f-join out-dir (f-filename tex-file)))
          (out-bib-file (concat (string-remove-suffix ".tex" out-file) ".bib")))
     (kill-buffer buf)
-    (when (f-exists? out-dir)
-      (f-delete out-dir t))
-    (f-mkdir out-dir)
-    (copy-file tex-file out-file)
-    (copy-file bib-file out-bib-file)
+    (unless (f-exists? out-dir)
+      (f-mkdir out-dir))
+    (copy-file tex-file out-file t)
+    (when (find-buffer-visiting out-file)
+      (kill-buffer (find-buffer-visiting out-file)))
+    (make-symbolic-link bib-file out-bib-file t)
     (let ((buf (find-file-noselect out-file))
-          cls-file
-          sty-files
-          img-files)
+          cls-file sty-files img-files)
       (with-current-buffer buf
         (goto-char (point-min))
         (re-search-forward "\\documentclass\\[.*?]{\\(.+?\\)}")
-        (setq cls-file (string-trim (shell-command-to-string
-                                     (format "kpsewhich %s.cls"
-                                             (substring-no-properties (match-string 1))))))
+        (setq cls-file (substring-no-properties (match-string 1)))
+        (maybe-delete-link out-dir (format "%s.cls" cls-file))
+        (setq cls-file
+              (string-trim (shell-command-to-string
+                            (format "kpsewhich %s.cls"
+                                    (substring-no-properties (match-string 1))))))
         (goto-char (point-min))
         (while (re-search-forward "\\(\\usepackage\\(?:\\[.+?]\\)?\\){\\(.+?\\)}" nil t)
           (push (split-string (substring-no-properties (match-string 2)) ",") sty-files))
@@ -641,18 +649,18 @@ servers."
             (replace-match (format "%s{%s}"
                                    (match-string 1)
                                    (concat "./" (f-filename (match-string 2)))))))
+        (make-symbolic-link cls-file out-dir t)
         (seq-do (lambda (x)
-                  (copy-file (string-trim
-                              (shell-command-to-string (format "kpsewhich %s.sty" x)))
-                             (f-join out-dir (f-filename (concat x ".sty"))) t))
+                  (maybe-delete-link out-dir (format "%s.sty" x))
+                  (make-symbolic-link (string-trim
+                                       (shell-command-to-string (format "kpsewhich %s.sty" x)))
+                                      out-dir t))
                 (-flatten sty-files))
         (seq-do (lambda (x)
-                  (copy-file x
-                             (f-join out-dir (f-filename x)) t))
+                  (make-symbolic-link x out-dir t))
                 img-files)
         (save-buffer))
       (kill-buffer buf))))
-
 
 (defun ref-man-export-generate-standalone ()
   "Create a folder with all files required for a self contained document.
@@ -717,7 +725,7 @@ Requires the bib and other files to be generated once with
       (kill-buffer buf))))
 
 (defun ref-man-export-blog-no-urls (&optional buffer)
-  "Export BUFFER as 'blog.
+  "Export BUFFER as \\='blog.
 
 BUFFER defaults to `current-buffer'.
 
@@ -727,7 +735,7 @@ See `ref-man-export-docproc-article' for details."
                                   '(:with-toc t :with-tables t)))
 
 (defun ref-man-export-both-no-urls (&optional buffer)
-  "Export BUFFER as both 'blog and 'pdf.
+  "Export BUFFER as both \\='blog and \\='pdf.
 
 BUFFER defaults to `current-buffer'.
 
@@ -737,7 +745,7 @@ See `ref-man-export-docproc-article' for details."
                                   '(:with-toc t :with-tables t)))
 
 (defun ref-man-export-html-no-urls (&optional buffer)
-  "Export BUFFER as 'html.
+  "Export BUFFER as \\='html.
 
 BUFFER defaults to `current-buffer'.
 
@@ -746,7 +754,7 @@ See `ref-man-export-docproc-article' for details."
   (ref-man-export-docproc-article buffer 'html t (not current-prefix-arg)
                                   '(:with-toc t :with-tables t)))
 
-(defun ref-man-export-article-no-urls (prefix-arg &optional buffer)
+(defun ref-man-export-article-no-urls (pref-arg &optional buffer)
   "Export BUFFER as a pdf article.
 
 BUFFER defaults to `current-buffer'.
@@ -763,7 +771,7 @@ The output type depends on the prefix.
 This function calls `ref-man-export-docproc-article' with
 appropriate arguments."
   (interactive "p")
-  (pcase prefix-arg
+  (pcase pref-arg
     (1 (ref-man-export-docproc-article
         buffer 'pdf t t '(:with-tables t)))
     (2 (ref-man-export-docproc-article  ; html
@@ -774,7 +782,7 @@ appropriate arguments."
         buffer 'pdf t t '(:with-tables t) nil t))
     (5 (ref-man-export-docproc-article  ; force html
         buffer 'html t t '(:with-tables t) nil t))
-    (5 (ref-man-export-docproc-article  ; force both
+    (6 (ref-man-export-docproc-article  ; force both
         buffer 'both t t '(:with-tables t) nil t))))
 
 (defun ref-man-export-paper-no-urls (&optional pref-arg buffer)
@@ -882,11 +890,11 @@ Includes basic maths packages.")
 
 (defun ref-man-export-parse-references (type &optional no-warn-types)
   "Parse the references from org text.
-Search for all org links of type (or 'fuzzy 'custom-id 'http) and
+Search for all org links of type (or \\='fuzzy \\='custom-id \\='http) and
 gather the heading to which the link points to, if it can be
 parsed as bibtex.
 
-If TYPE is 'paper then buffer headings are collected as links, as
+If TYPE is \\='paper then buffer headings are collected as links, as
 the buffer is narrowed to subtree by default.  Otherwise subtree
 headings.
 
@@ -951,7 +959,7 @@ NO-WARN-TYPES can be passed as a list of (string) link types."
   "Generate yaml header for `ref-man-export-docproc-article'.
 
 TYPE is the export type.
-ABSTRACT is used when type is 'paper.
+ABSTRACT is used when type is \\='paper.
 METADATA is the metadata to be inserted in the markdown file.
 REFS-STRING is references in yaml format."
   (replace-regexp-in-string
@@ -991,7 +999,7 @@ REFS-STRING is references in yaml format."
   "Extract article metadata by running the required hooks.
 
 TYPE is the article type.
-PLAIN is only valid for TYPE 'paper and indicates
+PLAIN is only valid for TYPE \\='paper and indicates
 no journal specific formatting."
   (setq ref-man-export-metadata nil)
   (run-hook-with-args 'ref-man-export-metadata-hook type)
@@ -1108,19 +1116,19 @@ whatever its name is.
 When argument BUFFER is non-nil, export the full buffer.  Default
 is to export the subtree.
 
-Argument TYPE specifies the output type, can be one of 'paper,
-'pdf, 'html, 'both or 'blog.  There are subtle differences in
-generation.  'pdf type is exported as an article without an
-abstract.  In all types except 'paper, code blocks and tables are
-preserved and exported without evaluation, while 'paper type
+Argument TYPE specifies the output type, can be one of \\='paper,
+\\='pdf, \\='html, \\='both or \\='blog.  There are subtle differences in
+generation.  \\='pdf type is exported as an article without an
+abstract.  In all types except \\='paper, code blocks and tables are
+preserved and exported without evaluation, while \\='paper type
 removes them.
 
-Type 'both means both PDF and HTML files will be generated as
-targets.  Type 'paper implies that output type is latex and pdf,
+Type \\='both means both PDF and HTML files will be generated as
+targets.  Type \\='paper implies that output type is latex and pdf,
 but that the first paragraph in the subtree is interpreted as the
 abstract automatically.
 
-Types 'blog and 'paper put additional metadata in the generated
+Types \\='blog and \\='paper put additional metadata in the generated
 files.  See `ref-man-export-blog-extra-opts'.
 
 Optional non-nil NO-URLS means to not include URLs in generated

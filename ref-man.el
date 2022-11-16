@@ -5,9 +5,9 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 07 October 2022 03:59:03 AM IST>
+;; Time-stamp:	<Wednesday 16 November 2022 09:26:01 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org-mode, eww
-;; Version:     0.7.20
+;; Version:     0.7.21
 ;; Package-Requires: ((a "0.1.1") (async "1.9.4") (org "9.5") (biblio-core "0.2.1") (gscholar-bibtex "0.3.1")
 ;;                    (find-file-in-project "6.2.1") (websocket "1.12") (dash "2.18.0") (bind-key "2.4")
 ;;                    (org-ref "1.1.1") (yaml "0.1.0"))
@@ -97,9 +97,6 @@ See URL `https://github.com/allenai/science-parse' for details"
 (defconst ref-man-home-dir (file-name-directory load-file-name)
   "Home or install directory for `ref-man'.")
 
-(defconst ref-man-version "0.6.10"
-  "`ref-man' version number.")
-
 (require 'ref-man-core)
 (require 'ref-man-chrome)
 (require 'ref-man-remote)
@@ -144,8 +141,8 @@ See URL `https://github.com/allenai/science-parse' for details"
 
 (defun ref-man-science-parse-local-server-running-p (&optional show-msg)
   "Check if the Science Parse server running.
-Return 'external if server is running but outside Emacs and
-'internal if running inside Emacs,  nil otherwise."
+Return \\='external if server is running but outside Emacs and
+\\='internal if running inside Emacs,  nil otherwise."
   (let* ((java-proc (string-match-p "science-parse"
                                    (shell-command-to-string  "ps -ef | grep java")))
         (buf-proc (get-buffer-process "*science-parse*"))

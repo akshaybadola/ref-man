@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 07 October 2022 03:59:03 AM IST>
+;; Time-stamp:	<Wednesday 16 November 2022 09:26:01 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -228,6 +228,11 @@ Replace IN string WITH WHAT."
 BEG and END are region markers.  See `sort-words'."
   (interactive "*P\nr")
   (sort-regexp-fields reverse "\\(\\sw\\|\\s_\\)+" "\\&" beg end))
+
+(defun maybe-delete-link (out-dir file)
+  "Maybe delete symlink for FILE (or filename) if it exists in OUT-DIR."
+  (let ((link (f-join out-dir (f-filename file))))
+    (when (f-symlink? link) (f-delete link))))
 
 ;; TODO: Maybe rename this to a more generic name
 (defun ref-man--get-or-create-window-on-side ()

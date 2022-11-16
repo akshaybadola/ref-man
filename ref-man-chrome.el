@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Tuesday 10 May 2022 09:07:17 AM IST>
+;; Time-stamp:	<Wednesday 16 November 2022 09:26:01 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -437,8 +437,8 @@ Optionally UPDATE the heading."
 
 (defun ref-man-chrome-insert-to-org (update extract)
   "Extract and insert the current entry to an org buffer.
-UPDATE can be either 'current or 'next and EXTRACT is one of
-'link or 'everything.  When UPDATE is 'next, create a new heading
+UPDATE can be either \\='current or \\='next and EXTRACT is one of
+\\='link or \\='everything.  When UPDATE is \\='next, create a new heading
 which is a child of the org heading at point in the org buffer,
 else update the heading at point.
 
