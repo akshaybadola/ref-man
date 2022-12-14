@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 26 September 2022 09:03:10 AM IST>
+;; Time-stamp:	<Wednesday 14 December 2022 11:15:17 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -352,17 +352,17 @@ plist which contains the http status.
 SITE is a symbol according to which the helper function is
 returned.  Possible values for SITE are:
 
-'acl            denotes an `aclweb.org' type website
-'arxiv          `arxiv.org'
-'doi            a DOI redirect
-'neurips        either a `nips.cc' or `neurips.cc' type site
-'mlr            `mlr.org' proceedings
-'aaai           `aaai.org'
-'acm            `acm.org'
-'cvf            `cv-foundation.org'
-'cvf-old        Older version of cvf website
-'openreview     `openreview.org'
-'ss             `semanticscholar.org'
+\\='acl            denotes an \"aclweb.org\" type website
+\\='arxiv          \"arxiv.org\"
+\\='doi            a DOI redirect
+\\='neurips        either a \"nips.cc\" or \"neurips.cc\" type site
+\\='mlr            \"mlr.org\" proceedings
+\\='aaai           \"aaai.org\"
+\\='acm            \"acm.org\"
+\\='cvf            \"cv-foundation.org\"
+\\='cvf-old        Older version of cvf website
+\\='openreview     \"openreview.org\"
+\\='ss             \"semanticscholar.org\"
 
 In case none of them matches, then the default is to retrieve the
 first pdf link from the buffer."
@@ -527,7 +527,7 @@ ARGS is for compatibility and not used."
         (t nil)))
 
 (defun ref-man-url--sort-best-subroutine (x)
-  "Sort best subroutines for a given '(site . url) X."
+  "Sort best subroutines for a given \\='(site . url) X."
   (pcase (car x)
     ('acm (or (let ((link (car (-filter (lambda (y) (string-match-p "pdf" y)) (cdr x)))))
                 (and link (cons 'pdf link)))
@@ -537,7 +537,7 @@ ARGS is for compatibility and not used."
 
 (defun ref-man-url-get-best-pdf-url (urls)
   "Get the best url from a list of URLS according to ease of downloading.
-Return a '(site url) pair."
+Return a \\='(site url) pair."
   (let ((pdf-urls (-filter #'ref-man-url-downloadable-pdf-url-p urls)))
     (if pdf-urls
         (cons 'pdf (car pdf-urls))

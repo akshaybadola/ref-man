@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Tuesday 10 May 2022 09:07:17 AM IST>
+;; Time-stamp:	<Wednesday 14 December 2022 11:15:17 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -103,8 +103,9 @@ Only works where a POSIX \"find\" is available.
 
 Copy of `util/fast-files-or-dirs'.  Custom local package.
 
-F-OR-D can be one of 'f 'files 'd 'dirs or 'both.  If anything
-else, is given, everything is returned, including symlinks etc.
+F-OR-D can be one of \\='f \\='files \\='d \\='dirs or \\='both.
+If anything else, is given, everything is returned, including
+symlinks etc.
 
 Optionally if RECURSE is non-nil recurse into the directories.
 INCLUDE-HIDDEN includes hidden files and files in hidden

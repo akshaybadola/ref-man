@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 16 November 2022 09:26:01 AM IST>
+;; Time-stamp:	<Wednesday 14 December 2022 11:15:17 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -343,7 +343,7 @@ written to it."
                         (buffer-string)))
           (link-re ref-man-maybe-file-fuzzy-custid-link-re)
           (backend (pcase type
-                     ((or 'html 'pdf 'blog 'both) 'ref-gfm)
+                     ((or 'html 'pdf 'blog 'both 'ref-gfm) 'ref-gfm)
                      ('paper 'ref-md)
                      (_ nil)))
           (ref-man-export-pre-export-md-functions
@@ -1075,6 +1075,27 @@ CHECKSUM is the current data checksum."
                                  (downcase (org-get-heading t t t t)))
                                 "references"))))
       (narrow-to-region beg (point)))))
+
+
+(defun ref-man-export-to-md (pref-arg)
+  (interactive "p")
+  (let ((doc-root (util/org-get-tree-prop "DOC_ROOT")))
+    (save-excursion
+      (when doc-root
+        (goto-char doc-root))
+      (let* ((with-toc (= pref-arg 4))
+             (out-dir (if (org-entry-get (point) "MD_OUTPUT_DIR")
+                          (f-expand (org-entry-get (point) "MD_OUTPUT_DIR"))
+                        (ido-read-directory-name "Enter the name of the output directory: ")))
+             (title (substring-no-properties (org-get-heading t t t t)))
+             (title-words (split-string (downcase (ref-man--remove-punc title t))))
+             (md-file (f-join out-dir (concat (string-join title-words "-") ".md"))))
+        (ref-man-export-org-to-md 'ref-gfm t)
+        (with-current-buffer ref-man-export-temp-md-buf
+          (unless with-toc
+            (ref-man-export-delete-md-toc (current-buffer)))
+          (write-region (point-min) (point-max) md-file))
+        (ref-man-export-find-file-other-window-no-ask md-file t)))))
 
 
 ;; TODO: Exporting images directly as includegraphics in pdf

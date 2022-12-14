@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 16 November 2022 09:26:01 AM IST>
+;; Time-stamp:	<Wednesday 14 December 2022 11:15:17 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -159,8 +159,8 @@ See `org-ref-nonascii-latex-replacements'")
 The head of the list is the associative element.
 
 Example:
-    (pairs-to-alist '((a b) (b c d) (a d) (e . f)))
-     => '((a b d) (b c d) (e f))"
+    (pairs-to-alist \\='((a b) (b c d) (a d) (e . f)))
+     => \\='((a b d) (b c d) (e f))"
   (when (and (consp pairs) (a-assoc pairs))
     (let (newlist)
       (seq-do (lambda (x)
