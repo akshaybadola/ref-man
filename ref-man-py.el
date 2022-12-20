@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 07 October 2022 03:59:03 AM IST>
+;; Time-stamp:	<Wednesday 14 December 2022 11:15:17 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -365,7 +365,7 @@ This is sent via http and lets the server exit gracefully."
 
 (defun ref-man-py-process-running ()
   "Check if python server is running.
-Returns 'external or 'internal according to where the process is
+Returns \\='external or \\='internal according to where the process is
 running if it's running else nil."
   (cond ((get-buffer-process "*ref-man-server*")
          (setq ref-man-py-external-process-pid nil)

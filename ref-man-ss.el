@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 07 October 2022 03:59:03 AM IST>
+;; Time-stamp:	<Wednesday 14 December 2022 11:15:17 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -147,10 +147,9 @@ PARAMS can be queried from the service.
 Example PARAMS and FILTERS alist for getting 100 citations from
 years 2012-2018:
 
-PARAMS: '((count . 100))
+PARAMS: \\='((count . 100))
 
-FILTERS: '((year . ((min . 2012) (max . 2018))))
-"
+FILTERS: \\='((year . ((min . 2012) (max . 2018))))"
   (let* ((url (ref-man-py-url (format "s2_citations/%s" ssid) params))
          (buf (if (and filters (cdr filters))
                   (ref-man--post-json-synchronous url filters t)

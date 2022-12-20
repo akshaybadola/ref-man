@@ -380,3 +380,7 @@
      + ~ref-man-export-link-standalone-files~ symlinks instead of copies the files
    - In ~ref-man-util~
      + New function ~maybe-delete-link~
+
+** [2022-12-14 Wed 11:15]
+   - Fixed some docstrings
+   - Added new function ~ref-man-export-to-md~

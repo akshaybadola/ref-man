@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 16 November 2022 09:26:01 AM IST>
+;; Time-stamp:	<Wednesday 14 December 2022 11:15:17 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -1008,7 +1008,7 @@ See for details."
   "Check if BLOCKS of drawers are balanced.
 BLOCKS is an alist of beginning and end of drawers.
 
-E.g. '((beg . 82) (end . 630) (beg . 749) (end . 1297))"
+E.g. \\='((beg . 82) (end . 630) (beg . 749) (end . 1297))"
   (= (length (-filter (lambda (x) (eq (car x) 'beg)) blocks))
      (length (-filter (lambda (x) (eq (car x) 'end)) blocks))))
 
@@ -1183,7 +1183,7 @@ of the heading content if it doesn't exist."
 (defun ref-man-org-text-bounds ()
   "Return bounds of text body if present in org subtree.
 
-Return value is a triple of '(beg end has-body) where beg is the
+Return value is a triple of \\='(beg end has-body) where beg is the
 point after metadata, end is the point at end of subtree and
 has-body indicates if any text is present."
   (save-excursion
@@ -2086,7 +2086,7 @@ sanitize the entry at current point."
 
 (defun ref-man--biblio-callback (results-buffer backend)
   "Generate a search results callback for RESULTS-BUFFER.
-Results are parsed with (BACKEND 'parse-buffer)."
+Results are parsed with (BACKEND \\='parse-buffer)."
   ;; TODO: Did let not work here?
   ;;       Gotta check.
   (setq ref-man--biblio-callback-buf results-buffer)
@@ -2368,7 +2368,7 @@ Examine buffer for certain characters % and { as a heuristic."
   "Handle JSON response from `url-retrieve'.
 JSON-DATA is parsed and sent by `ref-man--eww-pdf-download-callback'.
 
-If it's a 'redirect then ask user if we should follow the
+If it's a \\='redirect then ask user if we should follow the
 redirect.  Optional argument STOREP is for batch mode."
   (when (equal '(redirect content) (-map #'car json-data))
     (let ((pdf-url (ref-man-url-get-pdf-url-according-to-source (a-get json-data 'redirect))))
@@ -2466,13 +2466,14 @@ Goto optional POINT first if given."
 (defun ref-man-org-get-links-with-conditions (buf conditions &optional narrow raw)
   "Get all links from buffer BUF which satisfy CONDITONS.
 CONDITIONS is either a unary boolean function or list of unary
-boolean functions.  If a link is true for all CONDITIONS then add
-link to result.  If CONDITIONS is nil then all links are
-returned.
+boolean functions.
+
+If a link is true for all CONDITIONS then add link to result. If
+CONDITIONS is nil then all links are returned.
 
 With optional argument NARROW is nil search parse the entire
 buffer.  When non-nil narrow according to is value.  With value
-'subtree narrow to subtree.  With value 'heading then narrow
+\\='subtree narrow to subtree.  With value \\='heading then narrow
 according to `ref-man-org-narrow-to-heading-and-body'
 
 Links are returned as an `org-element-type'.  If optional
@@ -2502,19 +2503,16 @@ instead."
       (message "[ref-man] Not in org-mode") nil)))
 
 (defun ref-man-org-get-links-of-type (buf link-re &optional narrow link-type)
-  "Retrieves all links whose `type' matches LINK-RE from buffer BUF.
+  "Retrieves all links whose :type matches LINK-RE from buffer BUF.
 LINK-RE is the regexp to match against the link type.  For
-example `http' matches `http' and `https' etc., while `^http$'
-matches only `http'.
+example \"http\" matches \"http\" and \"https\" etc., while \"^http$\"
+matches only \"http.\"
 
 Optional NARROW works the same as in `ref-man-org-get-links-with-conditions'.
 
 Optional LINK-TYPE specifies what to return.  When nil only the
 raw-link is returned.  When it equals 'path then return only the
-path value.  Helpful for `file' links sometimes.
-
-is non-nil only the link path is
-returned."
+path value.  Helpful for \\='file links sometimes."
   (let ((preds (lambda (link) (string-match-p link-re (org-element-property :type link)))))
     (pcase link-type
       ('path (mapcar (lambda (link) (org-element-property :path link))
@@ -2652,7 +2650,7 @@ DATA is json-data from semantic scholar.
 NAME is the org heading that will be generated.
 
 SEQTYPE specifies the function to format the org entry
-determined.  It can be one of 'ss 'assoc 'plist or 'bibtex.
+determined.  It can be one of \\='ss \\='assoc \\='plist or \\='bibtex.
 
 After the heading is generated, each element of the data is
 inserted as a reference.
@@ -2703,7 +2701,7 @@ WHERE specifies the point at which to insert the data.  Defaults to `point'
 IGNORE-ERRORS if non-nil, indicates to ignore any errors that may happen
 while inserting references in the buffer.
 
-ONLY if given can be one of 'refs or 'cites and means to insert
+ONLY if given can be one of \\='refs or \\='cites and means to insert
 either of References or Citations for an SS entry.
 
 NO-ABSTRACT if non-nil, do not insert abstract at the top heading.
@@ -2778,8 +2776,8 @@ published as urls are also exported as \"@misc\"."
 The link must point to either an org heading or an org
 CUSTOM_ID.
 
-With optional non-nil GET-KEY return a list of '(path key bib).  Default is
-to return bib only.
+With optional non-nil GET-KEY return a list of \\='(path key bib).
+Default is to return bib only.
 
 CLEAN is passed on to `ref-man-org-get-bib-from-org-link-subr'.
 
@@ -3022,7 +3020,7 @@ ArXiv"
 If an existing url exists in the properties and is different from
 the current url, then it is handled as following:
 
-- If the existing url property is one of type '(arxiv ss doi)
+- If the existing url property is one of type \\='(arxiv ss doi)
   then it's renamed as ARXIV_URL etc. instead.
 - If the new url is one of type '(arxiv ss doi) then that is
   named as ARXIV_URL etc. and the existing URL property remains
@@ -3285,8 +3283,8 @@ The function can't support more complex filters without hydras,
 as such one can work around that like this:
 
 (with-current-buffer some-buffer
-  (let ((cc '(\"80\" . \"100\"))
-        (yy '(\"2020\" . \"2022\")))
+  (let ((cc \\='(\"80\" . \"100\"))
+        (yy \\='(\"2020\" . \"2022\")))
     (org-scan-tags 'sparse-tree (lambda (todo tags-list level)
                                   (setq org-cached-props nil)
                                   (let ((cite-count (org-cached-entry-get nil \"CITATIONCOUNT\"))
@@ -3471,7 +3469,7 @@ Citations.  See `ref-man-org-fetch-ss-data-for-entry' for details."
 Optional ARGS should be an alist of which converts to valid json.
 The json object should correspond to Semantic Scholar Search api
 keywords, e.g.: \"{'fieldsOfStudy': ['computer-science'],
-'yearFilter': {'max': 1995, 'min': 1990}}\" or, '((fieldsOfStudy
+'yearFilter': {'max': 1995, 'min': 1990}}\" or, \\='((fieldsOfStudy
 . (computer-science)) (yearFilter (max . 1995) (min . 1990)))
 
 As of now, by default INSERT-FIRST is set to t later in the code as
