@@ -151,7 +151,12 @@ See `org-ref-nonascii-latex-replacements'")
 (defvar ref-man-maybe-file-fuzzy-custid-link-re
   (rx "[" "[" (group (seq (opt "file:") (regexp ".+?::") (or "*" "#") (+? nonl))) "]"
       "[" (group (+? any)) "]" "]")
-  "Org custom-id or fuzzy link with file prefix.")
+  "Org custom-id or fuzzy link with optional file prefix.")
+
+(defvar ref-man-maybe-local-fuzzy-custid-link-re
+  (rx "[" "[" (group (opt (seq (opt "file:") (regexp ".+?::")))) (group (seq (or "*" "#") (+? nonl))) "]"
+      "[" (group (+? any)) "]" "]")
+  "Org custom-id or fuzzy file or local link.")
 
 (defun ref-man-pairs-to-alist (pairs)
   "Merge cons PAIRS into an alist with first elements as keys.
@@ -233,6 +238,11 @@ BEG and END are region markers.  See `sort-words'."
   "Maybe delete symlink for FILE (or filename) if it exists in OUT-DIR."
   (let ((link (f-join out-dir (f-filename file))))
     (when (f-symlink? link) (f-delete link))))
+
+(defun ref-man-at-link-p ()
+  (let ((link (get-text-property (point) 'htmlize-link)))
+    (list link  (looking-at ref-man-maybe-local-fuzzy-custid-link-re)
+          (looking-back ref-man-maybe-local-fuzzy-custid-link-re))))
 
 ;; TODO: Maybe rename this to a more generic name
 (defun ref-man--get-or-create-window-on-side ()
