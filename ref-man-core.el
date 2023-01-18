@@ -1,11 +1,11 @@
 ;;; ref-man-core.el --- Core Components for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022
+;; Copyright (C) 2018,2019,2020,2021,2022,2023
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 14 December 2022 11:15:17 AM IST>
+;; Time-stamp:	<Wednesday 18 January 2023 14:22:59 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -1214,7 +1214,7 @@ the heading, otherwise delete."
   (with-current-buffer buf
     (ref-man-org-end-of-meta-data (not consolidate-drawers)
                                   no-newline)
-    (when (and (looking-back ":END:") (looking-at-p "[ \n]+"))
+    (when (and (looking-back ":END:") (or (looking-at-p "[ \n]+") (eobp)))
       (insert "\n"))
     (pcase-let* ((`(,key . ,val) prop)
                  (`(,beg ,end ,has-text) (ref-man-org-text-bounds))
@@ -2301,7 +2301,7 @@ Rest of the ARGS are a plist."
                    (goto-char pt)
                    (when ref-man-update-pdf-url-when-download
                      (ref-man--insert-org-pdf-url-property
-                      (ref-man-url-maybe-unproxy url)))
+                      (ref-man-url-maybe-remove-via-service url)))
                    (when (eq buf-type 'pdf)
                      (ref-man--insert-org-pdf-file-property file)))
                   (t
@@ -2309,7 +2309,7 @@ Rest of the ARGS are a plist."
                      (org-link-search heading)
                      (when ref-man-update-pdf-url-when-download
                        (ref-man--insert-org-pdf-url-property
-                        (ref-man-url-maybe-unproxy url)))
+                        (ref-man-url-maybe-remove-via-service url)))
                      (when (eq buf-type 'pdf)
                        (ref-man--insert-org-pdf-file-property file))))))
         (with-current-buffer ref-man--org-gscholar-launch-buffer
@@ -2317,7 +2317,7 @@ Rest of the ARGS are a plist."
             (goto-char ref-man--org-gscholar-launch-point)
             (when ref-man-update-pdf-url-when-download
               (ref-man--insert-org-pdf-url-property
-               (ref-man-url-maybe-unproxy url)))
+               (ref-man-url-maybe-remove-via-service url)))
             (when (eq buf-type 'pdf)
               (ref-man--insert-org-pdf-file-property file))))))))
 
@@ -3161,6 +3161,25 @@ With a single prefix \\[universal-argument] fetch the data from
      (_ (ref-man-org-fetch-ss-data-for-entry t t)))
    (run-hook-with-args 'ref-man-org-entry-post-update-hook)))
 
+(defun ref-man-org-update-entries-in-region-with-ss-data ()
+  "Update all entries in region with Semantic Scholar Data.
+
+Call `ref-man-org-update-entry-with-ss-data' on each org heading
+in region."
+  (interactive)
+  (when (region-active-p)
+    (util/save-mark-and-restriction
+      (narrow-to-region (region-beginning) (region-end))
+      (goto-char (point-min))
+      (when (org-at-heading-p)
+        (condition-case nil
+            (ref-man-org-update-entry-with-ss-data 1)
+          (error (message "Could not update")))
+        (while (outline-next-heading)
+          (condition-case nil
+              (ref-man-org-update-entry-with-ss-data 1)
+            (error (message "Could not update"))))))))
+
 (defface ref-man-org-load-more-face
   '((default :weight bold)
     (((class color)) :foreground "blue"))
@@ -3321,20 +3340,6 @@ as such one can work around that like this:
   "Convenience alist of key to filter names.
 
 See `ref-man-org-update-filtered-ss-citations'.")
-
-(defun ref-man-org-filter-conversion-vals (f)
-  "Convenience function for conversion of user input for filters.
-
-F is an element of filters as input by user.  See
-`ref-man-org-update-filtered-ss-citations' for how it's used."
-  (pcase (car f)
-    ((and (or 'year 'citationcount 'influentialcitationcount) c)
-     `(,c
-       (min . ,(if (numberp (cadr f)) (cadr f) (string-to-number (cadr f))))
-       (max . ,(if (numberp (caddr f)) (caddr f) (string-to-number (caddr f))))))
-    ((and 'venue c) `(venue . ((venues . ,(cdr f)))))
-    ((and 'title c) `(title  . ((title_re  . ,(nth 1 f)) (invert . ,(nth 2 f)))))
-    (_ (user-error "Uknown filter %s" (car f)))))
 
 (defun ref-man-org-filter-conversion (f)
   "Convenience function for conversion of user input for filters.
@@ -3507,7 +3512,7 @@ pagination of results isn't supported yet."
                  ('ref-man-ss-search
                   (ref-man--org-bibtex-write-ref-from-ss-ref (aref results idx) nil t))))
              (run-hook-with-args 'ref-man-org-entry-post-update-hook))
-            ((a-get result 'matchedPresentations)
+            ((a-get results 'matchedPresentations)
              (let* ((entries (ref-man-ss-search-presentations-to-ido-prompts
                               (a-get result 'matchedPresentations)))
                     (entry (ido-completing-read "Entry to insert: " entries))
@@ -3632,7 +3637,7 @@ Call function CALLBACK after fetching.
 Optional ARGS are passed on to the callback with URL as a
 list (url args)."
   (message "[ref-man] Fetching PDF from %s" url)
-  (let ((url (ref-man-url-maybe-proxy url)))
+  (let ((url (ref-man-url-maybe-via-service url)))
     (url-retrieve url callback (list url args))))
 
 (defun ref-man--download-pdf-redirect (callback url &optional point)
@@ -3643,7 +3648,7 @@ Call function CALLBACK after fetching.
 Optional POINT is passed on to the callback with URL as a
 list (url point)."
   (message "[ref-man] Fetching PDF from %s" url)
-  (let ((url (ref-man-url-maybe-proxy url)))
+  (let ((url (ref-man-url-maybe-via-service url)))
     (if point
         (url-retrieve url callback (list url point))
       (url-retrieve url callback (list url)))))
@@ -3661,7 +3666,7 @@ arguments optional ARGS.  Update the PDF_FILE property for the
 org entry after downloading."
   (if (and url (not (string-empty-p url)))
       (let ((file (ref-man-files-check-pdf-file-exists url t))
-            (url (ref-man-url-maybe-proxy url))
+            (url (ref-man-url-maybe-via-service url))
             (buf (and args (plist-get args :buffer)))
             (pt (and args (plist-get args :point)))
             (heading (and args (plist-get args :heading))))
@@ -3686,7 +3691,7 @@ org entry after downloading."
                  (with-current-buffer buf
                    (save-excursion
                      (goto-char pt)
-                     (org-set-property "PDF_URL" (ref-man-url-maybe-unproxy url)))))
+                     (org-set-property "PDF_URL" (ref-man-url-maybe-remove-via-service url)))))
                (ref-man--download-pdf-redirect-new
                 #'ref-man--eww-pdf-download-callback-store-new url args))
               ((and (not file) (not args))
@@ -3703,7 +3708,7 @@ Optional argument STOREP is for batch updates.  Store the
 filename in `ref-man--subtree-list' instead so that the whole
 subtree will be updated later."
   (let ((file (ref-man-files-check-pdf-file-exists url t))
-        (url (ref-man-url-maybe-proxy url)))
+        (url (ref-man-url-maybe-via-service url)))
     (cond ((and file (not storep))
            (message "[ref-man] File already existed.")
            ;; FIXME: What if it inserts to wrong buffer?
@@ -3812,7 +3817,7 @@ RETRIEVE-TITLE has no effect at the moment."
    ;;   "Internal variable to hold (url . buffer) pairs being fetched right now.")
    ;;
    ;; (when url
-   ;;   (let ((-url (ref-man-url-maybe-unproxy url)))
+   ;;   (let ((-url (ref-man-url-maybe-remove-via-service url)))
    ;;     (unless (member -url ref-man--fetching-url-buffers)
    ;;       (push -url ref-man--fetching-url-buffers))
    ;;     (setq ref-man--fetched-url-buffers
@@ -4296,7 +4301,7 @@ Also update the PDF-FILE property in org heading drawer if the
 web buffer was called from an org buffer."
   (interactive)
   (let ((file (ref-man-files-check-pdf-file-exists url t))
-        (url (ref-man-url-maybe-proxy url)))
+        (url (ref-man-url-maybe-via-service url)))
     (if file
         (if (y-or-n-p "File exists.  Download again? ")
             (progn (message "Downloading %s" url)

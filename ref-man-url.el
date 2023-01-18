@@ -1,11 +1,11 @@
 ;;; ref-man-url.el --- url utilities and functions for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022
+;; Copyright (C) 2018,2019,2020,2021,2022,2023
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 14 December 2022 11:15:17 AM IST>
+;; Time-stamp:	<Wednesday 18 January 2023 14:22:59 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -39,8 +39,17 @@
   "Fetch PDFs over a proxy server if non-nil.
 
 If this is non-nil then the all the pdf downloads go through the
-python server which additionally fetches it from an http proxy at
+`ref-man-py' service which additionally fetches it from an http proxy at
 localhost specified by this port."
+  :type 'boolean
+  :group 'ref-man)
+
+(defcustom ref-man-pdf-always-fetch-via-service nil
+  "Fetch PDFs from `ref-man-py' service even if proxy port is nil.
+
+If this is non-nil then the all the pdf downloads go through the
+`ref-man-py' service which may or may not fetch via the proxy
+port depending on whether the proxy port is working or not."
   :type 'boolean
   :group 'ref-man)
 
@@ -55,10 +64,12 @@ See `ref-man-pdf-proxy-port'."
 (defvar ref-man-py-server-port)     ; from `ref-man-py'
 (defvar ref-man-documents-dir)          ; from `ref-man-files'
 
+;; FIXME: This is not used
 (defvar ref-man-url-supported-sites
   '(acl arxiv neurips mlr aaai acm doi-cvpr cvf cvf-old openreview ss)
   "List of supported sites for fetching pdf.")
 
+;; FIXME: This is not used
 (defun ref-man-url-meta-url (url)
   "Return if the URL is a meta url.
 Meta url is from one of the three sites:
@@ -70,6 +81,7 @@ Meta url is from one of the three sites:
         ((string-match-p "^https?://dx.doi.org/.+$" url) 'doi)
         (t nil)))
 
+;; FIXME: This is not used
 (defvar ref-man-url-types '(("^https?://arxiv.org/.+" . arxiv)
                             ("^https?://semanticscholar.org/.+" . ss)
                             ("^https?://dx.doi.org/.+" . doi)
@@ -77,10 +89,12 @@ Meta url is from one of the three sites:
   "Alist of recognized url regex and types.
 The keys of the alist are regexps and the values are the types of URL.")
 
+;; FIXME: This is not used
 (defvar ref-man-url-org-prop-types
   '("URL" "DOI_URL" "PDF_URL" "ARXIV_URL" "ALT_URL")
   "Keys of org property considered as a URL.")
 
+;; FIXME: This is not used
 (defvar ref-man-url-maybe-pdf-url-prop-types
   '("URL" "PDF_URL" "ARXIV_URL" "ALT_URL")
   "Keys of org property considered as a URL.")
@@ -128,24 +142,25 @@ The keys of the alist are regexps and the values are the types of URL.")
          (path (car (url-path-and-query obj))))
          (string-match-p filename path)))
 
-(defun ref-man-url-maybe-proxy (url)
+(defun ref-man-url-maybe-via-service (url)
   "Return proxy URL if present.
 
 See `ref-man-pdf-proxy-port' for details."
-  (let ((prefix (format "http://localhost:%s/fetch_proxy?url="
-                        ref-man-py-server-port)))
-    (if (and ref-man-pdf-proxy-port (not (string-prefix-p "http://localhost" url)))
-        (concat prefix url)
-      url)))
+  (if (and (or ref-man-pdf-always-fetch-via-service
+               ref-man-pdf-proxy-port)
+           (not (string-prefix-p "http://localhost" url)))
+      (ref-man-py-url "fetch_url" `(("url" . ,url)))
+    url))
 
 ;; CHECK: Do I require something similar in case some other URL is proxied?
-(defun ref-man-url-maybe-unproxy (url)
+(defun ref-man-url-maybe-remove-via-service (url)
   "Remove proxy prefix if present and return URL.
 
 See `ref-man-pdf-proxy-port' for details."
-  (let ((prefix (format "http://localhost:%s/fetch_proxy?url="
-                        ref-man-py-server-port)))
-    (if (and ref-man-pdf-proxy-port (string-prefix-p prefix url))
+  (let ((prefix (ref-man-py-url "fetch_url" `(("url" . "")))))
+    (if (and (or ref-man-pdf-always-fetch-via-service
+                 ref-man-pdf-proxy-port)
+             (string-prefix-p prefix url))
         (string-remove-prefix prefix url)
       url)))
 
@@ -212,6 +227,8 @@ downloadable one."
               (if transform
                   (replace-regexp-in-string "forum\\?id=" "pdf?id=" url)
                 url))
+             ((string-match-p "www.frontiersin.org.*/pdf$" url)
+              url)
              ((string-match-p "dl.acm.org" url)
               (when (string-match-p "doi/pdf" url) url))
              (t (when (string-match-p "\\.pdf$" url) url)))))

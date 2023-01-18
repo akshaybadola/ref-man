@@ -1,11 +1,11 @@
 ;;; ref-man-ss.el --- Semantic Scholar API calls for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022
+;; Copyright (C) 2018,2019,2020,2021,2022,2023
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 14 December 2022 11:15:17 AM IST>
+;; Time-stamp:	<Wednesday 18 January 2023 14:22:59 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -46,6 +46,14 @@
 
 They should be in format ((symbol (\"list\" \"of\" \"keywords\"))).")
 
+(defvar ref-man-ss-fetch-max-display-citations 500
+  "Max number of citations to display in one go.
+
+Used by `ref-man-ss-display-all-data'.")
+
+(defvar ref-man-ss-nonascii-eascii-chars
+  '(("Ã©" . "é")))
+
 (defvar ref-man-ss-nonascii-punc-chars
   '(("â" . "-")
     ("â" . "-")
@@ -53,12 +61,12 @@ They should be in format ((symbol (\"list\" \"of\" \"keywords\"))).")
     ("â" . "\"")
     ("â" . "-")
     ("â" . "--")
+    ("â" . "'")
     ("Ã¢ÂÂ" . "--")
     ("Ã¢ÂÂ" . "--")
     ("Ã¢ÂÂ" . " ")
     ("Ã¢ÂÂ" . "\"")
     ("Ã¢ÂÂ" . "\"")))
-
 
 (defvar ref-man-ss-nonascii-special-chars
   '(("ÃÂ»" . "λ")
@@ -73,7 +81,9 @@ data."
   (interactive)
   (let ((regexp (mapconcat
                  (lambda (x) (format "\\(%s\\)" (car x)))
-                 ref-man-ss-nonascii-punc-chars "\\|"))
+                 (-concat ref-man-ss-nonascii-punc-chars
+                          ref-man-ss-nonascii-eascii-chars)
+                 "\\|"))
         (n (length ref-man-ss-nonascii-punc-chars))
         (vecmap (apply #'vector ref-man-ss-nonascii-punc-chars)))
     (save-excursion
@@ -85,7 +95,7 @@ data."
                       for i from 1 to n
                       until (match-string i)
                       finally return (- i 1))))
-            (replace-match (cdr (aref vecmap idx)))))))))
+            (replace-match (cdr (aref vecmap idx)) t)))))))
 
 
 (defun ref-man-ss-replace-nonascii-punc-chars (str)
@@ -271,10 +281,97 @@ In this case the `matchedPresentations' key is extracted."
       (year)
       ,(cons 'venue (ref-man-ss-citation-filter-get-venues))
       (citationcount)
-      (influentialcitationcount))))
+      (influentialcitationcount))
+    "ref-man references/citation filters.
+
+Used to filter citations in a *Semantic Scholar* buffer.  They
+are an alist of properties and values.
+The possible keys are:
+
+AUTHOR: ((author_names . (list of author_names))
+         (author_ids . (list of author_ids))
+         (exact . nil))
+\\='exact in above refers to exact match in author names
+\\='exact is ignored by author_ids
+
+E.g.
+(author (author_names . (\"Lady Bracknell\")) (author_ids . ()) (exact . t))
+
+will match any entry, any of whose authors exactly matches \"Lady
+Bracknell\"
+
+Or:
+(author (author_names (\"bracknell\" \"miller\")) (author_ids) (exact))
+(author (author_names (\"bracknell\" \"miller\")) (author_ids (\"1253566\" \"2353566\")) (exact))
+
+will match any entry, any of whose authors has either
+\"bracknell\" or \"miller\" in their names
+
+TITLE: (title (title_regexp \"some.*title.+regexp\") (invert))
+
+YEAR: (year (min . 2010) (max . 2020))
+
+VENUE: (venue (venues \"list\" \"of\" \"venue\" \"words\" \"to\" \"match\"))
+
+CITATIONCOUNT: (citationcount (min . 10) (max . 1000))
+
+INFLUENTIALCITATIONCOUNT: (influentialcitationcount  (min . 10) (max . 1000))
+"))
 (defvar ref-man-ss-filter-count 30)
 
+(defun ref-man-ss-filter-conversion-vals (f)
+  "Convenience function for conversion of user input for filters.
+
+F is an element of filters as input by user.  See
+`ref-man-ss-filter-selected-buffer' for how it's used."
+  (pcase (car f)
+    ((and (or 'year 'citationcount 'influentialcitationcount) c)
+     `(,c
+       (min . ,(if (numberp (cadr f)) (cadr f) (string-to-number (cadr f))))
+       (max . ,(if (numberp (caddr f)) (caddr f) (string-to-number (caddr f))))))
+    ((and 'venue c) `(venue . ((venues . ,(cdr f)))))
+    ((and 'title c) `(title  . ((title_re  . ,(nth 1 f)) (invert . ,(nth 2 f)))))
+    ((and 'author c) `(author . ((author_names . ,(nth 1 f))
+                                 (author_ids . ,(when (= (length f) 3) (nth 2 f)))
+                                 (exact . ,(when (= (length f) 4) (nth 3 f))))))
+    (_ (user-error "Uknown filter %s" (car f)))))
+
+(defun ref-man-ss-reset-filters ()
+  "Reset the SS filters to their default values.
+
+See `ref-man-ss-citation-filters'."
+  (interactive)
+  (setq ref-man-ss-citation-filters
+        `((author)
+          (title)
+          (year)
+          ,(cons 'venue (ref-man-ss-citation-filter-get-venues))
+          (citationcount)
+          (influentialcitationcount)))
+  (message "Reset ref-man-ss filters."))
+
+(defun ref-man-ss-display-all-data ()
+  "Display all citations in a *Semantic Scholar* buffer removing any filters.
+
+Useful for removing any filters and displaying the full citation
+data upto a limit.  The limit is defined by
+`ref-man-ss-fetch-max-display-citations'."
+  (interactive)
+  (let* ((buffer (current-buffer))
+         (ssid (with-current-buffer buffer
+                 (save-excursion
+                   (goto-char (point-min))
+                   (org-entry-get (point) "PAPERID"))))
+         (count ref-man-ss-fetch-max-display-citations)
+         ;; Try to get as many citations as possible
+         (data (ref-man-ss-fetch-paper-citations ssid `((count . ,count)))))
+    (with-current-buffer buffer
+      (ref-man-org-update-filtered-subr data t))))
+
 (defun ref-man-ss-filter-selected-buffer ()
+  "Filter citations in a *Semantic Scholar* buffer.
+
+The filters can be customized in `ref-man-ss-citation-filters'."
   (interactive)
   (let* ((buffer (if current-prefix-arg
                      (ido-completing-read
@@ -285,7 +382,7 @@ In this case the `matchedPresentations' key is extracted."
                    (current-buffer)))
          (default-filters ref-man-ss-citation-filters)
          (count ref-man-ss-filter-count)
-         (filters (mapcar #'ref-man-org-filter-conversion-vals (-filter (lambda (x) (cdr x))
+         (filters (mapcar #'ref-man-ss-filter-conversion-vals (-filter (lambda (x) (cdr x))
                                                                         default-filters)))
          (ssid (with-current-buffer buffer
                  (save-excursion

@@ -384,3 +384,20 @@
 ** [2022-12-14 Wed 11:15]
    - Fixed some docstrings
    - Added new function ~ref-man-export-to-md~
+
+** [2023-01-12 Thu 02:46]
+   - In ~ref-man-core~
+     + Fixed bug in ~ref-man-org-insert-prop-list-item~ where it would not
+       insert newline when at end of buffer
+     + Added ~ref-man-org-update-entries-in-region-with-ss-data~
+     + Removed defunct variable ~ref-man-org-filter-conversion-vals~
+   - In ~ref-man-export~, ~ref-man-export-html-no-urls~ can now force export via
+     prefix argument
+   - Added frontiers journals filename generation to
+     ~ref-man-files-filename-from-url~
+   - In ~ref-man-ss~
+     + Added ~ref-man-ss-display-all-data~ and ~ref-man-reset-filters~
+     + More doc strings also
+   - In ~ref-man-url~
+     + Added variable ~ref-man-pdf-always-fetch-via-service~
+     + Changed ~ref-man-url-maybe-proxy~ to ~ref-man-url-maybe-via-service~

@@ -1,11 +1,11 @@
 ;;; ref-man-py.el --- Module for managing the files. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022
+;; Copyright (C) 2018,2019,2020,2021,2022,2023
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 14 December 2022 11:15:17 AM IST>
+;; Time-stamp:	<Wednesday 18 January 2023 14:22:59 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -49,7 +49,7 @@
   "Generate unique filename from a given URL.
 Returns path concatenated with `ref-man-documents-dir'."
   ;; FIXME: `ref-man-url-maybe-unproxy' should not be here
-  (let* ((url (ref-man-url-maybe-unproxy url))
+  (let* ((url (ref-man-url-maybe-remove-via-service url))
          (obj (url-generic-parse-url url))
          ;; (path (car (url-path-and-query obj)))
          (path (cond ((string-match-p "openreview" url)
@@ -67,6 +67,11 @@ Returns path concatenated with `ref-man-documents-dir'."
                       (concat (string-join (last (split-string url "/") 2) "-") ".pdf"))
                      ((string-match-p "aaai.org" url)
                       (concat "aaai_" (string-join (last (split-string url "/") 2) "_") ".pdf"))
+                     ((string-match-p "frontiersin.org/articles/.+/pdf$" url)
+                      (concat "frontiersin_" (save-match-data
+                                               (string-match "frontiersin.org/articles/\\(.+\\)/pdf$" url)
+                                               (replace-regexp-in-string "/" "_" (match-string 1 url)))
+                              ".pdf"))
                      ((string-match-p "citeseerx.ist.psu.edu" url)
                       (string-match "\\(.+doi=\\)\\(.+?\\)&.+" url)
                       (concat (match-string 2 url) ".pdf"))

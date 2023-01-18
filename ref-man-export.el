@@ -1,11 +1,11 @@
 ;;; ref-man-export.el --- Document export and publishing functionality for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022
+;; Copyright (C) 2018,2019,2020,2021,2022,2023
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 14 December 2022 11:15:17 AM IST>
+;; Time-stamp:	<Wednesday 18 January 2023 14:22:59 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -752,7 +752,8 @@ BUFFER defaults to `current-buffer'.
 See `ref-man-export-docproc-article' for details."
   (interactive)
   (ref-man-export-docproc-article buffer 'html t (not current-prefix-arg)
-                                  '(:with-toc t :with-tables t)))
+                                  '(:with-toc t :with-tables t)
+                                  nil current-prefix-arg))
 
 (defun ref-man-export-article-no-urls (pref-arg &optional buffer)
   "Export BUFFER as a pdf article.

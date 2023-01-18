@@ -1,11 +1,11 @@
 ;;; ref-man-web.el --- Web components with `eww' and proxies for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022
+;; Copyright (C) 2018,2019,2020,2021,2022,2023
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Tuesday 10 May 2022 09:07:17 AM IST>
+;; Time-stamp:	<Wednesday 18 January 2023 14:22:59 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -426,7 +426,7 @@ buffer is not gscholar"
       (cond ((ref-man-web-on-gscholar-page-p)
              (funcall callback (cons `(link . ,link) (ref-man-web-get-gscholar-link-data buf link))))
             (t (prog1 'async
-                 (url-retrieve (format "http://localhost:9999/url_info?url=%s" link)
+                 (url-retrieve (ref-man-py-url "url_info" `(("url" . ,link)))
                                #'ref-man-web-get-link-info (list link callback))))))))
 
 (defun ref-man-web-user-input (&optional default initial)
