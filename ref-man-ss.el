@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 18 January 2023 14:22:59 PM IST>
+;; Time-stamp:	<Monday 23 January 2023 08:26:28 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -71,7 +71,8 @@ Used by `ref-man-ss-display-all-data'.")
 (defvar ref-man-ss-nonascii-special-chars
   '(("ÃÂ»" . "λ")
     ("Å" . "ł")
-    ("ÃÂ²" . "β")))
+    ("ÃÂ²" . "β")
+    ("â" . "◦")))
 
 (defun ref-man-ss-fix-nonascii-chars-in-entry ()
   "Fix nonascii chars in current org entry.
@@ -79,13 +80,14 @@ Used by `ref-man-ss-display-all-data'.")
 These chars would be introduced due to encoding issues with SS
 data."
   (interactive)
-  (let ((regexp (mapconcat
-                 (lambda (x) (format "\\(%s\\)" (car x)))
-                 (-concat ref-man-ss-nonascii-punc-chars
-                          ref-man-ss-nonascii-eascii-chars)
-                 "\\|"))
-        (n (length ref-man-ss-nonascii-punc-chars))
-        (vecmap (apply #'vector ref-man-ss-nonascii-punc-chars)))
+  (let* ((charmap (-concat ref-man-ss-nonascii-punc-chars
+                           ref-man-ss-nonascii-eascii-chars
+                           (when current-prefix-arg
+                             ref-man-ss-nonascii-special-chars)))
+        (regexp (mapconcat
+                 (lambda (x) (format "\\(%s\\)" (car x))) charmap "\\|"))
+        (n (length charmap))
+        (vecmap (apply #'vector charmap)))
     (save-excursion
       (save-restriction
         (org-narrow-to-subtree)

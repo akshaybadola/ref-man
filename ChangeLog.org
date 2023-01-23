@@ -401,3 +401,16 @@
    - In ~ref-man-url~
      + Added variable ~ref-man-pdf-always-fetch-via-service~
      + Changed ~ref-man-url-maybe-proxy~ to ~ref-man-url-maybe-via-service~
+
+** [2023-01-23 Mon 08:22]
+   - In ~ref-man-core~
+     + Fixed a bug ~ref-man-org-get-bib-from-org-link~ where if ~file~ was not
+       present, ~nil~ was returned.
+     + A new macro ~ref-man-ensure-same-heading~ and fix to
+       ~ref-man--check-fix-url-property~ where it sometimes jumped to next heading.
+   - In ~ref-man-export~
+     + Removed redundant ~buffer~ from many interactive export functions
+     + Added more variables to ~ref-man-ss-fix-nonascii-chars-in-entry~
+   - In ~ref-man-util~
+     + Fixed bug in ~ref-man--fix-curly~
+   - Added ~charlist.json~ which has unicode, text and latex representations of characters

@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 18 January 2023 14:22:59 PM IST>
+;; Time-stamp:	<Monday 23 January 2023 08:26:28 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -758,8 +758,8 @@ See `ref-man-export-docproc-article' for details."
 (defun ref-man-export-article-no-urls (pref-arg &optional buffer)
   "Export BUFFER as a pdf article.
 
-BUFFER defaults to `current-buffer'.
-TYPE is passed on to `ref-man-export-docproc-article'.
+If Optional BUFFER is non-nil then export the entire buffer, else
+export only the subtree.
 
 The output type depends on the prefix.
 1. (default) Export buffer as PDF. Don't overwrite if output
@@ -786,12 +786,14 @@ appropriate arguments."
     (6 (ref-man-export-docproc-article  ; force both
         buffer 'both t t '(:with-tables t) nil t))))
 
-(defun ref-man-export-paper-no-urls (&optional pref-arg buffer)
+(defun ref-man-export-paper-no-urls (&optional pref-arg)
   "Export BUFFER as a research article.
 
-BUFFER defaults to `current-buffer'.  Optional PLAIN specifies to
-export as a plain research article without any journal/conference
-templates.
+Optional PREF-ARG reads the prefix argument as a number and if:
+> 1 then don't use citeproc or bibtex or biber on PDF.
+    Useful for repeated generation of PDFs when references
+    don't need to be updated.
+> 4 then force overwrite and don't run a citation command.
 
 See `ref-man-export-docproc-article' for details."
   (interactive "p")
@@ -803,7 +805,8 @@ See `ref-man-export-docproc-article' for details."
     (save-excursion
       (goto-char doc-root)
       (message "Exporting to PDF...")
-      (ref-man-export-docproc-article buffer 'paper t t '(:with-src (ref-man-export-remove-src-blocks))
+      (ref-man-export-docproc-article nil 'paper t t
+                                      '(:with-src (ref-man-export-remove-src-blocks))
                                       no-cite force))))
 
 (defun ref-man-export-paper-plain-no-urls (&optional buffer)
@@ -927,16 +930,20 @@ NO-WARN-TYPES can be passed as a list of (string) link types."
         ;; FIXME: How to fix for dup titles if they are for different papers (and bibs)?
         ;;        We should either report them as dups or store them with custom_ids
         (unless (or (member (match-string 1) sections)
-                    (eq (org-element-type (org-element-context)) 'comment-block))
-          (let ((bib (ref-man-org-get-bib-from-org-link t t t))
-                (title-keys (mapcar (lambda (x) (-take 2 x)) bibtexs)))
+                    (save-match-data
+                      (eq (org-element-type (org-element-context)) 'comment-block)))
+          (let* ((match-0 (match-string 0))
+                 (match-1 (match-string 1))
+                 (match-2 (match-string 2))
+                 (bib (ref-man-org-get-bib-from-org-link t t t))
+                 (title-keys (mapcar (lambda (x) (-take 2 x)) bibtexs)))
             ;; NOTE: Append _a to duplicate bibtex key
             ;; TODO: Fix dups for CUSTOM_ID across org buffer
             (if (not (cadr bib))
                 (let* ((link (org-element-context))
                        (link-type (org-element-property :type link)))
                   (unless (member link-type no-warn-types)
-                    (warn "No bib found for match string %s and bib %s" (match-string 0) (car bib))))
+                    (warn "No bib found for match string %s and bib %s" match-0 (car bib))))
               (when (-any #'identity (mapcar (lambda (x) (and title-keys
                                                               (string= (cadr x) (cadr bib))
                                                               (not (string= (car x) (car bib)))))
@@ -1213,7 +1220,10 @@ preprints."
                        (org-narrow-to-subtree)
                        (md5 (buffer-substring-no-properties (point-min) (point-max))))))
          (python ref-man-export-python-executable)
-         (title (substring-no-properties (org-get-heading t t t t)))
+         (title (if buffer
+                    (substring-no-properties (or (org-get-heading t t t t)
+                                                 "Org Buffer"))
+                  (substring-no-properties (org-get-heading t t t t))))
          (title-words (split-string (downcase (ref-man--remove-punc title t))))
          (out-dir (pcase type
                     ('blog ref-man-export-blog-dir)

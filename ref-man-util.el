@@ -1,11 +1,11 @@
 ;;; ref-man-util.el --- Utility variables and functions for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022
+;; Copyright (C) 2018,2019,2020,2021,2022,2023
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 14 December 2022 11:15:17 AM IST>
+;; Time-stamp:	<Monday 23 January 2023 08:26:28 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -299,7 +299,7 @@ Identical to `ref-man--trim-whitespace' but remove quotes also."
 (defun ref-man--fix-curly (str)
   "Gets text between parentheses for {STR}."
   (declare (pure t) (side-effect-free t))
-  (string-remove-suffix "}" (string-remove-prefix "{" str)))
+  (replace-regexp-in-string "\\`{\\(.+\\)}\\'" "\\1" str))
 
 (defun ref-man--bibtex-key-p (item)
   "ITEM is a bibtex key."

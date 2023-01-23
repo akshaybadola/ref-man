@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 18 January 2023 14:22:59 PM IST>
+;; Time-stamp:	<Monday 23 January 2023 08:26:28 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -2788,8 +2788,8 @@ With optional non-nil ALLOW-MISC @misc bibs are also parsed."
       (let* ((link (util/org-link-get-target-for-internal))
              (search-path (when link (plist-get link :path)))
              (path (when link (plist-get link :file)))
-             (buf (when path (find-file-noselect path)))
-             (pt (when path (plist-get link :point))))
+             (buf (or (when path (find-file-noselect path)) (current-buffer)))
+             (pt (when buf (plist-get link :point))))
         (when (and buf pt)
           (with-current-buffer buf
             (save-excursion
@@ -3933,6 +3933,16 @@ the current heading are excluded."
   "Check if the org heading a non empty string."
   (> (length (string-trim (substring-no-properties (org-get-heading t t t t)))) 0))
 
+(defmacro ref-man-ensure-same-heading (&rest body)
+  (declare (debug t))
+  `(let ((current-heading (org-get-heading t t t t))
+         (retval ,@body)
+         new-heading)
+     (setq new-heading (org-get-heading t t t t))
+     (unless (string= new-heading current-heading)
+       (outline-previous-heading))
+     retval))
+
 (defun ref-man--check-fix-url-property (&optional props)
   "Fix the URL property in the property drawer.
 
@@ -3943,36 +3953,37 @@ Make sure URL property exists in either property drawer or text
 and if no URL could be found return nil.  If no URL property
 exists, then first link from entry text is imported into the
 property drawer as the URL property."
-  (save-excursion
-    (let* ((props (or props (org-entry-properties)))
-           (url-prop (cdr (assoc "URL" props))))
-      ;; Remove the url args. Would be useless to keep
-      (when (and url-prop (string-match-p "?.*" url-prop)
-                 (not (string-match-p "openreview.net" url-prop))
-                 (not (string-match-p "acm.org" url-prop))
-                 (not (string-match-p "ieeexplore.ieee.org" url-prop)))
-        (org-entry-put (point) "URL" (car (split-string url-prop "?"))))
-      (unless url-prop
-        (let* ((link (ref-man-org-get-first-link-from-org-heading))
-               (url (org-element-property :raw-link link))
-               (beg (org-element-property :begin link))
-               (end (org-element-property :end link)))
-          (when url
-            (delete-region beg end)
-            (goto-char beg)
-            (cond ((and (org-at-item-p)
-                        (not (string-match-p
-                              "[^- ]" (buffer-substring-no-properties (point-at-bol)
-                                                                      (point-at-eol)))))
-                   (delete-region (point-at-bol) (+ 1 (point-at-eol))))
-                  ((and (not (string-match-p
-                              "[^[:space:]]" (buffer-substring-no-properties (point-at-bol)
-                                                                             (point-at-eol)))))
-                   (delete-region (point-at-bol) (+ 1 (point-at-eol)))))
-            (outline-previous-heading)
-            (ref-man-org-add-url-property url))
-          (setq url-prop url)))
-      url-prop)))
+  (ref-man-ensure-same-heading
+   (save-excursion
+     (let* ((props (or props (org-entry-properties)))
+            (url-prop (cdr (assoc "URL" props))))
+       ;; Remove the url args. Would be useless to keep
+       (when (and url-prop (string-match-p "?.*" url-prop)
+                  (not (string-match-p "openreview.net" url-prop))
+                  (not (string-match-p "acm.org" url-prop))
+                  (not (string-match-p "ieeexplore.ieee.org" url-prop)))
+         (org-entry-put (point) "URL" (car (split-string url-prop "?"))))
+       (unless url-prop
+         (let* ((link (ref-man-org-get-first-link-from-org-heading))
+                (url (org-element-property :raw-link link))
+                (beg (org-element-property :begin link))
+                (end (org-element-property :end link)))
+           (when url
+             (delete-region beg end)
+             (goto-char beg)
+             (cond ((and (org-at-item-p)
+                         (not (string-match-p
+                               "[^- ]" (buffer-substring-no-properties (point-at-bol)
+                                                                       (point-at-eol)))))
+                    (delete-region (point-at-bol) (+ 1 (point-at-eol))))
+                   ((and (not (string-match-p
+                               "[^[:space:]]" (buffer-substring-no-properties (point-at-bol)
+                                                                              (point-at-eol)))))
+                    (delete-region (point-at-bol) (+ 1 (point-at-eol)))))
+             (outline-previous-heading)
+             (ref-man-org-add-url-property url))
+           (setq url-prop url)))
+       url-prop))))
 
 (defun ref-man-parse-properties-for-bib-key (&optional arg)
   "Check if bibtex key can be determined from entry properties."
