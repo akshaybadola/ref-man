@@ -1,11 +1,11 @@
 ;;; ref-man-py.el --- Module for managing the python process. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022
+;; Copyright (C) 2018,2019,2020,2021,2022,2023
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 14 December 2022 11:15:17 AM IST>
+;; Time-stamp:	<Saturday 04 February 2023 00:32:38 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -80,6 +80,11 @@ on the system."
 
 (defcustom ref-man-py-env-dir ".ref-man/env"
   "Directory of virtualenv of the python module."
+  :type 'directory
+  :group 'ref-man)
+
+(defcustom ref-man-py-refs-cache-dir ".ref-man/s2_cache"
+  "Directory of extracted citation cache from S2 data."
   :type 'directory
   :group 'ref-man)
 
@@ -334,6 +339,9 @@ nil, `ref-man-py-data-dir' respectively by
                                             (and ref-man-public-links-cache-file
                                                  (format "--remote-links-cache=%s"
                                                          ref-man-public-links-cache-file))
+                                            (and ref-man-py-refs-cache-dir
+                                                 (format "--refs-cache-dir=%s"
+                                                         ref-man-py-refs-cache-dir))
                                             "--verbosity=debug"))))
         (message "Python process args are %s" args)
         (apply #'start-process "ref-man-server" "*ref-man-server*"

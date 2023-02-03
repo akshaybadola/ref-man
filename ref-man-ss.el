@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 23 January 2023 08:26:28 AM IST>
+;; Time-stamp:	<Saturday 04 February 2023 00:32:38 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -35,7 +35,7 @@
 
 
 (require 'widget)
-(eval-when-compile
+(eval-and-compile
   (require 'wid-edit))
 
 (require 'ref-man-py)
@@ -61,6 +61,7 @@ Used by `ref-man-ss-display-all-data'.")
     ("â" . "\"")
     ("â" . "-")
     ("â" . "--")
+    ("â" . "'")
     ("â" . "'")
     ("Ã¢ÂÂ" . "--")
     ("Ã¢ÂÂ" . "--")
@@ -74,6 +75,9 @@ Used by `ref-man-ss-display-all-data'.")
     ("ÃÂ²" . "β")
     ("â" . "◦")))
 
+(defvar ref-man-ss-nonascii-ascii-chars
+  '(("ï¬" . "f")))
+
 (defun ref-man-ss-fix-nonascii-chars-in-entry ()
   "Fix nonascii chars in current org entry.
 
@@ -82,6 +86,7 @@ data."
   (interactive)
   (let* ((charmap (-concat ref-man-ss-nonascii-punc-chars
                            ref-man-ss-nonascii-eascii-chars
+                           ref-man-ss-nonascii-ascii-chars
                            (when current-prefix-arg
                              ref-man-ss-nonascii-special-chars)))
         (regexp (mapconcat
@@ -276,7 +281,7 @@ In this case the `matchedPresentations' key is extracted."
 (defun ref-man-ss-citation-filter-get-venues ()
   (-flatten (a-vals ref-man-ss-citation-filter-preferred-venues)))
 
-(eval-when-compile
+(eval-and-compile
   (defvar ref-man-ss-citation-filters
     `((author)
       (title)
@@ -319,7 +324,9 @@ CITATIONCOUNT: (citationcount (min . 10) (max . 1000))
 
 INFLUENTIALCITATIONCOUNT: (influentialcitationcount  (min . 10) (max . 1000))
 "))
-(defvar ref-man-ss-filter-count 30)
+
+(defvar ref-man-ss-filter-count 30
+  "Maximum number of filter results to display.")
 
 (defun ref-man-ss-filter-conversion-vals (f)
   "Convenience function for conversion of user input for filters.

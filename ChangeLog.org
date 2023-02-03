@@ -414,3 +414,27 @@
    - In ~ref-man-util~
      + Fixed bug in ~ref-man--fix-curly~
    - Added ~charlist.json~ which has unicode, text and latex representations of characters
+
+** [2023-02-04 Sat 00:26]
+   - In ~ref-man-core~
+     + New function ~ref-man-org-reference-p~
+     + New commands ~ref-man-org-insert-full-reference~, ~ref-man-org-insert-short-reference~
+     + ~ref-man-org-get-bib-from-org-link~ now searches for full match. Was
+       partial earlier.
+   - In ~ref-man-py~
+     + Extra ~ref-man-py-refs-cache-dir~ variable which is passed to the server command
+   - Some extra nonascii chars in ~ref-man-ss~
+   - In ~ref-man-util~
+     + It now contains the full nonascii ~charlist~ json
+     + Extra variables ~ref-man-alphabet~, ~ref-man-char-table~,
+       ~ref-man-bibtex-extended-repacement-strings~
+     + Fixed ~ref-man-maybe-file-fuzzy-custid-link-re~ where it did greedy
+       search for fuzzy links
+     + ~ref-man--transcribe~ has an additional ~ignore~ option
+   - In ~ref-man-export~
+     + ~ref-man-export-latex-table-template~ and likes are now sort of obsolete,
+       but not marked as such.
+     + ~ref-man-export-format-latex-table~ now generates the table according to arguments
+     + ~ref-man-export-org-table-to-latex~ can now grab caption and label if
+       present and generates the latex table accoring to
+       ~ref-man-export-latex-table-properties~

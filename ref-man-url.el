@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 18 January 2023 14:22:59 PM IST>
+;; Time-stamp:	<Saturday 04 February 2023 00:32:38 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -248,7 +248,9 @@ downloadable one."
 ;; (defun ref-man-url-get-supplementary-url-from-openreview-url (url))
 
 (defmacro with-temp-shr-buffer (buf &rest body)
-  "Construct a temp `shr' buffer from url buffer BUF and execute BODY."
+  "Construct a temp `shr' buffer from url buffer BUF and execute BODY.
+
+The body executed after skipping past the headers."
   (declare (indent 1) (debug t))
   (or (fboundp 'libxml-parse-html-region)
       (error "This function requires Emacs to be compiled with libxml2"))

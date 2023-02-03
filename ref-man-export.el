@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 23 January 2023 08:26:28 AM IST>
+;; Time-stamp:	<Saturday 04 February 2023 00:32:38 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -362,8 +362,8 @@ written to it."
             (beginning-of-line)
             (delete-char 1)
             (end-of-line)))
-        (when output-org-file
-          (write-region (point-min) (point-max) output-org-file))
+        ;; (when output-org-file
+        ;;   (write-region (point-min) (point-max) output-org-file))
         (goto-char (point-min))
         (while (re-search-forward link-re nil t)
           (pcase-let ((`(,a ,b) (list (match-string 1) (match-string 2))))
@@ -824,7 +824,7 @@ See `ref-man-export-paper-no-urls'."
 \\label{tab:}
 \\end{table}
 "
-  "Template for inserting table with `ref-man-export-table-to-latex'.
+  "Template for inserting table with `ref-man-export-org-table-to-latex'.
 The table is inserted at %s and formatted with `format'."
   :type 'string
   :group 'ref-man)
@@ -834,7 +834,7 @@ The table is inserted at %s and formatted with `format'."
 %s
 \\end{table}
 "
-  "Template for inserting table with `ref-man-export-table-to-latex'.
+  "Template for inserting table with `ref-man-export-org-table-to-latex'.
 
 This one doesn't require the caption package.  The table is
 inserted at %s and formatted with `format'."
@@ -860,36 +860,101 @@ inserted at %s and formatted with `format'."
 
 Includes basic maths packages.")
 
-(defun ref-man-export-table-to-latex (&optional no-caption)
+(defvar ref-man-export-latex-table-properties nil
+  "Default template which can be set according to user.")
+
+(defvar ref-man-export-latex-table-cleanup-hook nil)
+
+(defun ref-man-export-format-latex-table (table-string table-opts)
+  (let* ((caption (plist-get table-opts :caption))
+         (caption-top (eq (plist-get table-opts :caption-pos) 'top))
+         (caption-bottom (eq (plist-get table-opts :caption-pos) 'bottom))
+         (center (plist-get table-opts :center))
+         (minipage (plist-get table-opts :with-minipage))
+         (label (plist-get table-opts :label))
+         (with-document (plist-get table-opts :with-document))
+         (text
+          (format "%s
+\\begin{table}
+%s
+%s
+%s
+%s
+%s
+\\end{table}
+%s"
+                  (if minipage "\\begin{minipage}{\\linewidth}" "")
+                  (if center "\\centering" "")
+                  (or (and caption-top (format "\\caption{%s}" caption)) "")
+                  table-string
+                  (if label (format "\\label{%s}" label) "")
+                  (or (and caption-bottom (format "\\caption{%s}" caption)) "")
+                  (if minipage "\\end{minipage}" "")))
+         (text (with-temp-buffer
+                 (insert text)
+                 (util/delete-blank-lines-in-buffer nil t)
+                 (buffer-string))))
+    (if with-document
+        (format ref-man-export-latex-table-document-template text)
+      text)))
+
+(defun ref-man-export-org-table-to-latex (&optional no-caption)
   "Export an org or table mode table in region to latex."
   (interactive)
-  (if (org-at-table-p)
-      (let ((org-export-with-broken-links 'mark)
-            org-export-show-temporary-export-buffer
-            table)
-        (save-excursion
-          (save-restriction
-            (narrow-to-region (org-table-begin) (org-table-end))
-            (org-export-to-buffer 'latex "*Latex Export*" nil nil nil nil)
-            (setq table (with-current-buffer "*Latex Export*"
-                          (goto-char (point-min))
-                          (re-search-forward (rx "\\begin{tabular}"))
-                          (beginning-of-line)
-                          (prog1 (format (if no-caption
-                                             ref-man-export-latex-table-no-caption-template
-                                           ref-man-export-latex-table-template)
-                                         (buffer-substring-no-properties
-                                          (point)
-                                          (progn (re-search-forward (rx "\\end{tabular}"))
-                                                 (point))))
-                            (kill-buffer (current-buffer)))))))
-        (if current-prefix-arg
-            (kill-new (format ref-man-export-latex-table-document-template table))
-          (goto-char (org-table-end))
-          (while (org-at-TBLFM-p)
-            (forward-line))
-          (insert "\n" table "\n")
-          (org-indent-region (- (point) (length table)) (point))))
+  (unless ref-man-export-latex-table-properties
+    (user-error "You must set `ref-man-export-latex-table-properties' first"))
+  (if (or (org-at-table-p) (org-at-table.el-p))
+      (let* ((org-export-with-broken-links 'mark)
+             (el (org-element-context))
+             (el (progn (while (not (eq (car el) 'table))
+                          (setq el (org-element-property :parent el)))
+                        el))
+             (caption (or (org-element-property :caption el)
+                          (plist-get :caption (cadr el))))
+             (caption (and caption (caaar caption)))
+             (label (or (org-element-property :label el) (org-element-property :name el)
+                        (plist-get :label (cadr el)) (plist-get :name (cadr el))))
+             (ref-man-export-latex-table-properties
+              (-concat ref-man-export-latex-table-properties
+                       `(:caption ,caption :label ,label)))
+             org-export-show-temporary-export-buffer
+             table)
+        (util/save-mark-and-restriction
+         (cond ((org-at-table-p)
+                (narrow-to-region (org-table-begin) (org-table-end)))
+               ((org-at-table.el-p)
+                (let ((top (progn (table-goto-top-left-corner)
+                                  (point-at-bol)))
+                      (bottom (progn (next-line)
+                                     (forward-char)
+                                     (table-goto-bottom-right-corner)
+                                     (point-at-eol))))
+                  (narrow-to-region top bottom))))
+         (org-export-to-buffer 'latex "*Latex Export*" nil nil nil nil)
+         (setq table (with-current-buffer "*Latex Export*"
+                       (beginning-of-line)
+                       (run-hook-with-args 'ref-man-export-latex-table-cleanup-hook)
+                       (goto-char (point-min))
+                       (re-search-forward (rx "\\begin{tabular}"))
+                       (prog1 (ref-man-export-format-latex-table
+                               (concat "\\begin{tabular}"
+                                       (buffer-substring-no-properties
+                                        (point)
+                                        (progn (re-search-forward (rx "\\end{tabular}"))
+                                               (point))))
+                               ref-man-export-latex-table-properties)
+                         (kill-buffer (current-buffer)))))
+         (if current-prefix-arg
+             (kill-new table)
+           (cond ((org-at-table-p)
+                  (goto-char (org-table-end))
+                  (while (org-at-TBLFM-p)
+                    (forward-line)))
+                 ((org-at-table.el-p)
+                  (table-goto-bottom-right-corner)
+                  (end-of-line)))
+           (insert "\n" table "\n")
+           (org-indent-region (- (point) (length table)) (point)))))
     (user-error "Not at an org table")))
 
 (defun ref-man-export-parse-references (type &optional no-warn-types)

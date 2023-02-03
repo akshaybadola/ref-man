@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 23 January 2023 08:26:28 AM IST>
+;; Time-stamp:	<Saturday 04 February 2023 00:32:38 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -2785,7 +2785,7 @@ With optional non-nil ALLOW-MISC @misc bibs are also parsed."
   (save-excursion
     (save-restriction
       (widen)
-      (let* ((link (util/org-link-get-target-for-internal))
+      (let* ((link (util/org-link-get-target-for-internal t)) ; full match
              (search-path (when link (plist-get link :path)))
              (path (when link (plist-get link :file)))
              (buf (or (when path (find-file-noselect path)) (current-buffer)))
@@ -2833,6 +2833,32 @@ If \\[universal-argument] is given, then inver the value of
        (if use-external-browser
            (eww-browse-with-external-browser url)
          (eww url))))))
+
+(defun ref-man-org-reference-p (entry)
+  "Predicate to determine a `ref-man' entry.
+
+We check AUTHOR and TITLE."
+  (pcase-let ((`(,heading ,author ,_ ,cid ,_) entry))
+    (or (not (or (string-empty-p author) (string-empty-p cid)))
+        (and (not (string-empty-p author))
+             (> (length (split-string heading))
+                util/org-min-collect-heading-length)))))
+
+(defun ref-man-org-insert-full-reference ()
+  "Insert a link to reference.
+
+Call `util/org-insert-link-to-heading' with predicate
+`ref-man-org-reference-p' to filter papers/references."
+  (interactive)
+  (util/org-insert-link-to-heading 'ref-man-org-reference-p nil t t))
+
+(defun ref-man-org-insert-short-reference ()
+  "Insert a link to reference but format as a citation.
+
+Like `ref-man-org-insert-full-reference' but use
+`util/org-citation-function' to transform the link text."
+  (interactive)
+  (util/org-insert-link-to-heading 'ref-man-org-reference-p util/org-citation-function t t))
 
 (defun ref-man-fix-drawers-deleted-files ()
   "Remove files missing from `ref-man-documents-dir' in property drawers."
