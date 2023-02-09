@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Saturday 04 February 2023 00:32:38 AM IST>
+;; Time-stamp:	<Friday 10 February 2023 03:01:25 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -50,6 +50,13 @@ They should be in format ((symbol (\"list\" \"of\" \"keywords\"))).")
   "Max number of citations to display in one go.
 
 Used by `ref-man-ss-display-all-data'.")
+
+(defcustom ref-man-ss-recommendation-count 20
+  "Number of recommendations to fetch from S2.
+
+Used by `ref-man-ss-fetch-recommendations'."
+  :type 'number
+  :group 'ref-man)
 
 (defvar ref-man-ss-nonascii-eascii-chars
   '(("Ã©" . "é")))
@@ -225,6 +232,71 @@ RESULT should be an alist."
       (if (eq (car result) 'error)
           (user-error (format "Error occurred %s" (a-get result 'error)))
         (a-get result 'data)))))
+
+(defun ref-man-ss-display-recommendations (heading data)
+  "Display recommendations from S2 API.
+
+HEADING is the root heading to display.
+DATA is a list of recommendations retrieved from the
+`ref-man-py' service."
+  (if (and data (> (length data) 0))
+      (progn
+        (message "[ref-man] Preparing Semantic Scholar Data for display")
+        (let* ((buf (get-buffer-create (format "*Semantic Scholar Recommendations/%s*" heading)))
+               (win (util/get-or-create-window-on-side)))
+          (set-window-buffer win buf)
+          (with-current-buffer buf
+            (let ((inhibit-read-only t))
+              (set-text-properties (point-min) (point-max) nil))
+            (erase-buffer)
+            (org-mode)
+            (org-insert-heading)
+            (insert heading)
+            (org-insert-heading-respect-content)
+            (org-demote)
+            (ref-man--insert-refs-from-seq data "Recommendations" 'ss t t)
+            (message "[ref-man] Displaying Semantic Scholar Data"))
+          (pop-to-buffer buf)))
+    (user-error "Got no data to display")))
+
+(defun ref-man-ss-fetch-recommendations ()
+  "Fetch recommendations from Semantic Scholar.
+
+Parse org subtree and find list items beginning with \"pos\" and
+\"neg\".  They must be first items in the subtree.
+
+For all `ref-man' links in \"pos\" and \"neg\", send the paper
+ids to Semantic Scholar via `ref-man-py' service."
+  (interactive)
+  (util/with-org-mode
+   (util/save-mark-and-restriction
+    (org-back-to-heading)
+    (forward-line)
+    (let* ((el (org-element-context))
+           (heading (org-get-heading t t t t))
+           (is-list (eq (org-element-type el) 'plain-list))
+           (link-re util/org-fuzzy-or-custom-id-link-re)
+           (items-text (and is-list
+                            (mapcar (lambda (x) (buffer-substring-no-properties (car x) (-last-item x)))
+                                    (-slice (org-element-property :structure el) 0 2)))))
+      (unless (and items-text
+                   (string-match-p ".+pos:.+" (car items-text))
+                   (string-match-p ".+neg:.+" (cadr items-text)))
+        (user-error "Must be in list and \"pos\" and \"neg\" list items-text must be first in the subtree."))
+      (let ((data
+             (-zip-with (lambda (x y)
+                          (with-temp-buffer
+                            (let (paperids)
+                              (insert x)
+                              (goto-char (point-min))
+                              (while (re-search-forward link-re nil t)
+                                (push (ref-man-org-get-property-from-org-link "PAPERID") paperids))
+                              `(,y . ,paperids))))
+                        items-text '(pos-ids neg-ids))
+             (count ref-man-ss-recommendation-count)))
+        (ref-man--post-json (ref-man-py-url "recommendations" '((count . 20)))
+                            (a-assoc data)
+                            (-partial 'ref-man-ss-display-recommendations heading)))))))
 
 (defun ref-man-ss-get-results-search-semantic-scholar (search-string &optional args)
   (let* ((opts (if args

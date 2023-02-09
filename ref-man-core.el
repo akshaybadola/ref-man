@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Saturday 04 February 2023 00:32:38 AM IST>
+;; Time-stamp:	<Friday 10 February 2023 03:01:25 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -2782,21 +2782,38 @@ Default is to return bib only.
 CLEAN is passed on to `ref-man-org-get-bib-from-org-link-subr'.
 
 With optional non-nil ALLOW-MISC @misc bibs are also parsed."
-  (save-excursion
-    (save-restriction
-      (widen)
-      (let* ((link (util/org-link-get-target-for-internal t)) ; full match
-             (search-path (when link (plist-get link :path)))
-             (path (when link (plist-get link :file)))
-             (buf (or (when path (find-file-noselect path)) (current-buffer)))
-             (pt (when buf (plist-get link :point))))
-        (when (and buf pt)
-          (with-current-buffer buf
-            (save-excursion
-              (goto-char pt)
-              (if get-key
-                  (cons search-path (ref-man-org-get-bib-from-org-link-subr get-key allow-misc clean))
-                (ref-man-org-get-bib-from-org-link-subr get-key allow-misc clean)))))))))
+  (util/save-mark-and-restriction
+   (widen)
+   (let* ((link (util/org-link-get-target-for-internal t)) ; full match
+          (search-path (when link (plist-get link :path)))
+          (path (when link (plist-get link :file)))
+          (buf (or (when path (find-file-noselect path)) (current-buffer)))
+          (pt (when buf (plist-get link :point))))
+     (when (and buf pt)
+       (with-current-buffer buf
+         (save-excursion
+           (goto-char pt)
+           (if get-key
+               (cons search-path (ref-man-org-get-bib-from-org-link-subr get-key allow-misc clean))
+             (ref-man-org-get-bib-from-org-link-subr get-key allow-misc clean))))))))
+
+(defun ref-man-org-get-property-from-org-link (prop)
+  "Get property PROP for the org heading for an org link in text.
+
+The link must point to either an org heading or an org
+CUSTOM_ID."
+  (util/save-mark-and-restriction
+   (widen)
+   (let* ((link (util/org-link-get-target-for-internal t)) ; full match
+          (search-path (when link (plist-get link :path)))
+          (path (when link (plist-get link :file)))
+          (buf (or (when path (find-file-noselect path)) (current-buffer)))
+          (pt (when buf (plist-get link :point))))
+     (when (and buf pt)
+       (with-current-buffer buf
+         (save-excursion
+           (goto-char pt)
+           (org-entry-get (point) prop)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END org utility functions ;;
