@@ -447,3 +447,9 @@
        from S2 Recommendations API.
      + Added function ~ref-man-ss-display-recommendations~
 
+** [2023-02-27 Mon 08:59]
+   - In ~ref-man-core~, ~ref-man-org-get-link-peek-info~ should try to get info
+     only when props exist
+   - Handle different pdf links in Neurips papers in ~ref-man-url-get-pdf-link-helper~
+   - Some changes to ~ref-man--transcribe~ and ~ref-man-bibtex-ascii-replacement-strings~
+     in ~ref-man-util~

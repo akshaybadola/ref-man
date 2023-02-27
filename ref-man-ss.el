@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 10 February 2023 03:01:25 AM IST>
+;; Time-stamp:	<Monday 27 February 2023 09:02:52 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -353,6 +353,7 @@ In this case the `matchedPresentations' key is extracted."
 (defun ref-man-ss-citation-filter-get-venues ()
   (-flatten (a-vals ref-man-ss-citation-filter-preferred-venues)))
 
+
 (eval-and-compile
   (defvar ref-man-ss-citation-filters
     `((author)
@@ -394,8 +395,7 @@ VENUE: (venue (venues \"list\" \"of\" \"venue\" \"words\" \"to\" \"match\"))
 
 CITATIONCOUNT: (citationcount (min . 10) (max . 1000))
 
-INFLUENTIALCITATIONCOUNT: (influentialcitationcount  (min . 10) (max . 1000))
-"))
+INFLUENTIALCITATIONCOUNT: (influentialcitationcount  (min . 10) (max . 1000))"))
 
 (defvar ref-man-ss-filter-count 30
   "Maximum number of filter results to display.")

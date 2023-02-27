@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Saturday 04 February 2023 00:32:38 AM IST>
+;; Time-stamp:	<Monday 27 February 2023 09:02:52 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -392,7 +392,13 @@ first pdf link from the buffer."
                  (site (ref-man-url-get-site-from-url url)))
             ;; Call self again with new URL
             (ref-man-url-get-pdf-link-helper site url buf)))
-    ('neurips (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
+    ('neurips (let* ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf))
+                     (link (if (and link
+                                      (string-match-p "-" link)
+                                      (not (string-match-p "-paper\\.pdf$" link)))
+                               (ref-man-url-get-first-pdf-link-from-html-buffer
+                                buf (lambda (x) (string-match-p ".+-paper\\.pdf$" x)))
+                             link)))
                 (when link
                   (cond ((string-match-p "^http:\\|^https:" link) link)
                         ((string-match-p "^/paper/" link)

@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 10 February 2023 03:01:25 AM IST>
+;; Time-stamp:	<Monday 27 February 2023 09:02:52 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -4279,14 +4279,15 @@ Only works for internal org links."
          (props (when (and buf pt)
                   (with-current-buffer buf
                     (org-entry-properties pt)))))
-    (string-join (reverse
-                  (-keep (lambda (x)
-                           (when (member (car x)
-                                         '("TITLE" "AUTHOR" "JOURNAL" "VENUE"
-                                           "YEAR" "CITATIONCOUNT" "NUMCITEDBY" "BOOKTITLE"))
-                             (format "%s: %s" (capitalize (car x)) (cdr x))))
-                         props))
-                 "\n\n")))
+    (when props
+      (string-join (reverse
+                    (-keep (lambda (x)
+                             (when (member (car x)
+                                           '("TITLE" "AUTHOR" "JOURNAL" "VENUE"
+                                             "YEAR" "CITATIONCOUNT" "NUMCITEDBY" "BOOKTITLE"))
+                               (format "%s: %s" (capitalize (car x)) (cdr x))))
+                           props))
+                   "\n\n"))))
 
 (defvar ref-man-peek-fg-color nil
   "Foreground color for peeking functions.")
@@ -4308,8 +4309,9 @@ Adapted somewhat from `company-quickhelp--show'."
          (fg-bg `(,ref-man-peek-fg-color
                   . ,ref-man-peek-bg-color))
          (pos (point)))
-    (pos-tip-show doc fg-bg pos nil timeout width nil
-                  margin-right margin-below)
+    (when doc
+      (pos-tip-show doc fg-bg pos nil timeout width nil
+                    margin-right margin-below))
     ;; TODO: MAYBE add text properties later
     ;; (if company-quickhelp-use-propertized-text
     ;;     (let* ((frame (window-frame (selected-window)))
@@ -4337,7 +4339,8 @@ Adapted somewhat from `company-quickhelp--show'."
   (interactive "p")
   (let ((el (org-element-context)))
     (pcase (org-element-type el)
-      ('link (ref-man-org-peek-link-subr nil nil nil))
+      ('link (unless (ref-man-org-peek-link-subr nil nil nil)
+               (message "Nothing to peek here")))
       (_ (message "Nothing to peek here")))))
 
 ;; NOTE: Was thinking of putting sensor function like this on all link but the
