@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Saturday 04 February 2023 00:32:38 AM IST>
+;; Time-stamp:	<Monday 10 April 2023 07:15:38 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -519,15 +519,15 @@ default author alist."
                                                   (replace-regexp-in-string "<\\|>" "" x) ":"))))
                         `(("affiliation" . ,aff) ("name" . ,name) ("email" . ,email)))))
                   splits)))
-    `(("name" . ,ref-man-export-author-name)
-      ("email" . ,ref-man-export-author-email)
-      ("affiliation" . ,ref-man-export-author-affiliation))))
+    `((("name" . ,ref-man-export-author-name)
+       ("email" . ,ref-man-export-author-email)
+       ("affiliation" . ,ref-man-export-author-affiliation)))))
 
 
 (defun ref-man-export-get-article-metadata (type)
   "Extract keywords and standard metadata for journal.
 TYPE has to be \\='paper for this hook to run."
-  (when (eq type 'paper)
+  (when (or (eq type 'paper) (eq type 'pdf))
     (let* ((props (org-entry-properties))
            (author (ref-man-export-check-author (a-get props "AUTHOR")))
            (affiliations (mapcar (lambda (y)
@@ -538,7 +538,8 @@ TYPE has to be \\='paper for this hook to run."
       (setq ref-man-export-metadata
             (-concat ref-man-export-metadata
                      `(("author" . ,author)
-                       ("keywords" . ,(split-string (a-get props "KEYWORDS") ","))
+                       ("keywords" . ,(when (a-get props "KEYWORDS")
+                                        (split-string (a-get props "KEYWORDS") ",")))
                        ("caption" . ,(a-get props "CAPTION"))
                        ("affiliations" . ,affiliations)))))))
 
@@ -755,6 +756,13 @@ See `ref-man-export-docproc-article' for details."
                                   '(:with-toc t :with-tables t)
                                   nil current-prefix-arg))
 
+(defun ref-man-export-article-no-urls-current-buffer-from-doc-root (doc-root)
+  "Call interactively `ref-man-export-article-no-urls' from DOC-ROOT.
+DOC-ROOT is a point from where subtree is to be exported."
+  (save-excursion
+    (goto-char doc-root)
+    (call-interactively 'ref-man-export-article-no-urls)))
+
 (defun ref-man-export-article-no-urls (pref-arg &optional buffer)
   "Export BUFFER as a pdf article.
 
@@ -861,7 +869,15 @@ inserted at %s and formatted with `format'."
 Includes basic maths packages.")
 
 (defvar ref-man-export-latex-table-properties nil
-  "Default template which can be set according to user.")
+  "Plist of properties which will be parsed by `ref-man-export-format-latex-table'.
+
+Options are:
+:caption caption string
+:caption-pos top or bottom
+:center whether to center the table or not
+:with-minipage use minipage
+:label label for the table
+:with-document insert \"\\begin,end{document}\" around it.")
 
 (defvar ref-man-export-latex-table-cleanup-hook nil)
 
@@ -1330,6 +1346,8 @@ preprints."
           (if plain
               ref-man-export-metadata-hook
             (-concat ref-man-export-metadata-hook '(ref-man-export-get-journal-metadata))))
+         (pandoc-opts (when-let ((opts (org-entry-get (point) "PANDOC_OPTS")))
+                        (mapcar #'string-trim (split-string opts ","))))
          bibtexs template-opt)
     (when (and (f-exists? md-file) (f-exists? out-file) (not force)
                (not (eq type 'blog)))
@@ -1368,37 +1386,6 @@ preprints."
           ;; NOTE: Don't export References, they'll be added automatically
           (ref-man-export-narrow-to-references)
           (ref-man-export-org-to-md type))))
-    ;; (save-restriction
-    ;;   (save-mark-and-excursion
-    ;;     ;; NOTE: Get bounds of article
-    ;;     ;; FIXME: `buffer' may not be required for paper export.
-    ;;     ;;        Is the code too intermingled?
-    ;;     (unless buffer
-    ;;       (org-narrow-to-subtree)
-    ;;       (pcase type
-    ;;         ('paper (let ((beg (a-get metadata "sections-beg"))
-    ;;                       (end (a-get metadata "sections-end"))
-    ;;                       (doc-root (a-get metadata "doc-root")))
-    ;;                   ;; NOTE: When it's a paper, first paragraph is abstract and we
-    ;;                   ;;       go to first subheading
-    ;;                   (setq abstract (a-get metadata "abstract"))
-    ;;                   (narrow-to-region beg end)
-    ;;                   (setq metadata (a-dissoc metadata "abstract" "doc-root" "sections-beg" "sections-end"))))
-    ;;         (_ nil)))
-    ;;     (setq bibtexs (ref-man-export-parse-references type (a-get ref-man-export-bib-no-warn-types type)))
-    ;;     (setq bibtexs (mapcar (lambda (x)
-    ;;                             `(,(car x) ,(nth 1 x) ,(replace-regexp-in-string "venue=" "booktitle=" (nth 2 x))))
-    ;;                           bibtexs))
-    ;;     (setq yaml-header
-    ;;           (ref-man-export-generate-yaml-header type abstract metadata
-    ;;                                                (ref-man-export-bibtexs
-    ;;                                                 bibtexs citeproc tmp-bib-file no-gdrive)))
-    ;;     (goto-char (point-min))
-    ;;     ;; NOTE: export to markdown in ref-man-export-temp-md-buf
-    ;;     (if (eq type 'paper)
-    ;;         (ref-man-export-org-to-md type nil (and ref-man-export-paper-version-org-file org-file))
-    ;;       (ref-man-export-org-to-md type))))
-
     ;; NOTE: process markdown buffer
     (with-current-buffer ref-man-export-temp-md-buf
       ;; NOTE: Remove TOC if asked

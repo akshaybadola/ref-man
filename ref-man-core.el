@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 27 February 2023 09:02:52 AM IST>
+;; Time-stamp:	<Monday 10 April 2023 07:15:38 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -971,18 +971,19 @@ Display the entries if any found in a helm buffer."
   (interactive)
   (pcase-let* ((link (util/org-link-get-target-for-internal))
                (`(,buf ,pt) (if link
-                                `(,(find-file-noselect (plist-get link :file))
-                                  ,(plist-get link :point))
-                              `(,(current-buffer) ,(save-excursion
-                                                     (org-back-to-heading t)
-                                                     (beginning-of-line)
-                                                     (point)))))
+                                (list (find-file-noselect (plist-get link :file))
+                                      (plist-get link :point))
+                              (list (current-buffer)
+                                    (save-excursion
+                                      (org-back-to-heading t)
+                                      (beginning-of-line)
+                                      (point)))))
                (`(,heading ,cid ,buf-name) (with-current-buffer buf
                                              (save-excursion
                                                (goto-char pt)
-                                               `(,(org-get-heading t t t t)
-                                                 ,(org-entry-get (point) "CUSTOM_ID")
-                                                 ,(buffer-name)))))
+                                               (list (org-get-heading t t t t)
+                                                     (org-entry-get (point) "CUSTOM_ID")
+                                                     (buffer-name)))))
                (headings (-keep (lambda (x)
                                   (unless (and (= pt (nth 4 x)) (string= (nth 2 x) buf-name))
                                     `(,(car x) . ,(list (nth 2 x) (nth 4 x)))))
@@ -990,6 +991,11 @@ Display the entries if any found in a helm buffer."
     (if headings
         (util/helm-org-headings nil headings)
       (message "No duplicate headings found"))))
+
+(defun ref-man-org-duplicate-entry-p (heading cid entry)
+  "Are two entries  list of org headings matching CUSTOM_ID or heading."
+  (or (string= cid (nth 3 entry))
+      (string= (downcase heading) (downcase (car entry)))))
 
 (defun ref-man-org-check-for-duplicate-pub (heading cid)
   "Return list of org headings matching CUSTOM_ID or heading.
@@ -1000,8 +1006,7 @@ The list structure is same as `util/org-collect-headings-cache'.
 See for details."
   (util/org-filter-from-headings-cache
    nil
-   (lambda (y) (or (string= cid (nth 3 y))
-                   (string= (downcase heading) (downcase (car y)))))))
+   (-partial 'ref-man-org-duplicate-entry-p heading cid)))
 
 
 (defun ref-man-org-drawers-balanced-p (blocks)
@@ -1200,7 +1205,7 @@ has-body indicates if any text is present."
 (defun ref-man-org-insert-prop-list-item (prop
                                           &optional buf keep-current
                                           consolidate-drawers no-newline)
-  "Insert a paper property as text in entry after property drawer if it exists.
+  "Insert a property alist as text in entry after property drawer if it exists.
 
 The property PROP is a key value pair and is inserted as a list
 item after the current key-value props if they exist. They are
@@ -1433,6 +1438,86 @@ org writing functions."
     (if (string-equal (assoc "type" entry) "misc")
         (org-set-property "BTYPE" "misc")
       (org-set-property "BTYPE" "article"))))
+
+(defun ref-man-org-insert-entry-at-eob-after-current-same-level ()
+  (let* ((stars (save-excursion
+                  (if (save-excursion (goto-char (pos-bol)) (looking-at "^\\*+"))
+                      (match-string 0)
+                    (re-search-backward "\\(^\\*+\\).+")
+                    (match-string 1))))
+         (level (length stars)))
+    (goto-char (point-max))
+    (insert stars " ")))
+
+(defun ref-man--org-bibtex-write-ref-from-ss-ref-fast (entry &optional ignore-errors
+                                                             update-current no-abstract)
+  (when (a-get entry 'title)
+    ;; NOTE: insert heading only when not updating current heading
+    (unless update-current
+      (ref-man-org-insert-entry-at-eob-after-current-same-level))
+    (org-edit-headline (a-get entry 'title))
+    ;; FIXME: beg is same as current point
+    (let ((author-str (mapconcat (lambda (x)
+                                   (a-get x 'name))
+                                 (a-get entry 'authors) ", "))
+          (indent (make-string (1+ (org-current-level)) ? )))
+      (when (and (not no-abstract) (a-get entry 'abstract))
+        (ref-man-org-insert-abstract-list-item (cons "abstract" (a-get entry 'abstract)) nil t))
+      (insert "\n" indent ":PROPERTIES:\n")
+      (cl-loop for ent in entry
+               do
+               (cond ((or (eq (car ent) 'author) (eq (car ent) 'authors))
+                      (when (not (string-empty-p author-str))
+                        (insert indent ":AUTHOR:" indent
+                                (ref-man--invert-accents
+                                 (ref-man--replace-non-ascii
+                                  (ref-man--fix-curly
+                                   (ref-man--build-bib-author author-str))))
+                                "\n")))
+                     ((eq (car ent) 'isInfluential)
+                      (if (not (eq (cdr ent) 't))
+                          (insert indent ":ISINFLUENTIAL:" indent "nil" "\n")
+                        (insert ":ISINFLUENTIAL:" indent "t" "\n")))
+                     ((eq (car ent) 'externalIds)
+                      (seq-do
+                       (lambda (x)
+                         (unless (eq (car x) 'CorpusId)
+                           (insert indent (if (string= (upcase (format "%s" (car x))) ":ARXIV:")
+                                                      ":ARXIVID:"
+                                            (upcase (format ":%s:" (car x))))
+                                   indent
+                                   (format "%s" (cdr x)) "\n")))
+                       (cdr ent)))
+                     ((and (eq (car ent) 'url) update-current)
+                      (insert indent ":SS_URL:" indent
+                              (ref-man--replace-non-ascii
+                               (ref-man--fix-curly (format ":%s:" (cdr ent))))
+                              "\n"))
+                     ((and (not (member (car ent) '(abstract references citations corpusId
+                                                             fieldsOfStudy is_open_access
+                                                             topics is_publisher_licensed)))
+                           (cdr ent))
+                      (insert indent (format ":%s:" (upcase (symbol-name (car ent)))) indent
+                              (ref-man--replace-non-ascii
+                               (ref-man--fix-curly (format "%s" (cdr ent))))
+                              "\n"))))
+      (insert indent ":END:" "\n")
+      (ref-man-org-insert-prop-list-item
+       (cons "venue" (format "%s, %s" (a-get entry 'venue) (a-get entry 'year))) nil t)
+      (ref-man-org-insert-prop-list-item (cons "authors" author-str) nil t)
+      (let ((key (ref-man-parse-properties-for-bib-key)))
+        (unless (or key ignore-errors)
+          (debug)
+          ;; FIXME: This function should filter the user read key
+          ;; ref-man--build-bib-key-from-plist
+          (setq key (read-from-minibuffer (format "Could not parse key:\nauthor: %s\ntitle: %s\nyear: %s"
+                                                  (org-entry-get (point) "AUTHOR")
+                                                  (org-entry-get (point) "TITLE")
+                                                  (org-entry-get (point) "YEAR")))))
+        (when key
+          (org-entry-put (point) "CUSTOM_ID" key)))
+      (org-entry-put (point) "BTYPE" "article"))))
+
 
 ;; TODO: Rename this properly
 (defun ref-man--org-bibtex-write-ref-from-ss-ref (entry &optional ignore-errors
@@ -2643,7 +2728,7 @@ Return a cons of `id-type' and `id'.  Possible values for
                     (cons 'ss (-last-item (split-string (string-remove-suffix "/" url) "/"))))
                    (t nil)))))))
 
-(defun ref-man--insert-refs-from-seq (data name seqtype &optional ignore-errors no-abstract)
+(defun ref-man--insert-refs-from-seq (data name seqtype &optional ignore-errors no-abstract fast)
   "Insert references from a given sequence at cursor.
 
 DATA is json-data from semantic scholar.
@@ -2662,7 +2747,9 @@ Non-nil NO-ABSTRACT means to not insert the abstract."
   (unless (eq major-mode 'org-mode)
     (message "[ref-man] Can only insert to an org buffer"))
   (let ((write-func (cond ((eq seqtype 'ss)
-                           #'ref-man--org-bibtex-write-ref-from-ss-ref)
+                           (if fast
+                               #'ref-man--org-bibtex-write-ref-from-ss-ref-fast
+                             #'ref-man--org-bibtex-write-ref-from-ss-ref))
                           ((eq seqtype 'assoc)
                            #'ref-man--org-bibtex-write-ref-from-assoc)
                           ((eq seqtype 'plist)
@@ -2686,7 +2773,7 @@ Non-nil NO-ABSTRACT means to not insert the abstract."
       (outline-previous-heading))))
 
 (defun ref-man-org-insert-ss-data-subr (ss-data &optional buf where ignore-errors only
-                                            no-abstract current)
+                                            no-abstract current fast)
   "Insert Semantic Scholar Data SS-DATA into an org buffer.
 
 SS-DATA is an alist of a paper details with references and
@@ -2730,18 +2817,18 @@ citations after that."
   (org-demote)                          ; demote only once
   (pcase only
     ('refs (ref-man--insert-refs-from-seq
-            (a-get ss-data 'references) "references" 'ss ignore-errors t)
+            (a-get ss-data 'references) "references" 'ss ignore-errors t fast)
            (org-insert-heading-respect-content)
-           (ref-man--insert-refs-from-seq nil "citations" 'ss ignore-errors t))
-    ('cites (ref-man--insert-refs-from-seq nil "citations" 'ss ignore-errors t)
+           (ref-man--insert-refs-from-seq nil "citations" 'ss ignore-errors t fast))
+    ('cites (ref-man--insert-refs-from-seq nil "citations" 'ss ignore-errors t fast)
             (org-insert-heading-respect-content)
             (ref-man--insert-refs-from-seq
-             (a-get ss-data 'citations) "citations" 'ss ignore-errors t))
+             (a-get ss-data 'citations) "citations" 'ss ignore-errors t fast))
     (_ (ref-man--insert-refs-from-seq
-        (a-get ss-data 'references) "references" 'ss ignore-errors t)
+        (a-get ss-data 'references) "references" 'ss ignore-errors t fast)
        (org-insert-heading-respect-content)
        (ref-man--insert-refs-from-seq
-        (a-get ss-data 'citations) "citations" 'ss ignore-errors t)))
+        (a-get ss-data 'citations) "citations" 'ss ignore-errors t fast)))
   (outline-up-heading 1)
   (org-hide-block-all))
 
@@ -3433,6 +3520,9 @@ tree according to requirements."
         (fchars (string-to-list (read-from-minibuffer
                                  "Enter the characters for filters: {y-year,c-cite_count} etc.: ")))
         (count (or count 20))
+        (org-fold-core-style 'text-properties)
+        (org-fold-core--optimise-for-huge-buffers '(merge-folds ignore-modification-checks))
+        org-element-use-cache
         filters)
     (unless (= (length (-uniq fchars)) (length fchars))
       (user-error "Filters should not repeat"))
@@ -3476,7 +3566,10 @@ Citations.  See `ref-man-org-fetch-ss-data-for-entry' for details."
         (only (pcase pref-arg
                 (4 'refs)
                 (16 'cites)
-                (_ nil))))
+                (_ nil)))
+        (org-fold-core-style 'text-properties)
+        (org-fold-core--optimise-for-huge-buffers '(merge-folds ignore-modification-checks))
+        org-element-use-cache)
     (save-excursion
       (let* ((ssid (if link
                        (let* ((buf (find-file-noselect (plist-get link :file)))
@@ -3505,7 +3598,7 @@ Citations.  See `ref-man-org-fetch-ss-data-for-entry' for details."
                   (org-insert-property-drawer)
                   (org-entry-put (point) "PAPERID" (a-get ss-data 'paperId))
                   (forward-line)
-                  (ref-man-org-insert-ss-data-subr ss-data buf nil t only)
+                  (ref-man-org-insert-ss-data-subr ss-data buf nil t only nil nil t)
                   (ref-man-org-maybe-insert-cite-count (a-get ss-data 'citationCount))
                   (message "[ref-man] Displaying Semantic Scholar Data"))
                 (pop-to-buffer buf)))
@@ -3781,6 +3874,24 @@ subtree will be updated later."
               :status status)
         ref-man--subtree-list))
 
+(defun ref-man-org-maybe-fix-and-get-cvf-year ()
+  "Fix year according to venue title for CVF entries.
+
+Sometimes there's a mismatch for YEAR between SS data and the
+publication year.  It can be gauged from venue and fixed.
+However updating from SS data again will revert to erroneous
+entry if it was erroneous."
+  (let* ((venue (org-entry-get (point) "VENUE"))
+         (journal (org-entry-get (point) "JOURNAL"))
+         (entry-year (org-entry-get (point) "YEAR"))
+         (venue-year (or (and venue (string-match "\\([0-9]\\{4\\}\\) .+" venue)
+                              (match-string 1 venue))
+                         (and journal (string-match "\\([0-9]\\{4\\}\\) .+" journal)
+                              (match-string 1 journal)))))
+    (when (and entry-year (not (string= entry-year venue-year)))
+      (org-entry-put (point) "YEAR" venue-year))
+    (org-entry-get (point) "YEAR")))
+
 (defun ref-man-maybe-fetch-pdf-from-cvf (args)
   "Fetch pdf from a CVF url if present.
 
@@ -3791,10 +3902,12 @@ ARGS are ignored in this case."
   (let* ((doi (org-entry-get (point) "DOI"))
          (venue (org-entry-get (point) "VENUE"))
          (cvf-entry (ref-man-url-parse-cvf-venue doi venue))
+         (year (if cvf-entry (ref-man-org-maybe-fix-and-get-cvf-year)
+                 (org-entry-get (point) "YEAR")))
          (url (when cvf-entry
-                    (ref-man-url-get-cvf-url (org-entry-get (point) "TITLE")
-                                             cvf-entry nil
-                                             (org-entry-get (point) "YEAR")))))
+                (ref-man-url-get-cvf-url (org-entry-get (point) "TITLE")
+                                         cvf-entry nil
+                                         year))))
     (when url
       (prog1 t (ref-man--fetch-from-pdf-url-new url args)))))
 
@@ -3959,14 +4072,17 @@ level deeper from the current heading as a new entry."
 Unlike `org-narrow-to-subtree' any headings which are children of
 the current heading are excluded."
   (let (ref-man--point-min
-        ref-man--point-max)
+        ref-man--point-max
+        (folding (when (fboundp 'org-fold-core-folded-p)
+                   (progn (outline-back-to-heading)
+                          (org-fold-core-folded-p (pos-eol))))))
     (org-narrow-to-subtree)
     (save-excursion
       (org-show-subtree)
       (beginning-of-line)
       (if (eq (point-min) (point))
           (setq ref-man--point-min (point))
-        (org-previous-visible-heading 1)
+        (outline-back-to-heading)
         (setq ref-man--point-min (point)))
       (org-next-visible-heading 1)
       (setq ref-man--point-max (point))
@@ -3976,13 +4092,17 @@ the current heading are excluded."
   "Check if the org heading a non empty string."
   (> (length (string-trim (substring-no-properties (org-get-heading t t t t)))) 0))
 
+;; NOTE: Not sure if it's needed
 (defmacro ref-man-ensure-same-heading (&rest body)
+  "Jump to previous heading if current heading after modification is not the same."
   (declare (debug t))
   `(let ((current-heading (org-get-heading t t t t))
+         (original-point (point))
          (retval ,@body)
          new-heading)
      (setq new-heading (org-get-heading t t t t))
-     (unless (string= new-heading current-heading)
+     (when (and (not (= (point) original-point))
+                (not (string= new-heading current-heading)))
        (outline-previous-heading))
      retval))
 
@@ -3996,37 +4116,36 @@ Make sure URL property exists in either property drawer or text
 and if no URL could be found return nil.  If no URL property
 exists, then first link from entry text is imported into the
 property drawer as the URL property."
-  (ref-man-ensure-same-heading
-   (save-excursion
-     (let* ((props (or props (org-entry-properties)))
-            (url-prop (cdr (assoc "URL" props))))
-       ;; Remove the url args. Would be useless to keep
-       (when (and url-prop (string-match-p "?.*" url-prop)
-                  (not (string-match-p "openreview.net" url-prop))
-                  (not (string-match-p "acm.org" url-prop))
-                  (not (string-match-p "ieeexplore.ieee.org" url-prop)))
-         (org-entry-put (point) "URL" (car (split-string url-prop "?"))))
-       (unless url-prop
-         (let* ((link (ref-man-org-get-first-link-from-org-heading))
-                (url (org-element-property :raw-link link))
-                (beg (org-element-property :begin link))
-                (end (org-element-property :end link)))
-           (when url
-             (delete-region beg end)
-             (goto-char beg)
-             (cond ((and (org-at-item-p)
-                         (not (string-match-p
-                               "[^- ]" (buffer-substring-no-properties (point-at-bol)
-                                                                       (point-at-eol)))))
-                    (delete-region (point-at-bol) (+ 1 (point-at-eol))))
-                   ((and (not (string-match-p
-                               "[^[:space:]]" (buffer-substring-no-properties (point-at-bol)
-                                                                              (point-at-eol)))))
-                    (delete-region (point-at-bol) (+ 1 (point-at-eol)))))
-             (outline-previous-heading)
-             (ref-man-org-add-url-property url))
-           (setq url-prop url)))
-       url-prop))))
+  (save-excursion
+    (let* ((props (or props (org-entry-properties)))
+           (url-prop (cdr (assoc "URL" props))))
+      ;; Remove the url args. Would be useless to keep
+      (when (and url-prop (string-match-p "?.*" url-prop)
+                 (not (string-match-p "openreview.net" url-prop))
+                 (not (string-match-p "acm.org" url-prop))
+                 (not (string-match-p "ieeexplore.ieee.org" url-prop)))
+        (org-entry-put (point) "URL" (car (split-string url-prop "?"))))
+      (unless url-prop
+        (let* ((link (ref-man-org-get-first-link-from-org-heading))
+               (url (org-element-property :raw-link link))
+               (beg (org-element-property :begin link))
+               (end (org-element-property :end link)))
+          (when url
+            (delete-region beg end)
+            (goto-char beg)
+            (cond ((and (org-at-item-p)
+                        (not (string-match-p
+                              "[^- ]" (buffer-substring-no-properties (point-at-bol)
+                                                                      (point-at-eol)))))
+                   (delete-region (point-at-bol) (+ 1 (point-at-eol))))
+                  ((and (not (string-match-p
+                              "[^[:space:]]" (buffer-substring-no-properties (point-at-bol)
+                                                                             (point-at-eol)))))
+                   (delete-region (point-at-bol) (+ 1 (point-at-eol)))))
+            (outline-back-to-heading)
+            (ref-man-org-add-url-property url))
+          (setq url-prop url)))
+      url-prop)))
 
 (defun ref-man-parse-properties-for-bib-key (&optional arg)
   "Check if bibtex key can be determined from entry properties."
@@ -4297,11 +4416,14 @@ Only works for internal org links."
   "Margin at the right of cursor to show tooltip.")
 (defvar ref-man-peek-margin-below 5
   "Margin below the cursor to show tooltip.")
+(defvar ref-man-peek-font
+  (font-spec :family "Liberation Mono" :size 13 :weight
+             'normal :slant 'normal :width 'condensed))
 (defun ref-man-org-peek-link-subr (_win _pos _motion)
   "Show information about org link under cursor.
 Adapted somewhat from `company-quickhelp--show'."
   (let* ((doc (ref-man-org-get-link-peek-info))
-         (width 80)
+         (width 180)
          (timeout 300)
          (margin-right ref-man-peek-margin-right)
          (margin-below ref-man-peek-margin-below) ; (if (< (or (overlay-get ovl 'company-height) 10) 0) 0 (frame-char-height))
@@ -4311,7 +4433,7 @@ Adapted somewhat from `company-quickhelp--show'."
          (pos (point)))
     (when doc
       (pos-tip-show doc fg-bg pos nil timeout width nil
-                    margin-right margin-below))
+                    margin-right margin-below ref-man-peek-font))
     ;; TODO: MAYBE add text properties later
     ;; (if company-quickhelp-use-propertized-text
     ;;     (let* ((frame (window-frame (selected-window)))

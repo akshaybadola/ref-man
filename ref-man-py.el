@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Saturday 04 February 2023 00:32:38 AM IST>
+;; Time-stamp:	<Monday 10 April 2023 07:15:38 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -32,6 +32,8 @@
 ;; processes.
 
 ;;; Code:
+
+(require 'python-venv)
 
 (defcustom ref-man-py-executable nil
   "Path to python executable to use for `ref-man'.
@@ -73,14 +75,24 @@ on the system."
   :type 'file
   :group 'ref-man)
 
-(defcustom ref-man-py-home-dir nil
-  "Optional home directory of the python module."
+(defcustom ref-man-py-source-dir nil
+  "Optional source directory of the python module."
   :type 'directory
   :group 'ref-man)
 
 (defcustom ref-man-py-env-dir ".ref-man/env"
   "Directory of virtualenv of the python module."
   :type 'directory
+  :group 'ref-man)
+
+(defcustom ref-man-py-run-from-source nil
+  "Should we run the python module directly from source?"
+  :type 'boolean
+  :group 'ref-man)
+
+(defcustom ref-man-py-use-system-python nil
+  "Should we run not create venv and use system python?"
+  :type 'boolean
   :group 'ref-man)
 
 (defcustom ref-man-py-refs-cache-dir ".ref-man/s2_cache"
@@ -97,11 +109,11 @@ on the system."
 ;; NOTE: Internal variables
 (defvar ref-man-py-external-process-pid nil)
 
-(defsubst ref-man-py-home-dir-valid-p ()
-  "Check if `ref-man-py-home-dir' exists."
-  (and ref-man-py-home-dir (stringp ref-man-py-home-dir)
-       (not (string-empty-p ref-man-py-home-dir))
-       (f-exists? ref-man-py-home-dir)))
+(defsubst ref-man-py-source-dir-valid-p ()
+  "Check if `ref-man-py-source-dir' exists."
+  (and ref-man-py-source-dir (stringp ref-man-py-source-dir)
+       (not (string-empty-p ref-man-py-source-dir))
+       (f-exists? ref-man-py-source-dir)))
 
 (defsubst ref-man-py-url (&optional path opts)
   "Return `ref-man-py' url for python process.
@@ -118,182 +130,88 @@ Optional OPTS is an alist of additional HTTP args to send."
                                  opts "&")))
               "")))
 
-;; TODO: Add `venv' alternative to `virtualenv' in case it doesn't exist
-(defun ref-man-py-create-venv (python path)
-  "Create a new `ref-man' virtual env in directory PATH.
-The python executable to use is defined by PYTHON."
-  (if (and (string-match-p "no.*module.*virtualenv.*"
-                           (shell-command-to-string
-                            (format "%s -m virtualenv -p %s %s"
-                                    python (f-filename (f-canonical python)) path)))
-           (string-match-p "no.*module.*virtualenv.*"
-                           (shell-command-to-string
-                            (format "%s -m virtualenv -p %s %s"
-                                    python (f-filename (f-canonical python)) path))))
-      nil (message "Create venv with %s in %s" (f-filename (f-canonical python)) path)))
+(defsubst ref-man-py-python ()
+  "Get the appropriate python version.
 
-(defun ref-man-py-python-version (python)
-  "Return the version for a python executable PYTHON."
-  (cadr (split-string
-         (shell-command-to-string
-          (format "%s --version" python)))))
+If `ref-man-py-use-system-python' that's just system python, else
+it's given by python in `ref-man-py-env-dir'."
+  (if ref-man-py-use-system-python
+      (executable-find "python3")
+    (and ref-man-py-env-dir (path-join ref-man-py-env-dir "bin" "python"))))
 
-(defun ref-man-py-venv-python-version ()
-  "Return version of python executable in `ref-man-py' virtualenv.
+(defun python-venv-py-version ()
+  "Return version of python executable for appropriate python exectuable.
 
-The virtualenv path is determined by `ref-man-py-env-dir'."
-  (ref-man-py-python-version (path-join ref-man-py-env-dir "bin" "python")))
-
-(defun ref-man-py-no-mod-in-venv-p (python)
-  "Check if venv with python path PYTHON has `ref-man-py' module installed."
-  (string-match-p "no.*module.*ref.*"
-                  (shell-command-to-string
-                   (format "%s -m ref_man_py --version" python))))
-
-(defun ref-man-py-installed-mod-version (python)
-  "Return version for installed `ref-man-py' module.
-
-PYTHON is the path for python executable for the virtual environment."
-  (shell-command-to-string
-   (format "%s -m ref_man_py --version" python)))
+The executable is given by `ref-man-py-python'."
+  (python-venv-python-version (ref-man-py-python)))
 
 (defun ref-man-py-file-mod-version ()
   "Return the version of `ref-man-py' python module in source dir.
 
-Source dir is given by `ref-man-py-home-dir'."
-  (when (ref-man-py-home-dir-valid-p)
-    (let* ((init-file (path-join ref-man-py-home-dir "ref_man_py" "__init__.py"))
+Source dir is given by `ref-man-py-source-dir'."
+  (when (ref-man-py-source-dir-valid-p)
+    (let* ((init-file (path-join ref-man-py-source-dir "ref_man_py" "__init__.py"))
            (buf (find-file-noselect init-file)))
       (with-current-buffer buf
         (goto-char (point-min))
         (re-search-forward "__version__\\(.+?\\)=\\(.+?\\)\"\\(.+\\)\"")
         (substring-no-properties (match-string 3))))))
 
-(defun ref-man-py-pypi-update-available-p ()
-  "Check pypi for updates."
-  (let* ((pkg-name "ref-man-py")
-         (url (format "https://pypi.org/pypi/%s/json" pkg-name))
-         (pkg-info (with-current-buffer (url-retrieve-synchronously url)
-                     (goto-char (point-min))
-                     (re-search-forward "\r?\n\r?\n")
-                     (json-read)))
-         (version-available (a-get-in pkg-info '(info version)))
-         (version-installed (ref-man-py-installed-version-string)))
-    (version< version-installed version-available)))
+(defun ref-man-py-need-update-p (python)
+  "Check if `ref-man-py' python module needs update.
 
-(defun ref-man-py-installed-version-string ()
-  "Return string version of the installed module."
-  (string-trim (replace-regexp-in-string
-                "ref-man.*? version \\(.*\\)" "\\1"
-                (ref-man-py-installed-mod-version
-                 (path-join ref-man-py-env-dir "bin" "python")))))
+PYTHON is the virtualenv environment or python executable."
+  (let ((installed-version (python-venv-installed-mod-version-string python "ref-man-py"))
+        (pypi-version (python-venv-get-pypi-version "ref-man-py")))
+    (if (and installed-version pypi-version)
+        (version< installed-version pypi-version)
+      t)))
 
+(defun ref-man-py-install-ref-man (&optional update)
+  "Install the `ref-man-py' python module from PyPI.
 
-(defun ref-man-py-env-needs-update-p ()
-  "Check if `ref-man-py' module needs to be updated."
-  (if (ref-man-py-home-dir-valid-p)
-      (not (equal (ref-man-py-file-mod-version)
-                  (ref-man-py-installed-version-string)))
-    (ref-man-py-pypi-update-available-p)))
+If `ref-man-py-use-system-python' is non-nil then a python
+virtualenv is created, otherwise the system python3 is used.  The
+python virtualenv directory is given by `ref-man-py-env-dir'.
 
-(defun ref-man-py-env-uninstall-module (env)
-  "Uninstall the `ref-man-py' module from virtualenv ENV."
-  (shell-command
-   (concat "source " (path-join env "bin" "activate") " && pip uninstall -y ref-man")
-   "*ref-man-uninstall-cmd*" "*ref-man-uninstall-cmd*"))
+Optional non-nil EDITABLE does an editable install.
 
-(defun ref-man-py-env-install-module (env)
-  "Install `ref-man-py' module in virtualenv ENV.
+Optional non-nil REINSTALL reinstalls the entire virtualenv.
 
-If we have a source directory in `ref-man-py-home-dir' then
-install from that else, fetch from pypi."
-  (if (ref-man-py-home-dir-valid-p)
-      (ref-man-py-env-install-module-from-source env)
-    (ref-man-py-env-install-module-from-pypi env)))
+Optional non-nil UPDATE updates the `ref-man-py' python module.
 
-(defun ref-man-py-env-install-module-from-source (env)
-  "Install the `ref-man-py' module in virtualenv ENV from source."
-  (shell-command
-   (concat "source " (path-join env "bin" "activate") " && "
-           (format "cd %s && python -m pip install -U ."
-                   ref-man-py-home-dir))
-   "*ref-man-install-cmd*" "*ref-man-install-cmd*"))
-
-(defun ref-man-py-env-install-module-from-pypi (env)
-  "Install the `ref-man' module in virtualenv ENV with pypi."
-  (shell-command
-   (concat "source " (path-join env "bin" "activate") " && "
-           "python -m pip install -U ref-man")
-   "*ref-man-install-cmd*" "*ref-man-install-cmd*"))
-
-(defun ref-man-py-get-system-python ()
-  "Get system python3 executable.
-
-Detect if we are in a virtual environment and ask confirmation
-from user if we are."
-  (let* ((python (executable-find "python3"))
-         (in-venv (string= "False" (string-trim
-                                    (shell-command-to-string
-                                     (format "%s -c 'import sys; print(sys.prefix == sys.base_prefix)'"
-                                             python))))))
-    (unless (or ref-man-py-executable python)
-      (error "No `ref-man-py-executable' or python3 found in current paths.\n
-Either set `ref-man-py-executable' or add python3 path to the exec path"))
-    (or ref-man-py-executable
-        (if in-venv
-            (if (y-or-n-p
-                 (format "Python executable %s seems to be in a virtualenv.  Really use? " python))
-                python
-              (ido-read-file-name "Enter python executable to use: "))
-          python))))
-
-(defun ref-man-py-setup-env (&optional reinstall update)
-  "Setup python virtualenv.
-
-Optional non-nil REINSTALL removes the virtualenv and installs
-everything again.  Optional non-nil UPDATE only updates the
-`ref-man' python module.  The directory is relative to `ref-man'
-install directory `ref-man-home-dir'."
+This is for installing from PyPI only.  If
+`ref-man-py-run-from-source' is given and a valid
+`ref-man-py-source-dir' exists, then it's simply run from there
+and nothing is installed.  Running from source assumes that all
+the requirements are already installed in `ref-man-py-env-dir' or
+system."
   (let* ((env ref-man-py-env-dir)
-         (python (pcase (path-join env "bin" "python")
-                   ((and arg (pred f-exists?)) arg)
-                   (_ (ref-man-py-get-system-python))))
-         (py-version (and python (cadr
-                                  (split-string
-                                   (shell-command-to-string (format "%s --version" python)))))))
-    ;; TODO: This should be read from pyproject.toml or something
-    (when (version< py-version "3.7.0")
-      (user-error "Your default python3 executable is < 3.7.0.
-`ref-man' requires at least 3.7.0.
-Please set `ref-man-py-executable' with a version of python >= 3.7.0"))
-    (when (and reinstall (f-exists? env)
-               (y-or-n-p (format "Clean and reinstall virtualenv %s? " env)))
-      (f-delete env t))
-    (unless (f-exists? env)
-      (f-mkdir env)
-      (unless (ref-man-py-create-venv python env)
-        (error "Could not install venv.\n
-Make sure package 'virtualenv' exists in current python environment")))
-    (let* ((env-has-python (f-exists? (path-join env "bin" "python3")))
-           (python (and env-has-python
-                        (path-join env "bin" "python3"))))
-      (when (and (not python) (ref-man-py-create-venv python env))
-        (error "Could not install venv.\n
-Make sure package 'virtualenv' exists in current python environment"))
-      (let* ((env-has-no-ref-man (ref-man-py-no-mod-in-venv-p python))
-             (need-update (or update (ref-man-py-env-needs-update-p))))
-        (when (or need-update env-has-no-ref-man)
-          (cond ((and need-update (not env-has-no-ref-man))
-                 (message "New version of ref-man. Updating existing ref-man-server in %s" env)
-                 (ref-man-py-env-uninstall-module env))
-                (env-has-no-ref-man
-                 (message "ref-man-server not found. Installing in %s" env)))
-          (ref-man-py-env-install-module env))
-        (if (ref-man-py-installed-mod-version python)
-            (message "%s found in %s" (ref-man--trim-whitespace
-                                       (ref-man-py-installed-mod-version python))
-                     env)
-          (error "Could not install ref-man in %s" env))))))
+         (python (if ref-man-py-use-system-python
+                     (python-venv-get-system-python)
+                   (python-venv-or-env-python env)))
+         (env-dir (if ref-man-py-use-system-python "user local dir" env))
+         (installed-version (python-venv-installed-mod-version-string python "ref-man-py"))
+         (env-has-no-ref-man (string-empty-p installed-version))
+         (need-update (and (not ref-man-py-run-from-source)
+                           (or update (ref-man-py-need-update-p python)))))
+    (when ref-man-py-run-from-source
+      (user-error "Can't run from source and install the module"))
+    (cond (need-update
+           (message "New version of ref-man. Updating existing ref-man-server in %s" env-dir)
+           (python-venv-env-install-module-from-pypi python "ref-man-py" t))
+          (env-has-no-ref-man
+           (message "ref-man-server not found. Installing in %s" env-dir)
+           (python-venv-env-install-module-from-pypi python "ref-man-py"))
+          (t (if (y-or-n-p (format "Some error occured. Clean and reinstall for venv %s" env-dir))
+                 (if ref-man-py-use-system-python
+                     (progn (python-venv-env-uninstall-module python "ref-man-py")
+                            (python-venv-env-install-module-from-pypi python "ref-man-py" t))
+                   (python-venv-env-install-module-from-pypi python "ref-man-py" t)))))
+    (let ((version (python-venv-installed-mod-version python "ref-man-py")))
+      (if version
+          (message "%s found in %s" version env-dir)
+        (error "Could not install ref-man in %s" env-dir)))))
 
 ;; TODO: Requests to python server should be dynamic according to whether I want
 ;;       to use proxy or not at that point
@@ -315,10 +233,11 @@ nil, `ref-man-py-data-dir' respectively by
   (prog1
       (message (format "[ref-man] Starting python process on port: %s"
                        ref-man-py-server-port))
-    (let ((python (path-join ref-man-py-env-dir "bin" "python"))
-          (proxy-port (or proxy-port ref-man-proxy-port)))
-      (condition-case nil
-          (ref-man-py-setup-env))
+    (let ((python (ref-man-py-python))
+          (proxy-port (or proxy-port ref-man-proxy-port))
+          (default-directory (when (and ref-man-py-run-from-source
+                                        (ref-man-py-source-dir-valid-p))
+                               ref-man-py-source-dir)))
       (let ((args (-filter #'identity (list (format "--data-dir=%s" data-dir)
                                             (format "--port=%s" port)
                                             (and proxy-port "--proxy-everything")
@@ -405,7 +324,8 @@ to the port of that process and
                      (string-to-number
                       (cadr (split-string
                              (car (split-string
-                                   (substring x (string-match "port" x)))) "="))))
+                                   (substring x (string-match "port" x))))
+                             "="))))
                (setq ref-man-py-external-process-pid (string-to-number (nth 1 (split-string x))))
                (cl-return t)))))
 

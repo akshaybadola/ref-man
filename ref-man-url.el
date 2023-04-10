@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 27 February 2023 09:02:52 AM IST>
+;; Time-stamp:	<Monday 10 April 2023 07:15:38 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -213,25 +213,28 @@ See `ref-man-pdf-proxy-port' for details."
 
 If optional TRANSFORM is non-nil then change the URL according to its type to a
 downloadable one."
-  (and (ref-man-url-non-gscholar-url-p url)
-       (cond ((string-match-p "arxiv.org" url)
-              (if (string-match-p "/pdf/" url) url
-                (if transform (ref-man-url-arxiv-pdf-link-helper url) url)))
-             ((string-match-p "aaai.org" url)
-              (when (or (string-match-p "/download/" url)
-                        (string-match-p "ojs.aaai.org.+article/view/[0-9]+/[0-9]+" url))
+  (let ((-url (car (split-string url "?"))))
+    (and (ref-man-url-non-gscholar-url-p -url)
+         (cond ((string-match-p "arxiv.org" -url)
+                (if (string-match-p "/pdf/" -url) url
+                  (if transform (ref-man-url-arxiv-pdf-link-helper url) url)))
+               ((string-match-p "aaai.org" -url)
+                (when (or (string-match-p "/download/" -url)
+                          (string-match-p "ojs.aaai.org.+article/view/[0-9]+/[0-9]+" -url))
+                  (if transform
+                      (replace-regexp-in-string "/article/view/" "/article/download/" url)
+                    url)))
+               ((string-match-p "openreview.net" -url)
                 (if transform
-                    (replace-regexp-in-string "/article/view/" "/article/download/" url)
-                  url)))
-             ((string-match-p "openreview.net" url)
-              (if transform
-                  (replace-regexp-in-string "forum\\?id=" "pdf?id=" url)
-                url))
-             ((string-match-p "www.frontiersin.org.*/pdf$" url)
-              url)
-             ((string-match-p "dl.acm.org" url)
-              (when (string-match-p "doi/pdf" url) url))
-             (t (when (string-match-p "\\.pdf$" url) url)))))
+                    (replace-regexp-in-string "forum\\?id=" "pdf?id=" url)
+                  url))
+               ((string-match-p "www.frontiersin.org.*/pdf$" -url)
+                url)
+               ((string-match-p "link.springer.com.*\\.pdf$" -url)
+                url)
+               ((string-match-p "dl.acm.org" -url)
+                (when (string-match-p "doi/pdf" -url) url))
+               (t (when (string-match-p "\\.pdf$" -url) url))))))
 
 ;; (defun ref-man-url-get-bibtex-link-from-nips-url  (url))
 ;; (defun ref-man-url-get-bibtex-link-from-cvf-url  (url))
@@ -752,7 +755,7 @@ ARGS is a plist with keywords :heading :point :buffer"
                        "Could not determine CVF venue. Enter: ")))
         (if (string-empty-p venue)
             (user-error "No venue given")
-          (ref-man-py-get-cvf-url heading venue url year))))))
+          (ref-man-url-get-cvf-url heading venue url year))))))
 
 (defun ref-man-url-get-cvf-url (title venue &optional url year)
   "Get the cvpr url from python server for given TITLE and VENUE.

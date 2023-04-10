@@ -453,3 +453,32 @@
    - Handle different pdf links in Neurips papers in ~ref-man-url-get-pdf-link-helper~
    - Some changes to ~ref-man--transcribe~ and ~ref-man-bibtex-ascii-replacement-strings~
      in ~ref-man-util~
+
+** [2023-04-10 Mon 05:28]
+   - In ~ref-man-core~
+     + Some stylistic changes
+     + New function ~ref-man-org-duplicate-entry-p~ for more modularity
+     + New functions ~ref-man--org-bibtex-write-ref-from-ss-ref-fast~
+       and ~ref-man-org-insert-entry-at-eob-after-current-same-level~
+       for faster org entry insertions with ~org-mode~ 9.6.*
+     + Added ~fast~ option to ~ref-man--insert-refs-from-seq~ and
+       ~ref-man-org-insert-ss-data-subr~
+     + Configured variable configuration for ~org-fold-core-style~ and
+       ~org-fold-core--optimise-for-huge-buffers~ for ~org-mode~ 9.6.*
+     + Fix for mismatch year between SS and CVF in ~ref-man-maybe-fetch-pdf-from-cvf~
+       with new function ~ref-man-org-maybe-fix-and-get-cvf-year~
+     + Removed ~ref-man-ensure-same-heading~ from ~ref-man--check-fix-url-property~
+     + Fixed ~ref-man-peek-font~
+   - In ~ref-man-export~
+     + Added ~ref-man-export-article-no-urls-current-buffer-from-doc-root~
+     + Don't get keywords when they aren't there
+   - In ~ref-man-files~
+     + Fix wrong filename for Springer and ACM urls
+   - In ~ref-man-py~
+     + Removed virtualenv functions to separate package ~python-venv~
+   - In ~ref-man-ss~
+     + Configured variables for ~org-mode~ 9.6.*
+     + Some more ~ref-man-ss-nonascii-ascii-chars~
+   - In ~ref-man-url~
+     + Added Springer url support
+

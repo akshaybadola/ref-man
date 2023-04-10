@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 27 February 2023 09:02:52 AM IST>
+;; Time-stamp:	<Monday 10 April 2023 07:15:38 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -83,7 +83,8 @@ Used by `ref-man-ss-fetch-recommendations'."
     ("â" . "◦")))
 
 (defvar ref-man-ss-nonascii-ascii-chars
-  '(("ï¬" . "f")))
+  '(("ï¬" . "f")
+    ("ï¬" . "fl")))
 
 (defun ref-man-ss-fix-nonascii-chars-in-entry ()
   "Fix nonascii chars in current org entry.
@@ -292,8 +293,8 @@ ids to Semantic Scholar via `ref-man-py' service."
                               (while (re-search-forward link-re nil t)
                                 (push (ref-man-org-get-property-from-org-link "PAPERID") paperids))
                               `(,y . ,paperids))))
-                        items-text '(pos-ids neg-ids))
-             (count ref-man-ss-recommendation-count)))
+                        items-text '(pos-ids neg-ids)))
+            (count ref-man-ss-recommendation-count))
         (ref-man--post-json (ref-man-py-url "recommendations" '((count . 20)))
                             (a-assoc data)
                             (-partial 'ref-man-ss-display-recommendations heading)))))))
@@ -445,7 +446,10 @@ data upto a limit.  The limit is defined by
                    (org-entry-get (point) "PAPERID"))))
          (count ref-man-ss-fetch-max-display-citations)
          ;; Try to get as many citations as possible
-         (data (ref-man-ss-fetch-paper-citations ssid `((count . ,count)))))
+         (data (ref-man-ss-fetch-paper-citations ssid `((count . ,count))))
+         (org-fold-core-style 'text-properties)
+         (org-fold-core--optimise-for-huge-buffers '(merge-folds ignore-modification-checks))
+         org-element-use-cache)
     (with-current-buffer buffer
       (ref-man-org-update-filtered-subr data t))))
 

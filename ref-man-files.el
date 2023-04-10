@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 18 January 2023 14:22:59 PM IST>
+;; Time-stamp:	<Monday 10 April 2023 07:15:38 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -64,7 +64,9 @@ Returns path concatenated with `ref-man-documents-dir'."
                      ((or (string-match-p "arxiv.org/abs/" url) (string-match-p "arxiv.org/pdf/" url))
                       (concat (f-filename (string-remove-suffix ".pdf" (car (url-path-and-query obj)))) ".pdf"))
                      ((string-match-p "springer.com" url)
-                      (concat (string-join (last (split-string url "/") 2) "-") ".pdf"))
+                      (concat (string-remove-suffix
+                               ".pdf" (string-join (last (split-string (car (url-path-and-query obj)) "/") 2) "-"))
+                              ".pdf"))
                      ((string-match-p "aaai.org" url)
                       (concat "aaai_" (string-join (last (split-string url "/") 2) "_") ".pdf"))
                      ((string-match-p "frontiersin.org/articles/.+/pdf$" url)
@@ -86,7 +88,9 @@ Returns path concatenated with `ref-man-documents-dir'."
                                                               (split-string
                                                                (-first-item
                                                                 (split-string url "?"))
-                                                               "/")) "_") ".pdf"))))
+                                                               "/"))
+                                                  "_")
+                                       ".pdf"))))
                      (t (when (string-match-p "\\.pdf$" (car (url-path-and-query obj)))
                           (car (url-path-and-query obj))))))
          (file (and path (path-join ref-man-documents-dir (f-filename path)))))
