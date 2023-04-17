@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 10 April 2023 07:15:38 AM IST>
+;; Time-stamp:	<Monday 17 April 2023 08:17:10 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -254,51 +254,103 @@ Files are searched in `ref-man-export-pandoc-csl-dir'"
          (or (org-entry-get (point) "TEMPLATE") "blog")))
 
 ;; NOTE: For customization of filtering various org elements
-(org-export-define-derived-backend 'ref-md 'html
-  :filters-alist '((:filter-parse-tree . org-md-separate-elements))
-  :menu-entry
-  '(?m "Export to Markdown"
-       ((?M "To temporary buffer"
-	    (lambda (a s v b) (org-md-export-as-markdown a s v)))
-	(?m "To file" (lambda (a s v b) (org-md-export-to-markdown a s v)))
-	(?o "To file and open"
-	    (lambda (a s v b)
-	      (if a (org-md-export-to-markdown t s v)
-		(org-open-file (org-md-export-to-markdown nil s v)))))))
-  :translate-alist '((bold . org-md-bold)
-		     (center-block . org-md--convert-to-html)
-		     (code . org-md-verbatim)
-		     (drawer . org-md--identity)
-		     (dynamic-block . org-md--identity)
-		     (example-block . org-md-example-block)
-		     (export-block . org-md-export-block)
-		     (fixed-width . org-md-example-block)
-		     (headline . org-md-headline)
-		     (horizontal-rule . org-md-horizontal-rule)
-		     (inline-src-block . org-md-verbatim)
-		     (inlinetask . org-md--convert-to-html)
-		     (inner-template . org-md-inner-template)
-		     (italic . org-md-italic)
-		     (item . org-md-item)
-		     (keyword . org-md-keyword)
-		     (line-break . org-md-line-break)
-		     (link . org-md-link)
-		     (node-property . org-md-node-property)
-		     (paragraph . org-md-paragraph)
-		     (plain-list . org-md-plain-list)
-		     (plain-text . org-md-plain-text)
-		     (property-drawer . org-md-property-drawer)
-		     (quote-block . org-md-quote-block)
-		     (section . org-md-section)
-		     (special-block . org-md--convert-to-html)
-		     (src-block . org-md-example-block)
-		     (table . org-md-verbatim)
-		     (template . org-md-template)
-		     (verbatim . org-md-verbatim))
-  :options-alist
-  '((:md-footnote-format nil nil org-md-footnote-format)
-    (:md-footnotes-section nil nil org-md-footnotes-section)
-    (:md-headline-style nil nil org-md-headline-style)))
+(eval-when-compile
+  (if (version< org-version "9.6.0")
+      (org-export-define-derived-backend 'ref-md 'html
+        :filters-alist '((:filter-parse-tree . org-md-separate-elements))
+        :menu-entry
+        '(?m "Export to Markdown"
+             ((?M "To temporary buffer"
+	          (lambda (a s v b) (org-md-export-as-markdown a s v)))
+	      (?m "To file" (lambda (a s v b) (org-md-export-to-markdown a s v)))
+	      (?o "To file and open"
+	          (lambda (a s v b)
+	            (if a (org-md-export-to-markdown t s v)
+		      (org-open-file (org-md-export-to-markdown nil s v)))))))
+        :translate-alist '((bold . org-md-bold)
+		           (center-block . org-md--convert-to-html)
+		           (code . org-md-verbatim)
+		           (drawer . org-md--identity)
+		           (dynamic-block . org-md--identity)
+		           (example-block . org-md-example-block)
+		           (export-block . org-md-export-block)
+		           (fixed-width . org-md-example-block)
+		           (headline . org-md-headline)
+		           (horizontal-rule . org-md-horizontal-rule)
+		           (inline-src-block . org-md-verbatim)
+		           (inlinetask . org-md--convert-to-html)
+		           (inner-template . org-md-inner-template)
+		           (italic . org-md-italic)
+		           (item . org-md-item)
+		           (keyword . org-md-keyword)
+                           (latex-environment . org-md-latex-environment)
+                           (latex-fragment . org-md-latex-fragment)
+		           (line-break . org-md-line-break)
+		           (link . org-md-link)
+		           (node-property . org-md-node-property)
+		           (paragraph . org-md-paragraph)
+		           (plain-list . org-md-plain-list)
+		           (plain-text . org-md-plain-text)
+		           (property-drawer . org-md-property-drawer)
+		           (quote-block . org-md-quote-block)
+		           (section . org-md-section)
+		           (special-block . org-md--convert-to-html)
+		           (src-block . org-md-example-block)
+		           (table . org-md-verbatim)
+		           (template . org-md-template)
+		           (verbatim . org-md-verbatim))
+        :options-alist
+        '((:md-footnote-format nil nil org-md-footnote-format)
+          (:md-footnotes-section nil nil org-md-footnotes-section)
+          (:md-headline-style nil nil org-md-headline-style))
+        (org-export-define-derived-backend 'ref-md 'html
+          :filters-alist '((:filter-parse-tree . org-md-separate-elements))
+          :menu-entry
+          '(?m "Export to Markdown"
+               ((?M "To temporary buffer"
+	            (lambda (a s v b) (org-md-export-as-markdown a s v)))
+	        (?m "To file" (lambda (a s v b) (org-md-export-to-markdown a s v)))
+	        (?o "To file and open"
+	            (lambda (a s v b)
+	              (if a (org-md-export-to-markdown t s v)
+		        (org-open-file (org-md-export-to-markdown nil s v)))))))
+          :translate-alist '((bold . org-md-bold)
+		             (center-block . org-md--convert-to-html)
+		             (code . org-md-verbatim)
+		             (drawer . org-md--identity)
+		             (dynamic-block . org-md--identity)
+		             (example-block . org-md-example-block)
+		             (export-block . org-md-export-block)
+		             (fixed-width . org-md-example-block)
+		             (headline . org-md-headline)
+		             (horizontal-rule . org-md-horizontal-rule)
+		             (inline-src-block . org-md-verbatim)
+		             (inlinetask . org-md--convert-to-html)
+		             (inner-template . org-md-inner-template)
+		             (italic . org-md-italic)
+		             (item . org-md-item)
+		             (keyword . org-md-keyword)
+                             (latex-environment . org-md-latex-environment)
+                             (latex-fragment . org-md-latex-fragment)
+		             (line-break . org-md-line-break)
+		             (link . org-md-link)
+		             (node-property . org-md-node-property)
+		             (paragraph . org-md-paragraph)
+		             (plain-list . org-md-plain-list)
+		             (plain-text . org-md-plain-text)
+		             (property-drawer . org-md-property-drawer)
+		             (quote-block . org-md-quote-block)
+		             (section . org-md-section)
+		             (special-block . org-md--convert-to-html)
+		             (src-block . org-md-example-block)
+		             (table . org-md-verbatim)
+		             (template . org-md-template)
+		             (verbatim . org-md-verbatim))
+          :options-alist
+          '((:md-footnote-format nil nil org-md-footnote-format)
+            (:md-footnotes-section nil nil org-md-footnotes-section)
+            (:md-headline-style nil nil org-md-headline-style)
+            (:md-toplevel-hlevel nil nil org-md-toplevel-hlevel))))))
 
 
 ;; NOTE: Copied from `ox-gfm' in case modifications are needed
@@ -1294,7 +1346,7 @@ preprints."
                      (csl (ref-man-export-csl-files (downcase csl)))))
          (citeproc "biblatex")
          (mathjax-path ref-man-export-mathjax-dir)
-         (pandocwatch "-m pndconf")
+         (pndconf "-m pndconf")
          (checksum (if buffer
                        (md5 (buffer-substring-no-properties (point-min) (point-max)))
                      (save-restriction
@@ -1424,10 +1476,10 @@ preprints."
                      ('both "html,pdf")
                      ('paper "pdf")
                      (_ type)))
-             (cmd (string-join `(,(s-lex-format "cd ${docs-dir} && ${python} ${pandocwatch}")
-                                 ,(s-lex-format "convert ${md-file} ${no-cite-cmd} --same-output-dir")
-                                 ,(s-lex-format "-c ${config-file} ${no-citeproc} -g ${type}")
-                                 ,(s-lex-format "--pandoc-path ${pandoc} --templates-dir ${templates-dir} --csl-dir ${csl-dir}")
+             (cmd (string-join `(,(s-lex-format "${python} ${pndconf}")
+                                 ,(s-lex-format "--pandoc-path ${pandoc} -c ${config-file}")
+                                 ,(s-lex-format "convert ${md-file} ${no-cite-cmd} --same-pdf-output-dir")
+                                 ,(s-lex-format "${no-citeproc} -g ${type}")
                                  ,template-opt)
                                " "))
              (process-environment (mapcar
@@ -1441,6 +1493,7 @@ preprints."
              (buf (get-buffer-create "*pandoc and latex output*"))
              case-fold-search)
         (with-current-buffer buf
+          (setq-local show-trailing-whitespace nil)
           (erase-buffer)
           (insert (format "Running command %s\n" cmd))
           (insert msg)

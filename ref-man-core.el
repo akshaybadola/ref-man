@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 10 April 2023 07:15:38 AM IST>
+;; Time-stamp:	<Monday 17 April 2023 08:17:10 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -247,7 +247,10 @@ The functions in the hook are called with no arguments.")
     ("tpami" . "IEEE Transactions on Pattern Analysis and Machine Intelligence")
     ("jair" . "Journal of Artificial Intelligence Research")
     ("jmlr" . "Journal of Machine Learning Research"))
-  "Alist of venues and their abbreviations.")
+  "Alist of venues and their abbreviations.
+
+These are primarily Machine Learning venues and one can populate
+the alist according to whichever ones they prefer.")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END ref-man constants  ;;
@@ -377,7 +380,7 @@ only the top RESULT from `ref-man-venue-priorities'"
 ;; FIXME: Check for errors in case something is nil.
 ;;        `ref-man-parse-properties-for-bib-key' throws error because of this
 ;;        subroutine as TITLE here evals to nil.
-(defun ref-man--build-bib-key-from-plist (str-plist)
+(defun ref-man--build-bib-key-from-plist (str-plist &optional additional-word)
   "Builds a unique key with the format [author year first-title-word].
 Entry STR-PLIST is a plist."
   (let* ((first-author-str (car (split-string (ref-man--trim-and-unquote
@@ -390,7 +393,9 @@ Entry STR-PLIST is a plist."
                                    (split-string (downcase (ref-man--trim-and-unquote
                                                             (plist-get str-plist :title))) " "))))
          (title-first (car (split-string (car title) "-")))
-         (key (ref-man--replace-non-ascii (mapconcat 'downcase (list last-name year-pub title-first) "")))
+         (title-second (if additional-word (car (split-string (nth 1 title) "-")) ""))
+         (key (ref-man--replace-non-ascii
+               (mapconcat 'downcase (list last-name year-pub title-first title-second) "")))
          (key (ref-man-bibtex-transcribe (ref-man--remove-punc key))))
     key))
 
@@ -4092,7 +4097,7 @@ the current heading are excluded."
   "Check if the org heading a non empty string."
   (> (length (string-trim (substring-no-properties (org-get-heading t t t t)))) 0))
 
-;; NOTE: Not sure if it's needed
+;; CHECK: Not sure if it's needed
 (defmacro ref-man-ensure-same-heading (&rest body)
   "Jump to previous heading if current heading after modification is not the same."
   (declare (debug t))
@@ -4157,19 +4162,26 @@ property drawer as the URL property."
     (if (and title author year)
         (condition-case nil
             (let ((key (ref-man--build-bib-key-from-plist
-                        (list :title title :author author :year year))))
-              (if arg
-                  (if current-prefix-arg
-                      (org-entry-put (point) "CUSTOM_ID" key)
-                    (message "Killed. Use C-u to add to entry")
-                    (kill-new key))
-                key))
+                        (list :title title :author author :year year)
+                        (and arg (= arg 16)))))
+              (pcase arg
+                (1 (message "Killed. Use C-u to add to entry")
+                   (kill-new key))
+                ((pred (and (> 4))) (org-entry-put (point) "CUSTOM_ID" key))
+                (16 (when (y-or-n-p (format "Add the extended bib key %s? " key))
+                      (org-entry-put (point) "CUSTOM_ID" key)))
+                (_ key)))
           (error (message "Could not parse as bibtex\ntitle: %s, author: %s, year: %s"
                           title author year)
                  nil))
       (message "Not enough properties to parse as bibtex\ntitle: %s, author: %s, year: %s"
                title author year)
       nil)))
+
+(defun ref-man-org-extend-duplicate-bib-key-with-additional-title-word ()
+  "Extend a duplicate bibtex key with another title word."
+  (interactive)
+  (ref-man-parse-properties-for-bib-key 16))
 
 (defun ref-man-org-download-pdf-links-in-notes ()
   "Download PDF links in notes to designated directory.

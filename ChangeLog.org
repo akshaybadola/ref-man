@@ -482,3 +482,8 @@
    - In ~ref-man-url~
      + Added Springer url support
 
+** [2023-04-17 Mon 08:15]
+   - In ~ref-man-core~ added code to extend bib by a second title word
+   - In ~ref-man-export~ added two different versions of ~ref-md~ depending
+     on org version. The ~pndconf~ cmdline is also updated for version >=0.5.0
+
