@@ -487,3 +487,6 @@
    - In ~ref-man-export~ added two different versions of ~ref-md~ depending
      on org version. The ~pndconf~ cmdline is also updated for version >=0.5.0
 
+** [2023-04-19 Wed 15:00]
+   - Changed ~point-at-{bol,eol}~ to ~line-{beginning,end}-position~
+

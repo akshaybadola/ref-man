@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 17 April 2023 08:17:10 AM IST>
+;; Time-stamp:	<Wednesday 19 April 2023 15:01:27 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -1074,8 +1074,8 @@ consolidate property drawers."
           (goto-char (point-max))
           (while (re-search-backward org-drawer-regexp nil t)
             (if (equal (match-string 1) "END")
-                (push `(end . ,(point-at-eol)) blocks)
-              (push `(beg . ,(point-at-bol)) blocks)))
+                (push `(end . ,(line-end-position)) blocks)
+              (push `(beg . ,(line-beginning-position)) blocks)))
           (when blocks
             (unless (ref-man-org-drawers-balanced-p blocks)
               (user-error "Unbalanced drawers"))
@@ -1145,7 +1145,7 @@ of the heading content if it doesn't exist."
              (end (progn (goto-char (point-min))
                          (end-of-line)
                          (or (when (re-search-forward "\\*+ .+" nil t)
-                               (- (point-at-bol) 1))
+                               (- (line-beginning-position) 1))
                              (point-max)))))
         (if pt-end-metadata
             (goto-char pt-end-metadata)
@@ -1446,7 +1446,7 @@ org writing functions."
 
 (defun ref-man-org-insert-entry-at-eob-after-current-same-level ()
   (let* ((stars (save-excursion
-                  (if (save-excursion (goto-char (pos-bol)) (looking-at "^\\*+"))
+                  (if (save-excursion (goto-char (line-beginning-position)) (looking-at "^\\*+"))
                       (match-string 0)
                     (re-search-backward "\\(^\\*+\\).+")
                     (match-string 1))))
@@ -2305,7 +2305,7 @@ which can be used to further add data to the org heading."
                             ref-man-org-links-file-path))
              (org-mode)
              (org-datetree-find-date-create (org-date-to-gregorian (org-read-date t nil "now")))
-             (goto-char (point-at-eol))
+             (goto-char (line-end-position))
              (org-insert-subheading nil))
             ((eq ref-man--org-gscholar-launch-buffer org-buf)
              (goto-char ref-man--org-gscholar-launch-point)
@@ -2644,9 +2644,9 @@ is saved to URL property."
                              (org-element-property :end link))
               (when (and (org-at-item-p)
                          (not (string-match-p
-                               "[^- ]" (buffer-substring-no-properties (point-at-bol)
-                                                                       (point-at-eol)))))
-                (delete-region (point-at-bol) (+ 1 (point-at-eol))))
+                               "[^- ]" (buffer-substring-no-properties (line-beginning-position)
+                                                                       (line-end-position)))))
+                (delete-region (line-beginning-position) (+ 1 (line-end-position))))
               (org-set-property "URL" link-str))))))))
 
 (defun ref-man--move-first-link-to-org-property-drawer ()
@@ -2664,9 +2664,9 @@ Link is saved to URL property."
                                (org-element-property :end link))
                 (when (and (org-at-item-p)
                            (not (string-match-p
-                                 "[^- ]" (buffer-substring-no-properties (point-at-bol)
-                                                                         (point-at-eol)))))
-                  (delete-region (point-at-bol) (+ 1 (point-at-eol))))
+                                 "[^- ]" (buffer-substring-no-properties (line-beginning-position)
+                                                                         (line-end-position)))))
+                  (delete-region (line-beginning-position) (+ 1 (line-end-position))))
                 (org-set-property "URL" url)
                 (cl-return-from func t)))))))))
 
@@ -2813,7 +2813,7 @@ citations after that."
   ;; Delete empty lines from here till end
   ;; They should all be empty lines
   (org-end-of-meta-data)
-  (when (and (= (point) (point-at-bol))
+  (when (and (= (point) (line-beginning-position))
              (string-blank-p (buffer-substring-no-properties (point) (point-max))))
     (backward-char)
     (delete-region (point) (point-max)))
@@ -3337,8 +3337,8 @@ Display buffer.")
         (insert "\n")
         (forward-line))
       (insert (format "[....Showing %s out of %s entries....]" num-cites total-cites))
-      (let* ((beg (point-at-bol))
-             (end  (point-at-eol))
+      (let* ((beg (line-beginning-position))
+             (end  (line-end-position))
              (overlay (make-overlay beg end)))
         (add-text-properties beg end '(read-only t))
         (overlay-put overlay 'ref-man-org-load-more-ov 'read-only)
@@ -3888,13 +3888,18 @@ However updating from SS data again will revert to erroneous
 entry if it was erroneous."
   (let* ((venue (org-entry-get (point) "VENUE"))
          (journal (org-entry-get (point) "JOURNAL"))
+         (doi (org-entry-get (point) "DOI"))
+         (doi-year (and doi (let* ((case-fold-search t)
+                                   (match (and (string-match ".+\\(cvpr.+\\)" doi) (match-string 1 doi))))
+                              (nth 1 (split-string match "\\.")))))
          (entry-year (org-entry-get (point) "YEAR"))
          (venue-year (or (and venue (string-match "\\([0-9]\\{4\\}\\) .+" venue)
                               (match-string 1 venue))
                          (and journal (string-match "\\([0-9]\\{4\\}\\) .+" journal)
-                              (match-string 1 journal)))))
-    (when (and entry-year (not (string= entry-year venue-year)))
-      (org-entry-put (point) "YEAR" venue-year))
+                              (match-string 1 journal))))
+         (year (-first (lambda (x) (and x (not (string-empty-p x)))) (list doi-year venue-year entry-year))))
+    (when (and year (not (string= year venue-year)))
+      (org-entry-put (point) "YEAR" year))
     (org-entry-get (point) "YEAR")))
 
 (defun ref-man-maybe-fetch-pdf-from-cvf (args)
@@ -4140,13 +4145,13 @@ property drawer as the URL property."
             (goto-char beg)
             (cond ((and (org-at-item-p)
                         (not (string-match-p
-                              "[^- ]" (buffer-substring-no-properties (point-at-bol)
-                                                                      (point-at-eol)))))
-                   (delete-region (point-at-bol) (+ 1 (point-at-eol))))
+                              "[^- ]" (buffer-substring-no-properties (line-beginning-position)
+                                                                      (line-end-position)))))
+                   (delete-region (line-beginning-position) (+ 1 (line-end-position))))
                   ((and (not (string-match-p
-                              "[^[:space:]]" (buffer-substring-no-properties (point-at-bol)
-                                                                             (point-at-eol)))))
-                   (delete-region (point-at-bol) (+ 1 (point-at-eol)))))
+                              "[^[:space:]]" (buffer-substring-no-properties (line-beginning-position)
+                                                                             (line-end-position)))))
+                   (delete-region (line-beginning-position) (+ 1 (line-end-position)))))
             (outline-back-to-heading)
             (ref-man-org-add-url-property url))
           (setq url-prop url)))

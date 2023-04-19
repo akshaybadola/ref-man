@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 17 April 2023 08:17:10 AM IST>
+;; Time-stamp:	<Wednesday 19 April 2023 15:01:27 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -992,11 +992,11 @@ Options are:
                 (narrow-to-region (org-table-begin) (org-table-end)))
                ((org-at-table.el-p)
                 (let ((top (progn (table-goto-top-left-corner)
-                                  (point-at-bol)))
+                                  (line-beginning-position)))
                       (bottom (progn (next-line)
                                      (forward-char)
                                      (table-goto-bottom-right-corner)
-                                     (point-at-eol))))
+                                     (line-end-position))))
                   (narrow-to-region top bottom))))
          (org-export-to-buffer 'latex "*Latex Export*" nil nil nil nil)
          (setq table (with-current-buffer "*Latex Export*"

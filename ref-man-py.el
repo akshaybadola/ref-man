@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 10 April 2023 07:15:38 AM IST>
+;; Time-stamp:	<Wednesday 19 April 2023 15:01:28 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -143,7 +143,7 @@ it's given by python in `ref-man-py-env-dir'."
   "Return version of python executable for appropriate python exectuable.
 
 The executable is given by `ref-man-py-python'."
-  (python-venv-python-version (ref-man-py-python)))
+  (python-venv-get-python-version (ref-man-py-python)))
 
 (defun ref-man-py-file-mod-version ()
   "Return the version of `ref-man-py' python module in source dir.
@@ -208,7 +208,7 @@ system."
                      (progn (python-venv-env-uninstall-module python "ref-man-py")
                             (python-venv-env-install-module-from-pypi python "ref-man-py" t))
                    (python-venv-env-install-module-from-pypi python "ref-man-py" t)))))
-    (let ((version (python-venv-installed-mod-version python "ref-man-py")))
+    (let ((version (python-venv-installed-mod-version-string python "ref-man-py")))
       (if version
           (message "%s found in %s" version env-dir)
         (error "Could not install ref-man in %s" env-dir)))))

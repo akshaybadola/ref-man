@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 18 January 2023 14:22:59 PM IST>
+;; Time-stamp:	<Wednesday 19 April 2023 15:01:28 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -267,7 +267,7 @@ or on Google Scholar page, then then call
                (metadata (progn (goto-char link-text-end)
                                 (forward-line 2)
                                 (buffer-substring-no-properties
-                                 (point-at-bol) (point-at-eol))))
+                                 (line-beginning-position) (line-end-position))))
                (link-text (replace-regexp-in-string "\n" " "
                            (buffer-substring-no-properties link-text-begin link-text-end))))
             (list `(title . ,link-text) `(metadata . ,metadata)))))))
