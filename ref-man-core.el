@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 19 April 2023 15:01:27 PM IST>
+;; Time-stamp:	<Monday 24 April 2023 12:23:01 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -4126,36 +4126,38 @@ Make sure URL property exists in either property drawer or text
 and if no URL could be found return nil.  If no URL property
 exists, then first link from entry text is imported into the
 property drawer as the URL property."
-  (save-excursion
-    (let* ((props (or props (org-entry-properties)))
-           (url-prop (cdr (assoc "URL" props))))
-      ;; Remove the url args. Would be useless to keep
-      (when (and url-prop (string-match-p "?.*" url-prop)
-                 (not (string-match-p "openreview.net" url-prop))
-                 (not (string-match-p "acm.org" url-prop))
-                 (not (string-match-p "ieeexplore.ieee.org" url-prop)))
-        (org-entry-put (point) "URL" (car (split-string url-prop "?"))))
-      (unless url-prop
-        (let* ((link (ref-man-org-get-first-link-from-org-heading))
-               (url (org-element-property :raw-link link))
-               (beg (org-element-property :begin link))
-               (end (org-element-property :end link)))
-          (when url
-            (delete-region beg end)
-            (goto-char beg)
-            (cond ((and (org-at-item-p)
-                        (not (string-match-p
-                              "[^- ]" (buffer-substring-no-properties (line-beginning-position)
-                                                                      (line-end-position)))))
-                   (delete-region (line-beginning-position) (+ 1 (line-end-position))))
-                  ((and (not (string-match-p
-                              "[^[:space:]]" (buffer-substring-no-properties (line-beginning-position)
-                                                                             (line-end-position)))))
-                   (delete-region (line-beginning-position) (+ 1 (line-end-position)))))
-            (outline-back-to-heading)
-            (ref-man-org-add-url-property url))
-          (setq url-prop url)))
-      url-prop)))
+  (let* ((props (or props (org-entry-properties)))
+         (heading (org-get-heading t t t t))
+         (url-prop (cdr (assoc "URL" props))))
+    ;; Remove the url args. Would be useless to keep
+    (when (and url-prop (string-match-p "?.*" url-prop)
+               (not (string-match-p "openreview.net" url-prop))
+               (not (string-match-p "acm.org" url-prop))
+               (not (string-match-p "ieeexplore.ieee.org" url-prop)))
+      (org-entry-put (point) "URL" (car (split-string url-prop "?"))))
+    (unless url-prop
+      (let* ((link (ref-man-org-get-first-link-from-org-heading))
+             (url (org-element-property :raw-link link))
+             (beg (org-element-property :begin link))
+             (end (org-element-property :end link)))
+        (when url
+          (delete-region beg end)
+          (goto-char beg)
+          (cond ((and (org-at-item-p)
+                      (not (string-match-p
+                            "[^- ]" (buffer-substring-no-properties (line-beginning-position)
+                                                                    (line-end-position)))))
+                 (delete-region (line-beginning-position) (+ 1 (line-end-position))))
+                ((and (not (string-match-p
+                            "[^[:space:]]" (buffer-substring-no-properties (line-beginning-position)
+                                                                           (line-end-position)))))
+                 (delete-region (line-beginning-position) (+ 1 (line-end-position)))))
+          (if (string= (org-get-heading t t t t) heading)
+              (outline-back-to-heading)
+            (outline-previous-heading))
+          (ref-man-org-add-url-property url))
+        (setq url-prop url)))
+    url-prop))
 
 (defun ref-man-parse-properties-for-bib-key (&optional arg)
   "Check if bibtex key can be determined from entry properties."

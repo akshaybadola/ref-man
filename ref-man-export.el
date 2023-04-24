@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 19 April 2023 15:01:27 PM IST>
+;; Time-stamp:	<Monday 24 April 2023 12:23:01 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -625,22 +625,34 @@ TYPE has to be \\='paper for this hook to run."
                          "sections-beg" end
                          "sections-end" before-refs)))))))
 
-(defun ref-man-export-get-all-imgs (&optional buffer)
+(defun ref-man-export-get-all-imgs-subr (doc-root)
+  (let (imgs)
+    (save-excursion
+      (if doc-root
+          (goto-char doc-root)
+        (goto-char (point-min)))
+      (save-restriction
+        (when doc-root
+          (org-narrow-to-subtree))
+        (while (re-search-forward "\\includegraphics\\(?:\\[.+?]\\){\\(.+?\\)}" nil t)
+          (push (substring-no-properties (match-string 1)) imgs))))
+    imgs))
+
+(defun ref-man-export-get-all-imgs (&optional buffer-or-filename)
   "Return list of all file paths in `includegraphics' directives for org subtree.
 Optional BUFFER specifies the org buffer."
-  (let ((buffer (or buffer (current-buffer)))
-        (doc-root (util/org-get-tree-prop "DOC_ROOT"))
-        imgs)
-    (with-current-buffer buffer
-      (unless doc-root
-        (user-error "For extraction of images for a research article, a DOC_ROOT must be specified"))
-      (save-excursion
-        (goto-char doc-root)
-        (save-restriction
-          (org-narrow-to-subtree)
-          (while (re-search-forward "\\includegraphics\\(?:\\[.+?]\\){\\(.+?\\)}" nil t)
-            (push (substring-no-properties (match-string 1)) imgs))))
-      imgs)))
+  (let* ((buffer (unless (stringp buffer-or-filename)
+                   (or buffer-or-filename (current-buffer))))
+         (doc-root (when buffer (util/org-get-tree-prop "DOC_ROOT"))))
+    (if buffer
+        (with-current-buffer buffer
+          (unless doc-root
+            (user-error "For extraction of images for a research article, a DOC_ROOT must be specified"))
+          (ref-man-export-get-all-imgs-subr))
+      (let ((buffer (find-file-noselect buffer-or-filename)))
+        (with-current-buffer buffer
+          (prog1 (ref-man-export-get-all-imgs-subr nil)
+            (kill-buffer)))))))
 
 (defun ref-man-export-link-standalone-files (&optional tex-file out-dir)
   "Copy all supporting files corresponding to a TEX-FILE.
@@ -715,8 +727,8 @@ tex file."
         (save-buffer))
       (kill-buffer buf))))
 
-(defun ref-man-export-generate-standalone ()
-  "Create a folder with all files required for a self contained document.
+(defun ref-man-export-generate-standalone-from-org ()
+  "Create a folder from doc-root with all files required for a self contained document.
 
 Copy the img, tex and bib files in the folder for easy upload to
 servers.
@@ -745,6 +757,59 @@ Requires the bib and other files to be generated once with
          (files (mapcar (lambda (x) (path-join existing-files-dir (concat doc-name x)))
                         '(".tex" ".bib")))
          (compile-cmd (s-lex-format "pdflatex ${doc-name}.tex && bibtex ${doc-name}.aux && pdflatex ${doc-name}.tex && pdflatex ${doc-name}.tex && rm *.out *.aux *.log *.blg"))
+         article-file)
+    (unless (-all? (lambda (x) (and (f-exists? x) (f-file? x))) files)
+      (user-error "Some files for document are missing.  Generate first?"))
+    (when (f-exists? out-dir)
+      (f-delete out-dir t))
+    (f-mkdir out-dir)
+    (seq-do (lambda (x) (copy-file x out-dir t)) files)
+    (seq-do (lambda (x) (copy-file x out-dir t)) imgs)
+    (let ((buf (find-file-noselect (path-join out-dir (concat doc-name ".tex")))))
+      (with-current-buffer buf
+        (goto-char (point-min))
+        (re-search-forward "\\documentclass\\[.*?]{\\(.+?\\)}")
+        (setq article-file (string-trim (shell-command-to-string
+                                         (format "kpsewhich %s.cls"
+                                                 (substring-no-properties (match-string 1))))))
+        (copy-file article-file out-dir t)
+        (goto-char (point-min))
+        (while (re-search-forward "\\(\\includegraphics\\(?:\\[.+?]\\)?\\){\\(.+?\\)}" nil t)
+          (replace-match (format "\\1{%s}" (concat "./" (f-filename (match-string 2))))))
+        (seq-do (lambda (x)
+                  (goto-char (point-min))
+                  (when (re-search-forward (format "\\(\\usepackage\\(?:\\[.+?]\\)?\\){%s}" (car x)) nil t)
+                    (replace-match (format "\\1{%s}" (format "%s" (car x)))) ; (format "sty/%s" (car x))
+                    (copy-file (cdr x) out-dir)))
+                '(("authblk" .  "/home/joe/texmf/tex/latex/authblk.sty")
+                  ("algorithm2e" . "/usr/share/texlive/texmf-dist/tex/latex/algorithm2e/algorithm2e.sty")
+                  ("algorithmic" . "/usr/share/texlive/texmf-dist/tex/latex/algorithms/algorithmic.sty")
+                  ("algorithmicx" . "/usr/share/texlive/texmf-dist/tex/latex/algorithmicx/algorithmicx.sty")
+                  ("algpseudocode" . "/usr/share/texlive/texmf-dist/tex/latex/algorithmicx/algpseudocode.sty")))
+        (save-buffer))
+      (kill-buffer buf))))
+
+(defun ref-man-export-generate-standalone-from-latex ()
+  "Create a folder from a latex file with all files required for a self contained document.
+
+Copy the img, tex and bib files in the folder for easy upload to
+servers.
+
+Requires the bib and other files to be generated once."
+  ;; NOTE: Perhaps output to a different directory also?
+  (interactive)
+  (let* ((file (ido-read-file-name "Enter the path of the LaTeX file "))
+         (imgs (ref-man-export-get-all-imgs file))
+         (docs-dir ref-man-export-output-dir)
+         (doc-name (f-base (f-filename file)))
+         (existing-files-dir (f-parent file))
+         (out-dir (concat existing-files-dir "-standalone/"))
+         (files (mapcar (lambda (x) (path-join existing-files-dir (concat doc-name x)))
+                        '(".tex" ".bib")))
+         (default-directory existing-files-dir)
+         (compile-cmd (if current-prefix-arg
+                          (s-lex-format "pdflatex ${doc-name}.tex && biber ${doc-name} && pdflatex ${doc-name}")
+                        (s-lex-format "pdflatex ${doc-name}.tex && bibtex ${doc-name}.aux && pdflatex ${doc-name}.tex && pdflatex ${doc-name}.tex && rm *.out *.aux *.log *.blg")))
          article-file)
     (unless (-all? (lambda (x) (and (f-exists? x) (f-file? x))) files)
       (user-error "Some files for document are missing.  Generate first?"))

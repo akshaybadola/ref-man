@@ -490,3 +490,9 @@
 ** [2023-04-19 Wed 15:00]
    - Changed ~point-at-{bol,eol}~ to ~line-{beginning,end}-position~
 
+** [2023-04-24 Mon 12:21]
+   - Again a fix to ~ref-man--check-fix-url-property~.
+   - More modular standalone generation functions and also added standalone
+     generation from latex in ~ref-man-export~
+   - Minor fixes in ~ref-man-ss~
+

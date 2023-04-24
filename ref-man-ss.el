@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 10 April 2023 07:15:38 AM IST>
+;; Time-stamp:	<Monday 24 April 2023 12:23:01 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -398,7 +398,7 @@ CITATIONCOUNT: (citationcount (min . 10) (max . 1000))
 
 INFLUENTIALCITATIONCOUNT: (influentialcitationcount  (min . 10) (max . 1000))"))
 
-(defvar ref-man-ss-filter-count 30
+(defvar ref-man-ss-filtered-buffer-display-count 30
   "Maximum number of filter results to display.")
 
 (defun ref-man-ss-filter-conversion-vals (f)
@@ -466,7 +466,7 @@ The filters can be customized in `ref-man-ss-citation-filters'."
                              (buffer-list)))
                    (current-buffer)))
          (default-filters ref-man-ss-citation-filters)
-         (count ref-man-ss-filter-count)
+         (count ref-man-ss-filtered-buffer-display-count)
          (filters (mapcar #'ref-man-ss-filter-conversion-vals (-filter (lambda (x) (cdr x))
                                                                         default-filters)))
          (ssid (with-current-buffer buffer
@@ -576,7 +576,7 @@ The filters can be customized in `ref-man-ss-citation-filters'."
 
         (widget-create 'editable-field :size 2 :format "\nNumber of Results = %v"
                        :action (funcall action-func 'num-results)
-                       (number-to-string ref-man-ss-filter-count))
+                       (number-to-string ref-man-ss-filtered-buffer-display-count))
         (use-local-map widget-keymap)
         (widget-setup))
       (set-window-buffer win buf))))
