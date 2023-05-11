@@ -496,3 +496,8 @@
      generation from latex in ~ref-man-export~
    - Minor fixes in ~ref-man-ss~
 
+** [2023-05-11 Thu 13:16]
+   - Changed ~ref-man-org-insert-full-reference~ to ~ref-man-org-insert-full-heading~,
+     ~ref-man-org-insert-short-reference~ to ~ref-man-org-insert-short-heading~
+     and added ~ref-man-org-insert-reference~
+

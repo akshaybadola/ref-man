@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 24 April 2023 12:23:01 PM IST>
+;; Time-stamp:	<Thursday 11 May 2023 13:18:14 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -2953,7 +2953,7 @@ We check AUTHOR and TITLE."
              (> (length (split-string heading))
                 util/org-min-collect-heading-length)))))
 
-(defun ref-man-org-insert-full-reference ()
+(defun ref-man-org-insert-full-heading ()
   "Insert a link to reference.
 
 Call `util/org-insert-link-to-heading' with predicate
@@ -2961,13 +2961,29 @@ Call `util/org-insert-link-to-heading' with predicate
   (interactive)
   (util/org-insert-link-to-heading 'ref-man-org-reference-p nil t t))
 
-(defun ref-man-org-insert-short-reference ()
+(defun ref-man-org-insert-short-heading ()
+  "Insert a link to reference but format as a citation.
+
+Like `ref-man-org-insert-full-reference' but use
+`util/org-citation-function' to transform the link text."
+  (interactive)
+  (util/org-insert-link-to-heading 'ref-man-org-reference-p 'util/short-heading t t))
+
+(defun ref-man-org-insert-citation ()
   "Insert a link to reference but format as a citation.
 
 Like `ref-man-org-insert-full-reference' but use
 `util/org-citation-function' to transform the link text."
   (interactive)
   (util/org-insert-link-to-heading 'ref-man-org-reference-p util/org-citation-function t t))
+
+(defun ref-man-org-insert-reference ()
+  "Insert a link to reference but format as a citation.
+
+Like `ref-man-org-insert-full-reference' but use
+`util/org-citation-function' to transform the link text."
+  (interactive)
+  (util/org-insert-link-to-heading 'ref-man-org-reference-p nil t t))
 
 (defun ref-man-fix-drawers-deleted-files ()
   "Remove files missing from `ref-man-documents-dir' in property drawers."
