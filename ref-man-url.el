@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 10 April 2023 07:15:38 AM IST>
+;; Time-stamp:	<Friday 12 May 2023 08:47:22 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -110,8 +110,10 @@ The keys of the alist are regexps and the values are the types of URL.")
   "Get url from arxivid extracted from org property drawer at point."
   (interactive)
   (if (eq major-mode 'org-mode)
-      (let ((arxiv-id (pcase (or (org-entry-get (point) "ARXIVID")
-                                 (org-entry-get (point) "EPRINT"))
+      (let ((arxiv-id (pcase (or
+                              (org-entry-get (point) "ARXIVID")
+                              (org-entry-get (point) "ARXIV")
+                              (org-entry-get (point) "EPRINT"))
                         ((and val) val))))
         (when arxiv-id
           (if (called-interactively-p 'any)
@@ -566,7 +568,7 @@ ARGS is for compatibility and not used."
 (defun ref-man-url-get-best-pdf-url (urls)
   "Get the best url from a list of URLS according to ease of downloading.
 Return a \\='(site url) pair."
-  (let ((pdf-urls (-filter #'ref-man-url-downloadable-pdf-url-p urls)))
+  (let ((pdf-urls (-keep (-rpartial #'ref-man-url-downloadable-pdf-url-p t) urls)))
     (if pdf-urls
         (cons 'pdf (car pdf-urls))
       (let* ((links (-filter #'identity

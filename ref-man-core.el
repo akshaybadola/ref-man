@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Thursday 11 May 2023 13:18:14 PM IST>
+;; Time-stamp:	<Friday 12 May 2023 08:47:22 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -3944,9 +3944,9 @@ If pdf-url doesn't exist then check if first non-nil `cdr' of
   (let* ((urls (plist-get args :urls))
          (url (or (a-get urls 'pdf-url)
                   (cdr (-first #'cdr urls))))
-         (url (and url (ref-man-url-downloadable-pdf-url-p url t))))
-    (when url
-      (prog1 t (ref-man--fetch-from-pdf-url-new url args)))))
+         (pdf-url (ref-man-url-downloadable-pdf-url-p url t)))
+    (when pdf-url
+      (prog1 t (ref-man--fetch-from-pdf-url-new pdf-url args)))))
 
 (defun ref-man-maybe-fetch-pdf-after-redirect (args)
   "Fetch pdf from one of the :urls property of plist ARGS after redirect."

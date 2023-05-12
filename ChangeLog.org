@@ -501,3 +501,7 @@
      ~ref-man-org-insert-short-reference~ to ~ref-man-org-insert-short-heading~
      and added ~ref-man-org-insert-reference~
 
+** [2023-05-12 Fri 08:46]
+   - Minor to ~ref-man-maybe-fetch-pdf-from-pdf-url~
+   - Fix to ~ref-man-url-get-best-pdf-url~ and ~ref-man-url-from-arxiv-id~
+
