@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 12 May 2023 08:47:22 AM IST>
+;; Time-stamp:	<Friday 02 June 2023 08:11:11 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -1510,7 +1510,7 @@ org writing functions."
       (ref-man-org-insert-prop-list-item
        (cons "venue" (format "%s, %s" (a-get entry 'venue) (a-get entry 'year))) nil t)
       (ref-man-org-insert-prop-list-item (cons "authors" author-str) nil t)
-      (let ((key (ref-man-parse-properties-for-bib-key)))
+      (let ((key (save-excursion (ref-man-parse-properties-for-bib-key))))
         (unless (or key ignore-errors)
           (debug)
           ;; FIXME: This function should filter the user read key
@@ -3914,7 +3914,7 @@ entry if it was erroneous."
                          (and journal (string-match "\\([0-9]\\{4\\}\\) .+" journal)
                               (match-string 1 journal))))
          (year (-first (lambda (x) (and x (not (string-empty-p x)))) (list doi-year venue-year entry-year))))
-    (when (and year (not (string= year venue-year)))
+    (when (and year (not (string= year entry-year)))
       (org-entry-put (point) "YEAR" year))
     (org-entry-get (point) "YEAR")))
 

@@ -505,3 +505,7 @@
    - Minor to ~ref-man-maybe-fetch-pdf-from-pdf-url~
    - Fix to ~ref-man-url-get-best-pdf-url~ and ~ref-man-url-from-arxiv-id~
 
+** [2023-06-02 Fri 08:10]
+   - Fixed bugs in ~ref-man--org-bibtex-write-ref-from-ss-ref-fast~
+     and ~ref-man-url-get-pdf-link-helper~, for cvf venue validation in particular
+

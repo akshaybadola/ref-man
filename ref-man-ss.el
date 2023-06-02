@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 24 April 2023 12:23:01 PM IST>
+;; Time-stamp:	<Friday 02 June 2023 08:11:11 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -396,7 +396,10 @@ VENUE: (venue (venues \"list\" \"of\" \"venue\" \"words\" \"to\" \"match\"))
 
 CITATIONCOUNT: (citationcount (min . 10) (max . 1000))
 
-INFLUENTIALCITATIONCOUNT: (influentialcitationcount  (min . 10) (max . 1000))"))
+INFLUENTIALCITATIONCOUNT: (influentialcitationcount  (min . 10) (max . 1000))
+
+The number of citing papers is controlled by
+`ref-man-ss-filtered-buffer-display-count'."))
 
 (defvar ref-man-ss-filtered-buffer-display-count 30
   "Maximum number of filter results to display.")

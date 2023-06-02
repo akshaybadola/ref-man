@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 12 May 2023 08:47:22 AM IST>
+;; Time-stamp:	<Friday 02 June 2023 08:11:11 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -406,7 +406,7 @@ first pdf link from the buffer."
                              link)))
                 (when link
                   (cond ((string-match-p "^http:\\|^https:" link) link)
-                        ((string-match-p "^/paper/" link)
+                        ((string-match-p "^\\(/paper/\\)\\|\\(/paper_files/\\)" link)
                          (url-join (string-join (-take 3 (split-string url "/")) "/") link))
                         (t nil)))))
     ('mlr (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
