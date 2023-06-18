@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 24 April 2023 12:23:01 PM IST>
+;; Time-stamp:	<Sunday 18 June 2023 08:15:49 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -208,6 +208,10 @@ in the properties drawer of the subtree."
 (defvar ref-man-export-pndconf-config-file nil
   "`pndconf' config file.")
 
+(defvar ref-man-pandoc-bibtex-executable ref-man-pandoc-executable
+  "Pandoc executable for converting bibtex to yaml.
+Defaults to `ref-man-pandoc-executable'.")
+
 ;; TEST
 ;; (with-current-buffer "test.org"
 ;;   (let ((ref-man-export-no-confirm-overwrite t))
@@ -215,6 +219,19 @@ in the properties drawer of the subtree."
 ;;       ("t" t)
 ;;       ("nil" nil)
 ;;       (_ ref-man-export-no-confirm-overwrite))))
+
+(defun ref-man-pandoc-has-server ()
+  "Pandoc bibtex executable is compiled with server.
+Both the executable `ref-man-pandoc-bibtex-executable' and if the
+server is running are checked."
+  (and
+   (string-match-p "\\+server"
+                   (shell-command-to-string
+                    (format "%s -v" ref-man-pandoc-bibtex-executable)))
+   (condition-case nil
+       (with-current-buffer (url-retrieve-synchronously "http://localhost:3030/version")
+         (buffer-string))
+     ('error nil))))
 
 (defun ref-man-export-templates ()
   "Get templates as an alist from `ref-man-export-pandoc-templates-dir'."
@@ -501,6 +518,37 @@ Don't include bibliography when NO-REFS is non-nil."
                      "toc-depth" 2)))
     opts))
 
+
+(defun ref-man-export-bibtex-to-yaml-via-shell (citeproc temp-file)
+  "Get bibtex yaml metadata via executing pandoc shell command on TEMP-FILE.
+CITEPROC is the citation processor to use with pandoc."
+  (replace-regexp-in-string
+   "^---\\|^nocite.*" ""
+   (shell-command-to-string (format "%s -s -f %s -t markdown %s"
+                                    ref-man-pandoc-executable
+                                    citeproc
+                                    temp-file))))
+
+(defun ref-man-export-bibtex-to-yaml-via-pandoc-server (bib-text citeproc)
+  "Get bibtex yaml metadata for BIB-TEXT via pandoc server.
+CITEPROC is the citation processor to use with pandoc."
+  (replace-regexp-in-string
+   "^---\\|^nocite.*" ""
+   (let* ((url "http://localhost:3030")
+          (data `((text . ,bib-text)
+                  (standalone . t)
+                  (from . ,citeproc)
+                  (to . markdown)))
+          (url-request-extra-headers
+           '(("Content-Type" . "application/json")))
+          (url-request-method "POST")
+          (url-request-data
+           (encode-coding-string (json-encode data) 'utf-8)))
+     (with-current-buffer (url-retrieve-synchronously url)
+       (goto-char (point-min))
+       (forward-paragraph)
+       (buffer-substring (point) (point-max))))))
+
 (defun ref-man-export-bibtexs (bibtexs citeproc &optional tmp-bib-file no-gdrive)
   "Export the references from BIBTEXS.
 BIBTEXS is a string of bibliography entries.
@@ -524,30 +572,23 @@ gdrive keys if present."
           (replace-match "issn=")))
       (cond (tmp-bib-file
              (write-region (point-min) (point-max) tmp-bib-file))
+            ;; Just use pandoc server if available
+            ((ref-man-pandoc-has-server)
+             (ref-man-export-bibtex-to-yaml-via-pandoc-server (buffer-string) citeproc))
             ;; NOTE: Write to a temp file if \' accents are present
             ((string-match-p "'" (buffer-string))
              (let ((temp-file (make-temp-file ".tmp-bib"))
                    (cur (point-max)))
                (write-region (point-min) (point-max) temp-file)
                (goto-char cur)
-               (insert (replace-regexp-in-string
-                        "^---\\|^nocite.*" ""
-                        (shell-command-to-string (format "%s -s -f %s -t markdown %s"
-                                                         ref-man-pandoc-executable
-                                                         citeproc
-                                                         temp-file))))
+               (insert (ref-man-export-bibtex-to-yaml-via-shell citeproc temp-file))
                (delete-file temp-file)
                (util/delete-blank-lines-in-region cur (point-max))
                (buffer-substring-no-properties cur (point-max))))
             (t
              (let ((cur (point-max)))
                (goto-char cur)
-               (insert (replace-regexp-in-string
-                        "^---\\|^nocite.*" ""
-                        (shell-command-to-string (format "%s -s -f %s -t markdown <<<'%s'"
-                                                         ref-man-pandoc-executable
-                                                         citeproc
-                                                         (buffer-string)))))
+               (insert (ref-man-export-bibtex-to-yaml-via-shell citeproc temp-file))
                (util/delete-blank-lines-in-region cur (point-max))
                (buffer-substring-no-properties cur (point-max))))))))
 

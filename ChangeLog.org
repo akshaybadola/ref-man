@@ -509,3 +509,7 @@
    - Fixed bugs in ~ref-man--org-bibtex-write-ref-from-ss-ref-fast~
      and ~ref-man-url-get-pdf-link-helper~, for cvf venue validation in particular
 
+** [2023-06-18 Sun 08:15]
+   - Added bibtex yaml metadata generation via pandoc server.
+     Port is still hardcoded though
+
