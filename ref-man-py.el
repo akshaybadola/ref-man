@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 19 April 2023 15:01:28 PM IST>
+;; Time-stamp:	<Tuesday 11 July 2023 13:01:08 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -91,12 +91,17 @@ on the system."
   :group 'ref-man)
 
 (defcustom ref-man-py-use-system-python nil
-  "Should we run not create venv and use system python?"
+  "Should we not create venv and use system python?"
   :type 'boolean
   :group 'ref-man)
 
 (defcustom ref-man-py-refs-cache-dir ".ref-man/s2_cache"
   "Directory of extracted citation cache from S2 data."
+  :type 'directory
+  :group 'ref-man)
+
+(defcustom ref-man-py-log-dir ".ref-man/logs"
+  "Directory for storing logs."
   :type 'directory
   :group 'ref-man)
 
@@ -136,7 +141,7 @@ Optional OPTS is an alist of additional HTTP args to send."
 If `ref-man-py-use-system-python' that's just system python, else
 it's given by python in `ref-man-py-env-dir'."
   (if ref-man-py-use-system-python
-      (executable-find "python3")
+      (python-venv-get-system-python "/usr/bin/python")
     (and ref-man-py-env-dir (path-join ref-man-py-env-dir "bin" "python"))))
 
 (defun python-venv-py-version ()
@@ -144,6 +149,12 @@ it's given by python in `ref-man-py-env-dir'."
 
 The executable is given by `ref-man-py-python'."
   (python-venv-get-python-version (ref-man-py-python)))
+
+(defun ref-man-py-installed-mod-version ()
+  "Return the version of `ref-man-py' python installed module."
+  (let* ((python (ref-man-py-python))
+         (output (shell-command-to-string (format "%s -m ref_man_py --version" python))))
+    (-last-item (split-string output))))
 
 (defun ref-man-py-file-mod-version ()
   "Return the version of `ref-man-py' python module in source dir.
@@ -262,6 +273,10 @@ nil, `ref-man-py-data-dir' respectively by
                                                  (format "--refs-cache-dir=%s"
                                                          ref-man-py-refs-cache-dir))
                                             "--verbosity=debug"))))
+        (unless (version-list-< (version-to-list (ref-man-py-installed-mod-version)) '(0 7 0))
+          (push "--logfile=ref-man.log" args)
+          (push (format "--logdir=%s" ref-man-py-log-dir) args)
+          (push "--logfile-verbosity=debug" args))
         (message "Python process args are %s" args)
         (apply #'start-process "ref-man-server" "*ref-man-server*"
                python "-m" "ref_man_py" args)))))

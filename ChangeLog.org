@@ -513,3 +513,8 @@
    - Added bibtex yaml metadata generation via pandoc server.
      Port is still hardcoded though
 
+** [2023-07-11 Tue 13:00]
+   - Added logfile options if ~ref-man-py~ version is >= ~0.7.0~
+   - Made ~ref-man-ss-search~ the default search option as that seems to be
+     giving good results now.
+

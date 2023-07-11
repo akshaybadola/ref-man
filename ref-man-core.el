@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 02 June 2023 08:11:11 AM IST>
+;; Time-stamp:	<Tuesday 11 July 2023 13:01:08 PM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -138,6 +138,10 @@
   "Always update entry heading if different from fetched data."
   :type 'boolean
   :group 'ref-man)
+
+(defvar ref-man-org-ss-search-functions '(ref-man-ss-search
+                                          ref-man-org-default-ss-search-func)
+  "Order of SS search function to use")
 
 (defvar ref-man-key-list
   '(authors title venue volume number pages year doi ee)
@@ -3648,8 +3652,8 @@ pagination of results isn't supported yet."
     ;;       Should use jinja or lisp template
     (let* ((pref-arg current-prefix-arg)
            (fetch-func (if (and  pref-arg (equal pref-arg '(4)))
-                           'ref-man-ss-search
-                         'ref-man-ss-get-results-search-semantic-scholar))
+                           (cadr ref-man-org-ss-search-functions)
+                         (car ref-man-org-ss-search-functions)))
            (results (funcall fetch-func search-string args)))
       (cond ((> (length results) 0)
              (let* ((idx (if (and insert-first (length results)) 0
