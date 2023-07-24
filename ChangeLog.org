@@ -518,3 +518,7 @@
    - Made ~ref-man-ss-search~ the default search option as that seems to be
      giving good results now.
 
+** [2023-07-24 Mon 07:40]
+   - Fixed bug in ~ref-md~ backend definition in ~ref-man-export~
+   - Find system python as ~/usr/bin/python3~ in ~ref-man-py-python~
+

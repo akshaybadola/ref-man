@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Tuesday 11 July 2023 13:01:08 PM IST>
+;; Time-stamp:	<Monday 24 July 2023 07:39:58 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -141,7 +141,7 @@ Optional OPTS is an alist of additional HTTP args to send."
 If `ref-man-py-use-system-python' that's just system python, else
 it's given by python in `ref-man-py-env-dir'."
   (if ref-man-py-use-system-python
-      (python-venv-get-system-python "/usr/bin/python")
+      (python-venv-get-system-python "/usr/bin/python3")
     (and ref-man-py-env-dir (path-join ref-man-py-env-dir "bin" "python"))))
 
 (defun python-venv-py-version ()

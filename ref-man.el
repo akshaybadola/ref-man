@@ -5,9 +5,9 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Tuesday 11 July 2023 13:01:08 PM IST>
+;; Time-stamp:	<Monday 24 July 2023 07:39:58 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org-mode, eww
-;; Version:     0.7.36
+;; Version:     0.7.37
 ;; URL:     	https://github.com/akshaybadola/ref-man
 ;; Package-Requires: ((a "0.1.1") (async "1.9.4") (org "9.5") (biblio-core "0.2.1") (gscholar-bibtex "0.3.1")
 ;;                    (find-file-in-project "6.2.1") (websocket "1.12") (dash "2.18.0") (bind-key "2.4")

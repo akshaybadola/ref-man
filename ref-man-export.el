@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Sunday 18 June 2023 08:15:49 AM IST>
+;; Time-stamp:	<Monday 24 July 2023 07:39:58 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -319,55 +319,55 @@ Files are searched in `ref-man-export-pandoc-csl-dir'"
         :options-alist
         '((:md-footnote-format nil nil org-md-footnote-format)
           (:md-footnotes-section nil nil org-md-footnotes-section)
-          (:md-headline-style nil nil org-md-headline-style))
-        (org-export-define-derived-backend 'ref-md 'html
-          :filters-alist '((:filter-parse-tree . org-md-separate-elements))
-          :menu-entry
-          '(?m "Export to Markdown"
-               ((?M "To temporary buffer"
-	            (lambda (a s v b) (org-md-export-as-markdown a s v)))
-	        (?m "To file" (lambda (a s v b) (org-md-export-to-markdown a s v)))
-	        (?o "To file and open"
-	            (lambda (a s v b)
-	              (if a (org-md-export-to-markdown t s v)
-		        (org-open-file (org-md-export-to-markdown nil s v)))))))
-          :translate-alist '((bold . org-md-bold)
-		             (center-block . org-md--convert-to-html)
-		             (code . org-md-verbatim)
-		             (drawer . org-md--identity)
-		             (dynamic-block . org-md--identity)
-		             (example-block . org-md-example-block)
-		             (export-block . org-md-export-block)
-		             (fixed-width . org-md-example-block)
-		             (headline . org-md-headline)
-		             (horizontal-rule . org-md-horizontal-rule)
-		             (inline-src-block . org-md-verbatim)
-		             (inlinetask . org-md--convert-to-html)
-		             (inner-template . org-md-inner-template)
-		             (italic . org-md-italic)
-		             (item . org-md-item)
-		             (keyword . org-md-keyword)
-                             (latex-environment . org-md-latex-environment)
-                             (latex-fragment . org-md-latex-fragment)
-		             (line-break . org-md-line-break)
-		             (link . org-md-link)
-		             (node-property . org-md-node-property)
-		             (paragraph . org-md-paragraph)
-		             (plain-list . org-md-plain-list)
-		             (plain-text . org-md-plain-text)
-		             (property-drawer . org-md-property-drawer)
-		             (quote-block . org-md-quote-block)
-		             (section . org-md-section)
-		             (special-block . org-md--convert-to-html)
-		             (src-block . org-md-example-block)
-		             (table . org-md-verbatim)
-		             (template . org-md-template)
-		             (verbatim . org-md-verbatim))
-          :options-alist
-          '((:md-footnote-format nil nil org-md-footnote-format)
-            (:md-footnotes-section nil nil org-md-footnotes-section)
-            (:md-headline-style nil nil org-md-headline-style)
-            (:md-toplevel-hlevel nil nil org-md-toplevel-hlevel))))))
+          (:md-headline-style nil nil org-md-headline-style)))
+    (org-export-define-derived-backend 'ref-md 'html
+      :filters-alist '((:filter-parse-tree . org-md-separate-elements))
+      :menu-entry
+      '(?m "Export to Markdown"
+           ((?M "To temporary buffer"
+	        (lambda (a s v b) (org-md-export-as-markdown a s v)))
+	    (?m "To file" (lambda (a s v b) (org-md-export-to-markdown a s v)))
+	    (?o "To file and open"
+	        (lambda (a s v b)
+	          (if a (org-md-export-to-markdown t s v)
+		    (org-open-file (org-md-export-to-markdown nil s v)))))))
+      :translate-alist '((bold . org-md-bold)
+		         (center-block . org-md--convert-to-html)
+		         (code . org-md-verbatim)
+		         (drawer . org-md--identity)
+		         (dynamic-block . org-md--identity)
+		         (example-block . org-md-example-block)
+		         (export-block . org-md-export-block)
+		         (fixed-width . org-md-example-block)
+		         (headline . org-md-headline)
+		         (horizontal-rule . org-md-horizontal-rule)
+		         (inline-src-block . org-md-verbatim)
+		         (inlinetask . org-md--convert-to-html)
+		         (inner-template . org-md-inner-template)
+		         (italic . org-md-italic)
+		         (item . org-md-item)
+		         (keyword . org-md-keyword)
+                         (latex-environment . org-md-latex-environment)
+                         (latex-fragment . org-md-latex-fragment)
+		         (line-break . org-md-line-break)
+		         (link . org-md-link)
+		         (node-property . org-md-node-property)
+		         (paragraph . org-md-paragraph)
+		         (plain-list . org-md-plain-list)
+		         (plain-text . org-md-plain-text)
+		         (property-drawer . org-md-property-drawer)
+		         (quote-block . org-md-quote-block)
+		         (section . org-md-section)
+		         (special-block . org-md--convert-to-html)
+		         (src-block . org-md-example-block)
+		         (table . org-md-verbatim)
+		         (template . org-md-template)
+		         (verbatim . org-md-verbatim))
+      :options-alist
+      '((:md-footnote-format nil nil org-md-footnote-format)
+        (:md-footnotes-section nil nil org-md-footnotes-section)
+        (:md-headline-style nil nil org-md-headline-style)
+        (:md-toplevel-hlevel nil nil org-md-toplevel-hlevel)))))
 
 
 ;; NOTE: Copied from `ox-gfm' in case modifications are needed
@@ -529,6 +529,7 @@ CITEPROC is the citation processor to use with pandoc."
                                     citeproc
                                     temp-file))))
 
+
 (defun ref-man-export-bibtex-to-yaml-via-pandoc-server (bib-text citeproc)
   "Get bibtex yaml metadata for BIB-TEXT via pandoc server.
 CITEPROC is the citation processor to use with pandoc."
@@ -548,6 +549,7 @@ CITEPROC is the citation processor to use with pandoc."
        (goto-char (point-min))
        (forward-paragraph)
        (buffer-substring (point) (point-max))))))
+
 
 (defun ref-man-export-bibtexs (bibtexs citeproc &optional tmp-bib-file no-gdrive)
   "Export the references from BIBTEXS.
@@ -591,6 +593,7 @@ gdrive keys if present."
                (insert (ref-man-export-bibtex-to-yaml-via-shell citeproc temp-file))
                (util/delete-blank-lines-in-region cur (point-max))
                (buffer-substring-no-properties cur (point-max))))))))
+
 
 (defun ref-man-export-check-author (author)
   "Check and return AUTHOR type as an alist.
@@ -636,6 +639,7 @@ TYPE has to be \\='paper for this hook to run."
                        ("caption" . ,(a-get props "CAPTION"))
                        ("affiliations" . ,affiliations)))))))
 
+
 (defun ref-man-export-get-journal-metadata (type)
   "Extract journal type and template from property drawer.
 TYPE has to be \\='paper for this hook to run."
@@ -646,6 +650,7 @@ TYPE has to be \\='paper for this hook to run."
                      `(("journal" . ,(a-get props "JOURNAL"))
                        ("template" . ,(a-get props "TEMPLATE")))
                      (a-get ref-man-export-journal-args (a-get props "JOURNAL")))))))
+
 
 (defun ref-man-export-get-paper-metadata (type)
   "Extract abstract and section demarcations for TYPE \\='paper."
@@ -666,6 +671,7 @@ TYPE has to be \\='paper for this hook to run."
                          "sections-beg" end
                          "sections-end" before-refs)))))))
 
+
 (defun ref-man-export-get-all-imgs-subr (doc-root)
   (let (imgs)
     (save-excursion
@@ -678,6 +684,7 @@ TYPE has to be \\='paper for this hook to run."
         (while (re-search-forward "\\includegraphics\\(?:\\[.+?]\\){\\(.+?\\)}" nil t)
           (push (substring-no-properties (match-string 1)) imgs))))
     imgs))
+
 
 (defun ref-man-export-get-all-imgs (&optional buffer-or-filename)
   "Return list of all file paths in `includegraphics' directives for org subtree.
@@ -694,6 +701,7 @@ Optional BUFFER specifies the org buffer."
         (with-current-buffer buffer
           (prog1 (ref-man-export-get-all-imgs-subr nil)
             (kill-buffer)))))))
+
 
 (defun ref-man-export-link-standalone-files (&optional tex-file out-dir)
   "Copy all supporting files corresponding to a TEX-FILE.
@@ -767,6 +775,7 @@ tex file."
                 img-files)
         (save-buffer))
       (kill-buffer buf))))
+
 
 (defun ref-man-export-generate-standalone-from-org ()
   "Create a folder from doc-root with all files required for a self contained document.
@@ -1255,7 +1264,6 @@ no journal specific formatting."
               (run-hook-with-args 'ref-man-export-journal-specific-metadata-hook type)))
     (_ nil)))
 
-
 (defun ref-man-export-extract-research-highlights ()
   (let ((props (org-entry-properties)))
     `(("research-highlights" .
@@ -1263,7 +1271,6 @@ no journal specific formatting."
              (split-string it ";")
              (mapcar 'string-trim it)
              (-filter (lambda (x) (not (string-empty-p x))) it))))))
-
 
 (defun ref-man-export-do-housekeeping-bib-files (md-file checksum)
   "Perform housekeeping on existing bibliography files in output dir.
@@ -1310,7 +1317,6 @@ CHECKSUM is the current data checksum."
       (if (f-exists? template)
           (format " --template=%s " template)
         (format " --template=%s " (a-get (ref-man-export-templates) template))))))
-
 
 (defun ref-man-export-narrow-to-references ()
   "Narrow from beginning of buffer to References in an org subtree."
