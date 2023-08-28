@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 02 June 2023 08:11:11 AM IST>
+;; Time-stamp:	<Monday 28 August 2023 08:30:08 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -295,7 +295,7 @@ ids to Semantic Scholar via `ref-man-py' service."
                               `(,y . ,paperids))))
                         items-text '(pos-ids neg-ids)))
             (count ref-man-ss-recommendation-count))
-        (ref-man--post-json (ref-man-py-url "recommendations" '((count . 20)))
+        (ref-man--post-json (ref-man-py-url "recommendations" `((count . ,count)))
                             (a-assoc data)
                             (-partial 'ref-man-ss-display-recommendations heading)))))))
 
@@ -414,11 +414,11 @@ F is an element of filters as input by user.  See
      `(,c
        (min . ,(if (numberp (cadr f)) (cadr f) (string-to-number (cadr f))))
        (max . ,(if (numberp (caddr f)) (caddr f) (string-to-number (caddr f))))))
-    ((and 'venue c) `(venue . ((venues . ,(cdr f)))))
-    ((and 'title c) `(title  . ((title_re  . ,(nth 1 f)) (invert . ,(nth 2 f)))))
-    ((and 'author c) `(author . ((author_names . ,(nth 1 f))
-                                 (author_ids . ,(when (= (length f) 3) (nth 2 f)))
-                                 (exact . ,(when (= (length f) 4) (nth 3 f))))))
+    ('venue `(venue . ((venues . ,(cdr f)))))
+    ('title `(title  . ((title_re  . ,(nth 1 f)) (invert . ,(nth 2 f)))))
+    ('author `(author . ((author_names . ,(nth 1 f))
+                         (author_ids . ,(when (= (length f) 3) (nth 2 f)))
+                         (exact . ,(when (= (length f) 4) (nth 3 f))))))
     (_ (user-error "Uknown filter %s" (car f)))))
 
 (defun ref-man-ss-reset-filters ()
@@ -481,7 +481,7 @@ The filters can be customized in `ref-man-ss-citation-filters'."
     (with-current-buffer buffer
       (ref-man-org-update-filtered-subr data t))))
 
-(defun ref-man-ss-citation-filter-widget-handler (from wid changed &rest args)
+(defun ref-man-ss-citation-filter-widget-handler (from wid changed &rest _args)
   (let ((enabled (plist-get (cdr wid) :value)))
     (message
      (pcase from
@@ -542,7 +542,7 @@ The filters can be customized in `ref-man-ss-citation-filters'."
                        :notify (funcall notify-func 'venues)
                        (cdr (a-get default-filters 'venue)))
         (widget-insert " Preferred Venues:  ")
-        (let ((venue-keys (a-keys my/ref-man-ss-citation-filter-venues)))
+        (let ((venue-keys (a-keys ref-man-ss-citation-filter-preferred-venues)))
           (cl-loop for i from 0
                    for x in venue-keys do
                    (widget-insert (format "%s: " x))

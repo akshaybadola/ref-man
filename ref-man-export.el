@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 24 July 2023 07:39:58 AM IST>
+;; Time-stamp:	<Monday 28 August 2023 08:30:07 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -231,7 +231,7 @@ server is running are checked."
    (condition-case nil
        (with-current-buffer (url-retrieve-synchronously "http://localhost:3030/version")
          (buffer-string))
-     ('error nil))))
+     (error nil))))
 
 (defun ref-man-export-templates ()
   "Get templates as an alist from `ref-man-export-pandoc-templates-dir'."
@@ -404,7 +404,8 @@ TYPE controls the backend used to generate the markdown buffer.
 With optional non-nil SUBTREE, export only subtree.
 
 If optional OUTPUT-ORG-FILE is non-nil, then the buffer is
-written to it."
+written to it after `ref-man-export-pre-export-md-functions'
+execution."
   (save-restriction
     (let ((buf-string (if (not subtree)
                           (buffer-string)
@@ -439,7 +440,9 @@ written to it."
             (replace-match
              (format "[[%s][%s]]" (replace-regexp-in-string "\\(?:file:\\)?.+::" "" a) b))))
         (run-hook-with-args 'ref-man-export-pre-export-md-functions)
-        (org-export-to-buffer backend ref-man-export-temp-md-buf nil nil nil nil)))))
+        (org-export-to-buffer backend ref-man-export-temp-md-buf nil nil nil nil)
+        (when output-org-file
+          (write-file output-org-file))))))
 
 
 (defun ref-man-export-get-abstract-bibtexs (type metadata)
@@ -469,6 +472,7 @@ METADATA is modified and returned in a list along with bibtexs and abstract."
     (list abstract bibtexs metadata)))
 
 
+;; FIXME: blog-opts is unused
 (defun ref-man-export-get-opts (type title bib-file mathjax-path csl-file
                                             &optional no-refs)
   "Generate alist for yaml metadata for `ref-man-export-docproc-article'.
@@ -551,17 +555,32 @@ CITEPROC is the citation processor to use with pandoc."
        (buffer-substring (point) (point-max))))))
 
 
-(defun ref-man-export-bibtexs (bibtexs citeproc &optional tmp-bib-file no-gdrive)
-  "Export the references from BIBTEXS.
-BIBTEXS is a string of bibliography entries.
+(defun ref-man-export-bib-strings-to-yaml-via-temp-file (citeproc)
+  "Export bibtex strings BIBTEXS to yaml via `pandoc' and temp file.
+
+CITEPROC is the citation processor.  One of `bibtex' or `biblatex'."
+  (let ((temp-file (make-temp-file ".tmp-bib"))
+        (cur (point-max)))
+    (write-region (point-min) (point-max) temp-file)
+    (goto-char cur)
+    (insert (ref-man-export-bibtex-to-yaml-via-shell citeproc temp-file))
+    (delete-file temp-file)
+    (util/delete-blank-lines-in-region cur (point-max))
+    (buffer-substring-no-properties cur (point-max))))
+
+
+(defun ref-man-export-bib-strings (bibtexs citeproc &optional tmp-bib-file no-gdrive)
+  "Export bibtex strings BIBTEXS to yaml or bib file.
 
 CITEPROC is the citation processor to use.  Can be one of
 `bibtex' or `biblatex'.
 
 If optional TMP-BIB-FILE is given then write to that file.
+
 Default is to export the BIBTEXS string as yaml metadata which is
-read by `pandoc'.  Optional NO-GDRIVE implies to remove the
-gdrive keys if present."
+read by `pandoc'.
+
+Optional NO-GDRIVE implies to remove the gdrive keys if present."
   (when bibtexs
     (with-temp-buffer
       (insert (mapconcat (lambda (x)
@@ -579,20 +598,9 @@ gdrive keys if present."
              (ref-man-export-bibtex-to-yaml-via-pandoc-server (buffer-string) citeproc))
             ;; NOTE: Write to a temp file if \' accents are present
             ((string-match-p "'" (buffer-string))
-             (let ((temp-file (make-temp-file ".tmp-bib"))
-                   (cur (point-max)))
-               (write-region (point-min) (point-max) temp-file)
-               (goto-char cur)
-               (insert (ref-man-export-bibtex-to-yaml-via-shell citeproc temp-file))
-               (delete-file temp-file)
-               (util/delete-blank-lines-in-region cur (point-max))
-               (buffer-substring-no-properties cur (point-max))))
+             (ref-man-export-bib-strings-to-yaml-via-temp-file citeproc))
             (t
-             (let ((cur (point-max)))
-               (goto-char cur)
-               (insert (ref-man-export-bibtex-to-yaml-via-shell citeproc temp-file))
-               (util/delete-blank-lines-in-region cur (point-max))
-               (buffer-substring-no-properties cur (point-max))))))))
+             (ref-man-export-bib-strings-to-yaml-via-temp-file citeproc))))))
 
 
 (defun ref-man-export-check-author (author)
@@ -696,7 +704,7 @@ Optional BUFFER specifies the org buffer."
         (with-current-buffer buffer
           (unless doc-root
             (user-error "For extraction of images for a research article, a DOC_ROOT must be specified"))
-          (ref-man-export-get-all-imgs-subr))
+          (ref-man-export-get-all-imgs-subr doc-root))
       (let ((buffer (find-file-noselect buffer-or-filename)))
         (with-current-buffer buffer
           (prog1 (ref-man-export-get-all-imgs-subr nil)
@@ -777,6 +785,7 @@ tex file."
       (kill-buffer buf))))
 
 
+;; FIXME: compile-cmd is unused
 (defun ref-man-export-generate-standalone-from-org ()
   "Create a folder from doc-root with all files required for a self contained document.
 
@@ -839,6 +848,7 @@ Requires the bib and other files to be generated once with
         (save-buffer))
       (kill-buffer buf))))
 
+;; FIXME: docs-dir and compile-cmd are unused
 (defun ref-man-export-generate-standalone-from-latex ()
   "Create a folder from a latex file with all files required for a self contained document.
 
@@ -1082,7 +1092,9 @@ Options are:
       text)))
 
 (defun ref-man-export-org-table-to-latex (&optional no-caption)
-  "Export an org or table mode table in region to latex."
+  "Export an org or table mode table in region to latex.
+
+Do not add a caption if NO-CAPTION is non-nil."
   (interactive)
   (unless ref-man-export-latex-table-properties
     (user-error "You must set `ref-man-export-latex-table-properties' first"))
@@ -1092,8 +1104,9 @@ Options are:
              (el (progn (while (not (eq (car el) 'table))
                           (setq el (org-element-property :parent el)))
                         el))
-             (caption (or (org-element-property :caption el)
-                          (plist-get :caption (cadr el))))
+             (caption (unless no-caption
+                        (or (org-element-property :caption el)
+                            (plist-get :caption (cadr el)))))
              (caption (and caption (caaar caption)))
              (label (or (org-element-property :label el) (org-element-property :name el)
                         (plist-get :label (cadr el)) (plist-get :name (cadr el))))
@@ -1108,7 +1121,7 @@ Options are:
                ((org-at-table.el-p)
                 (let ((top (progn (table-goto-top-left-corner)
                                   (line-beginning-position)))
-                      (bottom (progn (next-line)
+                      (bottom (progn (forward-line)
                                      (forward-char)
                                      (table-goto-bottom-right-corner)
                                      (line-end-position))))
@@ -1140,6 +1153,7 @@ Options are:
            (org-indent-region (- (point) (length table)) (point)))))
     (user-error "Not at an org table")))
 
+;; FIXME: match-1 match-2 are unused
 (defun ref-man-export-parse-references (type &optional no-warn-types)
   "Parse the references from org text.
 Search for all org links of type (or \\='fuzzy \\='custom-id \\='http) and
@@ -1192,10 +1206,12 @@ NO-WARN-TYPES can be passed as a list of (string) link types."
                        (link-type (org-element-property :type link)))
                   (unless (member link-type no-warn-types)
                     (warn "No bib found for match string %s and bib %s" match-0 (car bib))))
-              (when (-any #'identity (mapcar (lambda (x) (and title-keys
-                                                              (string= (cadr x) (cadr bib))
-                                                              (not (string= (car x) (car bib)))))
-                                             title-keys))
+              (when (and (-any #'identity (mapcar
+                                           (lambda (x) (and title-keys
+                                                            (string= (cadr x) (cadr bib))
+                                                            (not (string= (car x) (car bib)))))
+                                           title-keys))
+                         (not (equal (a-get bibtexs (cadr bib)) (cdr bib))))
                 (setf (cadr bib) (concat (cadr bib) "_a"))
                 (setf (nth 2 bib) (replace-regexp-in-string
                                    (string-remove-suffix "_a" (cadr bib))
@@ -1235,12 +1251,12 @@ REFS-STRING is references in yaml format."
   (with-current-buffer buf
     (goto-char (point-min))
     (let (toc-min toc-max)
-      (when (re-search-forward "# Table of Contents" nil t))
-      (beginning-of-line)
-      (setq toc-min (point))
-      (forward-paragraph 2)
-      (setq toc-max (point))
-      (delete-region toc-min toc-max))))
+      (when (re-search-forward "# Table of Contents" nil t)
+        (beginning-of-line)
+        (setq toc-min (point))
+        (forward-paragraph 2)
+        (setq toc-max (point))
+        (delete-region toc-min toc-max)))))
 
 (defun ref-man-export-find-file-other-window-no-ask (file &optional noselect)
   "Find FILE in other window without any questions."
@@ -1284,8 +1300,9 @@ CHECKSUM is the current data checksum."
   (let* ((md-dir (f-parent md-file))
          (files (f-files md-dir))
          (bbl-files (-sort (lambda (x y) (not (time-less-p (cdr x) (cdr y))))
-                           (-filter (lambda (file) (or (f-ext? (car file) "bbl")
-                                                       (f-ext? (car file) "blg")))
+                           (-filter (lambda (file)
+                                      (string-match-p ".+\\(?:\\.bib\\|\\.blg\\|\\.bbl\\)$"
+                                                      (car file)))
                                     (mapcar (lambda (file)
                                               `(,file . ,(file-attribute-modification-time
                                                           (file-attributes file))))
@@ -1300,7 +1317,11 @@ CHECKSUM is the current data checksum."
                 (newname (concat file-prefix "-" (substring checksum 0 10) "." ext)))
            (unless (f-exists? (f-join md-dir newname))
              (copy-file x (f-join md-dir newname)))))
-       (mapcar #'car (list (car bbl-files) (nth 1 bbl-files)))))))
+       ;; NOTE: In case we want a bib file also copied
+       ;; (mapcar #'car (cons (-first (lambda (x) (string-match-p ".+\\.bib$" (car x)))
+       ;;                                    bbl-files)
+       ;;                            (-take 2 bbl-files)))
+       (mapcar #'car (-take 2 bbl-files))))))
 
 (defun ref-man-export-fix-template (type metadata)
   (let* ((template (a-get metadata "template"))
@@ -1350,6 +1371,8 @@ CHECKSUM is the current data checksum."
           (write-region (point-min) (point-max) md-file))
         (ref-man-export-find-file-other-window-no-ask md-file t)))))
 
+
+;; FIXME: Lexical vars templates-dir csl-dir pandoc-opts are not used
 
 ;; TODO: Exporting images directly as includegraphics in pdf
 ;;       1. Automatically remove "file://" prefix from file path in md
@@ -1511,7 +1534,7 @@ preprints."
               ref-man-export-metadata-hook
             (-concat ref-man-export-metadata-hook '(ref-man-export-get-journal-metadata))))
          (pandoc-opts (when-let ((opts (org-entry-get (point) "PANDOC_OPTS")))
-                        (mapcar #'string-trim (split-string opts ","))))
+                        (split-string opts "," t "[ \t\n\r]+")))
          bibtexs template-opt)
     (when (and (f-exists? md-file) (f-exists? out-file) (not force)
                (not (eq type 'blog)))
@@ -1542,7 +1565,7 @@ preprints."
           (setq metadata -metadata)
           (setq yaml-header (ref-man-export-generate-yaml-header
                              type abstract metadata
-                             (ref-man-export-bibtexs
+                             (ref-man-export-bib-strings
                               bibtexs citeproc tmp-bib-file no-gdrive))))
         (goto-char (point-min))
         (if (eq type 'paper)
@@ -1579,7 +1602,8 @@ preprints."
                   "\n\n## References\n")))
       (goto-char (point-min))
       (insert (concat yaml-header "\n"))
-      (write-region (point-min) (point-max) md-file))
+      (let ((coding-system-for-write 'raw-text))
+        (write-region (point-min) (point-max) md-file)))
     (when no-cite
       (ref-man-export-do-housekeeping-bib-files md-file checksum))
     ;; NOTE: Actual export

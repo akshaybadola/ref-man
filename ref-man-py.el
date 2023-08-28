@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 24 July 2023 07:39:58 AM IST>
+;; Time-stamp:	<Monday 28 August 2023 08:30:08 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -257,9 +257,6 @@ nil, `ref-man-py-data-dir' respectively by
                                             (and ref-man-pdf-proxy-port
                                                  (format "--proxy-port=%s"
                                                          ref-man-pdf-proxy-port))
-                                            (and ref-man-chrome-debug-script
-                                                 (format "--chrome-debugger-path=%s"
-                                                         ref-man-chrome-debug-script))
                                             (and ref-man-documents-dir
                                                  (format "--local-pdfs-dir=%s"
                                                          ref-man-documents-dir))
@@ -270,7 +267,7 @@ nil, `ref-man-py-data-dir' respectively by
                                                  (format "--remote-links-cache=%s"
                                                          ref-man-public-links-cache-file))
                                             (and ref-man-py-refs-cache-dir
-                                                 (format "--refs-cache-dir=%s"
+                                                 (format "--corpus-cache-dir=%s"
                                                          ref-man-py-refs-cache-dir))
                                             "--verbosity=debug"))))
         (unless (version-list-< (version-to-list (ref-man-py-installed-mod-version)) '(0 7 0))

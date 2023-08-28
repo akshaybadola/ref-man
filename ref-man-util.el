@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 27 February 2023 09:02:53 AM IST>
+;; Time-stamp:	<Monday 28 August 2023 08:30:08 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -12540,7 +12540,7 @@ BEG and END are region markers.  See `sort-words'."
 (defun ref-man-at-link-p ()
   (let ((link (get-text-property (point) 'htmlize-link)))
     (list link  (looking-at ref-man-maybe-local-fuzzy-custid-link-re)
-          (looking-back ref-man-maybe-local-fuzzy-custid-link-re))))
+          (looking-back ref-man-maybe-local-fuzzy-custid-link-re (line-beginning-position) t))))
 
 ;; TODO: Maybe rename this to a more generic name
 (defun ref-man--get-or-create-window-on-side ()
@@ -12748,7 +12748,7 @@ is saved in `ref-man-org-store-dir' from `ref-man-get-references'."
 
 (defvar ref-man-headings-before-pdf-open nil
   "Saved org headings and paths when a pdf file was opened from an org buffer.")
-(defun ref-man-save-heading-before-open-advice (&optional arg)
+(defun ref-man-save-heading-before-open-advice (&optional _arg)
   "Save org heading and file path if a pdf file is opened from PDF_FILE property.
 This function is used as advice to `org-open-at-point' and
 optional ARG is passed through to it.  Org heading and path for

@@ -522,3 +522,19 @@
    - Fixed bug in ~ref-md~ backend definition in ~ref-man-export~
    - Find system python as ~/usr/bin/python3~ in ~ref-man-py-python~
 
+** [2023-08-28 Mon 08:14]
+   - In ~ref-man-py~, removed the deprecated command line arguments for ~ref-man~ service
+   - In ~ref-man-ss~, fixed ~filter-conversion-vars~ for authors
+   - In ~ref-man-util~, fixed arguments in ~looking-back~ in ~ref-man-at-link-p~
+   - In ~ref-man-export~
+     + In ~ref-man-export-parse-references~, fixed the bug where a second
+       occurence of bib would create a duplicate always with ~_a~ to the key
+     + Added writing ~output-org-file~ in ~ref-man-export-org-to-md~
+     + Fixed some redundant code in ~ref-man-export-bib-strings~
+     + Fixed missing argument to ~ref-man-export-get-all-imgs-subr~
+       in ~ref-man-export-get-all-imgs~
+     + In ~ref-man-export-delete-md-toc~, delete TOC in markdown only if present
+     + Fixed bbl-files matching in ~ref-man-export-do-housekeeping-bib-files~
+     + ~ref-man-export-bibtexs~ is now ~ref-man-export-bibtexs~
+     + Fixed warning of coding system when writing markdown file in
+       ~ref-man-export-docproc-article~. It now defaults to ~raw-text~
