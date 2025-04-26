@@ -538,3 +538,74 @@
      + ~ref-man-export-bibtexs~ is now ~ref-man-export-bibtexs~
      + Fixed warning of coding system when writing markdown file in
        ~ref-man-export-docproc-article~. It now defaults to ~raw-text~
+
+** [2025-04-26 Sat 07:52]
+   - In ~ref-man-core~, modified *bibtex parsing* utilities
+     + Added ~ref-man-org-bibtex-kill-headline-as-bibtex-flags~
+     + Modified bibtex read/write functions
+       ~ref-man-bibtex-parse-buffer~
+       ~ref-man-org-bibtex-read-bib-file-to-org-buffer~
+       ~ref-man--org-bibtex-write-heading-from-bibtex~
+       ~ref-man-org-bibtex-kill-headline-as-bibtex~
+     + Renamed
+       ~ref-man-org-publish-type~ to ~ref-man-org-determine-publish-type-fix-props-alist~
+       ~ref-man-bibtex-remove-arxiv~ to ~ref-man-bibtex-maybe-remove-arxiv~
+     + Refactored ~ref-man-org-parse-entry-as-bib~
+     + Added new functions:
+       ~ref-man-org-entry-from-isbn~
+       ~ref-man-org-insert-bib-alist-as-property~
+
+   - In ~ref-man-core~, added *ArXiv source* utilities
+     + Functions:
+       ~ref-man-org-try-fetch-arxiv-src~
+       ~ref-man--download-callback-store-src~
+       ~ref-man--insert-source-file-property~
+
+   - In ~ref-man-core~
+     + Added some other new functions
+       ~ref-man-get-external-ids-from-heading~
+       ~ref-man-org-downloadable-external-ids~
+       ~ref-man-maybe-fetch-pdf-from-external-ids~
+       ~ref-man-org-display-all-references~
+       ~ref-man-org-add-heading-with-ss-data-from-url~
+       ~ref-man-org-update-references-or-citations-for-entry~
+     + Renamed
+       ~ref-man--download-pdf-redirect-new~ to ~ref-man--download-redirect~
+     + Refactored ~ref-man-org-display-ss-data~
+
+   - In ~ref-man-export~
+     + Added:
+       ~ref-man-export-post-export-hook~
+       ~ref-man-export-with-checksum~
+       ~ref-man-export-determine-output-dir~
+       ~ref-man-export-determine-md-file~
+       ~ref-man-export-determine-out-file~
+       ~ref-man-export-check-with-checksum~
+       ~ref-man-org-buffer-or-file-checksum~
+       ~ref-man-export-title~
+       ~ref-man-export-get-csl-file~
+       ~ref-man-export-write-md-file~
+       ~ref-man-export-generate-output-file-with-pndconf~
+     + Renamed:
+       ~ref-man-export-get-paper-metadata~ to ~ref-man-export-get-abstract-and-section-bounds~
+       ~ref-man-export-docproc-article~ to ~ref-man-export-article~
+
+   - In ~ref-man-files~
+     + Added:
+       ~ref-man-source-dir~
+       ~ref-man-files-arxiv-src-filename-from-url~
+       ~ref-man-files-check-src-file-exists~
+
+   - In ~ref-man-ss~
+     + Added:
+       ~ref-man-ss-data-filter-fields~
+       ~ref-man-ss-update-and-fetch-paper-details~
+       ~ref-man-ss-fetch-paper-references~
+     + Modified ~ref-man-ss-fetch-paper-details~
+
+   - In ~ref-man-url~
+     + Added and modified ArXiv utilities and some other minor changes:
+       ~ref-man-url-maybe-get-arxiv-id~
+       ~ref-man-url-get-arxiv-src-url~
+       ~ref-man-url-get-bibtex-link-from-arxiv~
+       ~ref-man-url-external-id-to-url~

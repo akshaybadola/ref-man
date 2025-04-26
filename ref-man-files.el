@@ -1,11 +1,11 @@
 ;;; ref-man-py.el --- Module for managing the files. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022,2023
+;; Copyright (C) 2018,2019,2020,2021,2022,2023,2025
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 10 April 2023 07:15:38 AM IST>
+;; Time-stamp:	<Saturday 26 April 2025 07:52:08 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -40,6 +40,11 @@
   :type 'directory
   :group 'ref-man)
 
+(defcustom ref-man-source-dir (expand-file-name "~/.ref-man/tex")
+  "Directory where the downloaded pdf files will be stored."
+  :type 'directory
+  :group 'ref-man)
+
 (defcustom ref-man-extra-documents-dirs nil
   "Directories to scan extra pdf files."
   :type 'directory
@@ -68,7 +73,11 @@ Returns path concatenated with `ref-man-documents-dir'."
                                ".pdf" (string-join (last (split-string (car (url-path-and-query obj)) "/") 2) "-"))
                               ".pdf"))
                      ((string-match-p "aaai.org" url)
-                      (concat "aaai_" (string-join (last (split-string url "/") 2) "_") ".pdf"))
+                      (concat "aaai_"
+                              (string-remove-suffix
+                               ".pdf"
+                               (string-join (last (split-string url "/") 2) "_"))
+                              ".pdf"))
                      ((string-match-p "frontiersin.org/articles/.+/pdf$" url)
                       (concat "frontiersin_" (save-match-data
                                                (string-match "frontiersin.org/articles/\\(.+\\)/pdf$" url)
@@ -95,6 +104,17 @@ Returns path concatenated with `ref-man-documents-dir'."
                           (car (url-path-and-query obj))))))
          (file (and path (path-join ref-man-documents-dir (f-filename path)))))
     file))
+
+(defun ref-man-files-arxiv-src-filename-from-url (url)
+  "Generate unique filename from a given ArXiv source URL.
+Returns path concatenated with `ref-man-source-dir'."
+  (let ((obj (url-generic-parse-url url)))
+    (when (string-match-p "arxiv.org/.+?" url)
+      (f-join ref-man-source-dir
+              (concat
+               (f-filename
+                (string-remove-suffix ".pdf" (car (url-path-and-query obj))))
+               ".gzip")))))
 
 (defun ref-man-files-dirs-non-hidden (path recurse)
   "Get all non-hidden directories from PATH.
@@ -190,6 +210,12 @@ directories given by `ref-man-extra-documents-dirs'"
                                (ref-man-files-file-in-other-dirs (f-filename file-name-b)))))
                           (t nil)))))
     (and file (ref-man-files-copy-if-required-from-extra-to-documents-dir file))))
+
+(defun ref-man-files-check-src-file-exists (url)
+  "Check if a source file exists for a given URI in `ref-man-source-dir'."
+  (let ((file-name (f-join ref-man-source-dir
+                           (ref-man-files-arxiv-src-filename-from-url url))))
+    (file-exists-p file-name)))
 
 
 (provide 'ref-man-files)

@@ -1,11 +1,11 @@
 ;;; ref-man-ss.el --- Semantic Scholar API calls for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022,2023
+;; Copyright (C) 2018,2019,2020,2021,2022,2023,2025
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 28 August 2023 08:30:08 AM IST>
+;; Time-stamp:	<Saturday 26 April 2025 07:52:08 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -68,6 +68,7 @@ Used by `ref-man-ss-fetch-recommendations'."
     ("â" . "\"")
     ("â" . "-")
     ("â" . "--")
+    ("â" . "--")
     ("â" . "'")
     ("â" . "'")
     ("Ã¢ÂÂ" . "--")
@@ -85,6 +86,16 @@ Used by `ref-man-ss-fetch-recommendations'."
 (defvar ref-man-ss-nonascii-ascii-chars
   '(("ï¬" . "f")
     ("ï¬" . "fl")))
+
+(defvar ref-man-ss-data-filter-fields nil
+  "Fields to filter from the fetched SS data.
+
+It is an alist of keys \\='(paper-fields citations-fields references-fields).
+with values being a list of fields to fetch.  A value \"all\" means
+to fetch ALL fields.
+
+Not all keys need to present. If some key is not present, then
+default fields will be retrieved for that.")
 
 (defun ref-man-ss-fix-nonascii-chars-in-entry ()
   "Fix nonascii chars in current org entry.
@@ -132,6 +143,20 @@ data."
           (replace-match (cdr (aref vecmap idx)))))
       (buffer-string))))
 
+(defun ref-man-ss-update-and-fetch-paper-details (ssid keys)
+  "Update KEYS in Semantic Scholar data for ID SSID and fetch.
+
+KEYS must be a comma-delimited string.  Acceptable values are
+\"references\" \"citations\" or both."
+  (let* ((opts `(("id" . ,ssid)
+                 ("keys" . ,keys)))
+         (url (ref-man-py-url "s2_get_updated_paper" opts)))
+    (message "[ref-man] Fetching updated Semantic Scholar Data for %s" ssid)
+    (with-current-buffer
+        (url-retrieve-synchronously url t) ; silent
+      (goto-char (point-min))
+      (forward-paragraph)
+      (json-read))))
 
 (defun ref-man-ss-fetch-paper-details (ssid &optional update-on-disk)
   "Fetch Semantic Scholar data for ID SSID.
@@ -139,23 +164,60 @@ data."
 The data is cached on the disk and if the data for entry is
 already present, the cached entry is fetched.  With optional
 argument UPDATE-ON-DISK, force update the data in cache."
-  (let* ((idtype-id ssid)
+  (let* ((fields ref-man-ss-data-filter-fields)
+         (idtype-id ssid)
          (opts `(("id_type" . ,(car idtype-id))
                  ("id" . ,(cdr idtype-id))))
          (opts (if update-on-disk
-                   (-concat opts '(("force" . "")))
+                   (-concat opts '(("force" . "true")))
                  opts))
+         (data `(("fields" . ,fields)))
+         (url (ref-man-py-url "s2_paper" opts))
          (ss-data (when idtype-id
                     (message "[ref-man] %s Semantic Scholar Data for %s id: %s"
                              (if update-on-disk "Force fetching" "Fetching")
                              (car idtype-id) (cdr idtype-id))
-                    (with-current-buffer
-                        (url-retrieve-synchronously
-                         (ref-man-py-url "s2_paper" opts) t) ; silent
-                      (goto-char (point-min))
-                      (forward-paragraph)
-                      (json-read)))))
+                    (if fields
+                        (with-current-buffer
+                            (ref-man--post-json-synchronous url data t)
+                          (goto-char (point-min))
+                          (forward-paragraph)
+                          (json-read))
+                      (with-current-buffer
+                          (url-retrieve-synchronously url t) ; silent
+                        (goto-char (point-min))
+                        (forward-paragraph)
+                        (json-read))))))
     ss-data))
+
+(defun ref-man-ss-fetch-paper-references (ssid &optional params filters)
+  "Fetch paper references for SSID.
+
+Optional PARAMS specifies any filters to be added to the
+citations.  By default citations are fetched in increments of
+100, but that can be changed with PARAMS.
+
+Optional FILTERS are declarative filters that are applied to the
+results.
+
+PARAMS can be queried from the service.
+
+Example PARAMS and FILTERS alist for getting 100 citations from
+years 2012-2018:
+
+PARAMS: \\='((count . 100))
+
+FILTERS: \\='((year . ((min . 2012) (max . 2018))))"
+  (let* ((url (ref-man-py-url (format "s2_references/%s" ssid) params))
+         (buf (if (and filters (cdr filters))
+                  (ref-man--post-json-synchronous url filters t)
+                (url-retrieve-synchronously url t))))
+    (prog1
+        (with-current-buffer buf
+          (goto-char (point-min))
+          (forward-paragraph)
+          (json-read))
+      (kill-buffer buf))))
 
 (defun ref-man-ss-fetch-paper-citations (ssid &optional params filters)
   "Fetch paper citations for SSID.

@@ -1,11 +1,11 @@
 ;;; ref-man-url.el --- url utilities and functions for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022,2023
+;; Copyright (C) 2018,2019,2020,2021,2022,2023,2025
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Friday 02 June 2023 08:11:11 AM IST>
+;; Time-stamp:	<Saturday 26 April 2025 07:52:08 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -105,16 +105,20 @@ The keys of the alist are regexps and the values are the types of URL.")
     (replace-regexp-in-string "\\(.+?\\)\\(v[0-9]+\\)?\\(\\.pdf\\)?" "\\1"
                               (-last-item (split-string url "/")))))
 
+(defun ref-man-url-maybe-get-arxiv-id ()
+  "Check for and get ARXIVID in various forms if it exists in org property drawer."
+  (pcase (or
+          (org-entry-get (point) "ARXIVID")
+          (org-entry-get (point) "ARXIV")
+          (org-entry-get (point) "EPRINT"))
+    ((and val) val)))
+
 ;; TODO: Unify arxiv functions url into a single one
 (defun ref-man-url-from-arxiv-id ()
   "Get url from arxivid extracted from org property drawer at point."
   (interactive)
   (if (eq major-mode 'org-mode)
-      (let ((arxiv-id (pcase (or
-                              (org-entry-get (point) "ARXIVID")
-                              (org-entry-get (point) "ARXIV")
-                              (org-entry-get (point) "EPRINT"))
-                        ((and val) val))))
+      (let ((arxiv-id ref-man-url-maybe-get-arxiv-id))
         (when arxiv-id
           (if (called-interactively-p 'any)
               (progn
@@ -123,6 +127,18 @@ The keys of the alist are regexps and the values are the types of URL.")
                 (kill-new (format "https://arxiv.org/abs/%s" arxiv-id)))
             (format "https://arxiv.org/abs/%s" arxiv-id))))
     (message "[ref-man] Not in org-mode") nil))
+
+(defun ref-man-url-get-arxiv-src-url ()
+  "Get ArXiV src url from org entry at point."
+  (if (eq major-mode 'org-mode)
+      (let ((arxiv-id (ref-man-url-maybe-get-arxiv-id)))
+        (if arxiv-id
+            (format "https://arxiv.org/src/%s" arxiv-id)
+          (let ((url (or (org-entry-get (point) "ARXIV_URL")
+                         (org-entry-get (point) "URL"))))
+            (when (string-match-p "arxiv.org" url)
+              (format "https://arxiv.org/src/%s" (ref-man-url-to-arxiv-id url))))))
+    (message "[ref-man] Not in org-mode")))
 
 (defun ref-man-url-non-gscholar-url-p (url)
   "Check if URL is not a Google Scholar url."
@@ -221,11 +237,13 @@ downloadable one."
                 (if (string-match-p "/pdf/" -url) url
                   (if transform (ref-man-url-arxiv-pdf-link-helper url) url)))
                ((string-match-p "aaai.org" -url)
-                (when (or (string-match-p "/download/" -url)
-                          (string-match-p "ojs.aaai.org.+article/view/[0-9]+/[0-9]+" -url))
-                  (if transform
-                      (replace-regexp-in-string "/article/view/" "/article/download/" url)
-                    url)))
+                (cond ((string-match-p "\\.pdf$" -url) -url)
+                      ((or (string-match-p "/download/" -url)
+                           (string-match-p "ojs.aaai.org.+article/view/[0-9]+/[0-9]+" -url))
+                       (if transform
+                           (replace-regexp-in-string "/article/view/" "/article/download/" url)
+                         url))
+                      (t nil)))
                ((string-match-p "openreview.net" -url)
                 (if transform
                     (replace-regexp-in-string "forum\\?id=" "pdf?id=" url)
@@ -454,22 +472,22 @@ first pdf link from the buffer."
                      (if (string-match-p "^[http|https]" link)
                          link
                        (url-join "https://openreview.net" link)))))
-    ('ss (let* ((links (with-temp-shr-buffer buf
-                                             (ref-man-web-get-all-links (current-buffer) t)))
-                (site-url (ref-man-url-get-best-pdf-url links))
-                (url (when site-url
-                       (cond ((eq (car site-url) 'pdf)
-                              (cdr site-url))
-                             ((car site-url)
-                              (condition-case nil
-                                  (ref-man-url-get-pdf-link-helper (car site-url) (cdr site-url) nil)
-                                (error (with-current-buffer
-                                           (url-retrieve-synchronously (cdr site-url))
-                                         (ref-man-url-get-pdf-link-helper
-                                          (car site-url)
-                                          (cdr site-url)
-                                          (current-buffer))))))))))
-           url))
+    ;; ('ss (let* ((links (with-temp-shr-buffer buf
+    ;;                                          (ref-man-web-get-all-links (current-buffer) t)))
+    ;;             (site-url (ref-man-url-get-best-pdf-url links))
+    ;;             (url (when site-url
+    ;;                    (cond ((eq (car site-url) 'pdf)
+    ;;                           (cdr site-url))
+    ;;                          ((car site-url)
+    ;;                           (condition-case nil
+    ;;                               (ref-man-url-get-pdf-link-helper (car site-url) (cdr site-url) nil)
+    ;;                             (error (with-current-buffer
+    ;;                                        (url-retrieve-synchronously (cdr site-url))
+    ;;                                      (ref-man-url-get-pdf-link-helper
+    ;;                                       (car site-url)
+    ;;                                       (cdr site-url)
+    ;;                                       (current-buffer))))))))))
+    ;;        url))
     (_ (let ((link (ref-man-url-get-first-pdf-link-from-html-buffer buf)))
          (when link
            (if (string-match-p "^http:\\|^https:" link)
@@ -524,6 +542,15 @@ BUF is the html buffer received."
 ;;     (let ((buf (url-retrieve-synchronously url t)))
 ;;       (ref-man-url-get-pdf-link-helper site url buf))))
 
+(defun ref-man-url-external-id-to-url (id &rest args)
+  "Convert a Semantic Scholar external ID to PDF URL."
+  (pcase-let ((`(,idtype . ,id) id))
+    (pcase idtype
+      ("ACL" (concat "https://www.aclweb.org/anthology/" id ".pdf"))
+      ((or "ARXIV" "ARXIVID") (concat "https://arxiv.org/pdf/" id ".pdf"))
+      ("DOI" (ref-man-url-get-pdf-link-from-doi id))
+      (_ nil))))
+
 (defun ref-man-url-arxiv-pdf-link-helper (url &rest args)
   "Get PDF URL for an arxiv url.
 ARGS is for compatibility and not used."
@@ -540,7 +567,6 @@ ARGS is for compatibility and not used."
 (defun ref-man-url-get-site-from-url (url)
   "Helper function to determine site from URL."
   (cond ((string-match-p "arxiv.org" url) 'arxiv)
-        ((string-match-p "semanticscholar.org/paper" url) 'ss)
         ((string-match-p "^https?://\\(dx.\\)?doi.org/.+$" url) 'doi)
         ((string-match-p "aclanthology.info\\|aclweb.org" url) 'acl)
         ((and (string-match-p "doi.org" url)
@@ -685,11 +711,15 @@ The rendered buffer is a named buffer BUFFER-NAME."
     (goto-char (point-min))))
 (make-obsolete 'ref-man--shr-render-buffer-quiet 'with-temp-shr-buffer "ref-man 0.3.0")
 
-(defun ref-man-url-get-bibtex-link-from-arxiv (url)
+(defun ref-man-url-get-bibtex-link-from-arxiv ()
   "Extract bibtex if it exists from an arxiv URL."
   (interactive)
   (save-excursion
-    (let ((buf (url-retrieve-synchronously url)))
+    (let* ((url (or (org-entry-get (point) "URL")
+                    (org-entry-get (point) "ARXIV_URL")
+                    (and (get-text-property (point) 'htmlize-link)
+                         (plist-get (get-text-property (point) 'htmlize-link) :uri))))
+           (buf (url-retrieve-synchronously url)))
       (with-temp-shr-buffer
        buf
        (let* ((match (search-forward "bibtex" nil t))
@@ -782,7 +812,9 @@ match for TITLE's first three words will be returned."
 
 (defun ref-man-url-get-pdf-link-from-doi (url)
   "Fetch pdf url after DOI redirect for URL."
-  (doi-utils-get-pdf-url url))
+  (if (string-match-p "^arXiv" (nth 1 (split-string url "/")))
+      (concat "https://arxiv.org/pdf/" (string-remove-prefix "arXiv." (nth 1 (split-string url "/"))))
+    (doi-utils-get-pdf-url url)))
 
 (defun ref-man-url-get-bibtex-link-from-doi (url)
   "Get a bibtex from a DOI URL."

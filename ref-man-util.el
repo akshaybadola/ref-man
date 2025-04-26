@@ -1,11 +1,11 @@
 ;;; ref-man-util.el --- Utility variables and functions for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022,2023
+;; Copyright (C) 2018,2019,2020,2021,2022,2023,2025
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Monday 28 August 2023 08:30:08 AM IST>
+;; Time-stamp:	<Saturday 26 April 2025 07:52:08 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -12688,7 +12688,7 @@ This function is aliased from URL `https://github.com/akshaybadola/emacs-util'."
 ;;                  ("journal" . "ArXiv"))))
 ;;       (ref-man-util-pipe-through ref-man-bibtex-clean-pipe arg)))
 
-;; TODO: A better pip macro based `->>' can be made I think
+;; TODO: A better pipe macro based `->>' can be made I think
 (defun ref-man-util-pipe-through (pipe args)
   "Pipe the ARGS through a named PIPE.
 The PIPE must be a sequence of functions and they are called in
@@ -12782,8 +12782,11 @@ the link are added to `ref-man-headings-before-pdf-open'."
 
 (defun ref-man--post-json-synchronous (url data &optional silent)
   "Send an HTTP POST request to URL with DATA.
+
 DATA should be an alist of key-value pairs.  The request is sent
-content-type as application/json and DATA is encoded as json."
+content-type as application/json and DATA is encoded as json.
+
+Argument SILENT is passed on to `url-retrieve-synchronously'."
   (let ((url-request-extra-headers
          `(("Content-Type" . "application/json")))
         (url-request-method "POST")
