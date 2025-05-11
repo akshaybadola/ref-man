@@ -5,7 +5,7 @@
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Saturday 26 April 2025 07:52:08 AM IST>
+;; Time-stamp:	<Sunday 11 May 2025 08:50:06 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -1001,8 +1001,8 @@ Display the entries if any found in a helm buffer."
                                                      (org-entry-get (point) "CUSTOM_ID")
                                                      (buffer-name)))))
                (headings (-keep (lambda (x)
-                                  (unless (and (= pt (nth 4 x)) (string= (nth 2 x) buf-name))
-                                    `(,(car x) . ,(list (nth 2 x) (nth 4 x)))))
+                                  (unless (and (= pt (a-get x 'POS)) (string= (a-get x 'BUF) buf-name))
+                                    `(,(a-get x 'HEADING) . ,(list (a-get x 'BUF) (a-get x 'POS)))))
                                 (ref-man-org-check-for-duplicate-pub heading cid))))
     (if headings
         (util/helm-org-headings nil headings)
@@ -1010,8 +1010,8 @@ Display the entries if any found in a helm buffer."
 
 (defun ref-man-org-duplicate-entry-p (heading cid entry)
   "Are two entries  list of org headings matching CUSTOM_ID or heading."
-  (or (string= cid (nth 3 entry))
-      (string= (downcase heading) (downcase (car entry)))))
+  (or (string= cid (a-get entry 'CUSTOM_ID))
+      (string= (downcase heading) (downcase (a-get entry 'HEADING)))))
 
 (defun ref-man-org-check-for-duplicate-pub (heading cid)
   "Return list of org headings matching CUSTOM_ID or heading.
@@ -3112,7 +3112,9 @@ If \\[universal-argument] is given, then inver the value of
   "Predicate to determine a `ref-man' entry.
 
 We check AUTHOR and TITLE."
-  (pcase-let ((`(,heading ,author ,_ ,cid ,_) entry))
+  (let ((heading (a-get entry 'HEADING))
+        (author (a-get entry 'AUTHOR))
+        (cid (a-get entry 'CUSTOM_ID)))
     (or (not (or (string-empty-p author) (string-empty-p cid)))
         (and (not (string-empty-p author))
              (> (length (split-string heading))

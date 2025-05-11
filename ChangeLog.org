@@ -609,3 +609,6 @@
        ~ref-man-url-get-arxiv-src-url~
        ~ref-man-url-get-bibtex-link-from-arxiv~
        ~ref-man-url-external-id-to-url~
+
+** [2025-05-11 Sun 08:49]
+   - Change for ~util/org-collect-headings-cache~
