@@ -1,11 +1,11 @@
 ;;; ref-man-ss.el --- Semantic Scholar API calls for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022,2023,2025
+;; Copyright (C) 2018,2019,2020,2021,2022,2023,2025,2026
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Saturday 26 April 2025 07:52:08 AM IST>
+;; Time-stamp:	<Sunday 26 April 2026 11:33:48 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -189,6 +189,17 @@ argument UPDATE-ON-DISK, force update the data in cache."
                         (forward-paragraph)
                         (json-read))))))
     ss-data))
+
+(defun ref-man-ss-fetch-arxiv-references (arxivid)
+  "Fetch paper from ArXiv source references for ARXIVID."
+  (let* ((url (ref-man-py-url "arxiv_references" `(("id" . ,arxivid))))
+         (buf (url-retrieve-synchronously url t)))
+    (prog1
+        (with-current-buffer buf
+          (goto-char (point-min))
+          (forward-paragraph)
+          (json-read))
+      (kill-buffer buf))))
 
 (defun ref-man-ss-fetch-paper-references (ssid &optional params filters)
   "Fetch paper references for SSID.

@@ -1,11 +1,11 @@
 ;;; ref-man-web.el --- Web components with `eww' and proxies for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022,2023
+;; Copyright (C) 2018,2019,2020,2021,2022,2023,2026
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 19 April 2023 15:01:28 PM IST>
+;; Time-stamp:	<Sunday 26 April 2026 11:33:48 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -55,10 +55,6 @@
 
 (add-hook 'eww-mode-hook 'ref-man-web-eww-mode-hook)
 
-;; FIXME: these should be moved from here into some config
-(global-set-key (kbd "C-c e e") 'eww)
-(global-set-key (kbd "C-c e g") 'ref-man-web-gscholar)
-(global-set-key (kbd "C-c e s") 'ref-man-web-search)
 (setq browse-url-browser-function 'eww-browse-url)
 (defvar ref-man--gscholar-launch-buffer-list
   nil

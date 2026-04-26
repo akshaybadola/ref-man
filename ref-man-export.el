@@ -1,11 +1,11 @@
 ;;; ref-man-export.el --- Document export and publishing functionality for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022,2023,2025
+;; Copyright (C) 2018,2019,2020,2021,2022,2023,2025,2026
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Saturday 26 April 2025 07:52:08 AM IST>
+;; Time-stamp:	<Sunday 26 April 2026 11:33:48 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -125,7 +125,7 @@ Should be an `alist' parseable by `yaml-encode'."
   :group 'ref-man)
 
 (defcustom ref-man-export-mathjax-dir ""
-  "Directory of docproc."
+  "Directory where mathjax is kept."
   :type 'directory
   :group 'ref-man)
 
@@ -153,6 +153,14 @@ Should be an `alist' parseable by `yaml-encode'."
   "Should we export with checksum appended to title words?
 It is an alist of publish types along with values."
   :type 'alist
+  :group 'ref-man-export)
+
+(defcustom ref-man-export-truncate-filenames-length 0
+  "Whether to truncate long file and directory names.
+
+0 implies no truncation, while any other integer will truncate the
+directory and file name to that number of words."
+  :type 'number
   :group 'ref-man-export)
 
 (defvar ref-man-export-temp-org-buf " *ref-man-export-org-buf*"
@@ -397,6 +405,15 @@ Files are searched in `ref-man-export-pandoc-csl-dir'"
                      (table-row . org-gfm-table-row)
                      (table . org-gfm-table)))
 
+(defun org-latex-$$-math-block (_math-block contents _info)
+  "Transcode a MATH-BLOCK object from Org to LaTeX.
+CONTENTS is a string.  INFO is a plist used as a communication
+channel."
+  (when (org-string-nw-p contents)
+    (format "$%s$" (org-trim contents))))
+
+(org-export-define-derived-backend 'ref-latex 'latex
+  :translate-alist '((latex-math-block . org-latex-$$-math-block)))
 
 (defun ref-man-export-org-to-md (type &optional subtree output-org-file)
   "Copy the org buffer to temp buffer and export to markdown.
@@ -479,14 +496,20 @@ METADATA is modified and returned in a list along with bibtexs and abstract."
 
 
 ;; FIXME: blog-opts is unused
-(defun ref-man-export-get-opts (type title bib-file mathjax-path csl-file
-                                            &optional no-refs)
+(defun ref-man-export-get-opts (md-file type title bib-files mathjax-path csl-file
+                                        &optional no-refs)
   "Generate alist for yaml metadata for `ref-man-export-article'.
 
+MD-FILE is the output markdown file generated.
+
 TYPE is one of \\='html \\='pdf \\='both \\='blog, TITLE is the title of the
-article, BIB-FILE is the additional bibliography file for
-citations, MATHJAX-PATH is the path where Mathjax scripts would
-be located and CSL-FILE is the Citation Style File.
+article.
+
+BIB-FILES is the list of bibliography files for citations.
+
+MATHJAX-PATH is the path where Mathjax scripts would be located.
+
+CSL-FILE is the Citation Style File.
 
 Don't include bibliography when NO-REFS is non-nil."
   (let ((opts ref-man-export-default-opts)
@@ -498,11 +521,9 @@ Don't include bibliography when NO-REFS is non-nil."
                         "mathjax" mathjax-path
                         "csl" csl-file))
     (unless no-refs
-      (setq opts (a-assoc opts
-                          "bibliography"
-                          (if bib-file
-                              (cons bib-file ref-man-bib-files)
-                            ref-man-bib-files))))
+      (if bib-files
+          (setq opts (a-assoc opts "bibliography" bib-files))
+        (setq opts (a-assoc opts "bibliography" (concat (f-join (f-dirname md-file) (f-base md-file)) ".bib")))))
     (pcase type
       ('blog
        (setq opts
@@ -619,16 +640,17 @@ If no author or an incorrect type is given then return the
 default author alist."
   (if (and author (not (string-empty-p author)))
       (let ((splits (-remove #'string-empty-p (split-string author ","))))
-        (when (-all? (lambda (y) (= y 3))
+        (if (-all? (lambda (y) (= y 3))
                      (mapcar (lambda (x) (length (split-string x ":"))) splits))
-          (mapcar (lambda (x)
-                    (unless (string-empty-p x)
-                      (pcase-let
-                          ((`(,aff ,name ,email)
-                            (mapcar 'string-trim (split-string
-                                                  (replace-regexp-in-string "<\\|>" "" x) ":"))))
-                        `(("affiliation" . ,aff) ("name" . ,name) ("email" . ,email)))))
-                  splits)))
+            (mapcar (lambda (x)
+                      (unless (string-empty-p x)
+                        (pcase-let
+                            ((`(,aff ,name ,email)
+                              (mapcar 'string-trim (split-string
+                                                    (replace-regexp-in-string "<\\|>" "" x) ":"))))
+                          `(("affiliation" . ,aff) ("name" . ,name) ("email" . ,email)))))
+                    splits)
+          (user-error "Could not parse AUTHOR prop")))
     `((("name" . ,ref-man-export-author-name)
        ("email" . ,ref-man-export-author-email)
        ("affiliation" . ,ref-man-export-author-affiliation)))))
@@ -685,6 +707,8 @@ TYPE has to be \\='paper for this hook to run."
                  "sections-end" before-refs)))))
 
 (defun ref-man-export-get-all-imgs-subr (doc-root)
+  "Subroutine to get all the LaTeX images from file.
+DOC-ROOT is only applicable to `org-mode'."
   (let (imgs)
     (save-excursion
       (if doc-root
@@ -697,6 +721,23 @@ TYPE has to be \\='paper for this hook to run."
           (push (substring-no-properties (match-string 1)) imgs))))
     imgs))
 
+
+(defun ref-man-export-get-all-packages (&optional buffer-or-filename)
+  "Return list of all file paths in `includegraphics' directives for org subtree.
+Optional BUFFER specifies the org buffer."
+  (pcase-let* ((`(,buffer . ,kill-later)
+                (if (bufferp buffer-or-filename)
+                    `(,buffer-or-filename . nil)
+                  `(,(find-file-noselect buffer-or-filename) . t)))
+               (packages))
+    (with-current-buffer buffer
+      (prog1
+          (save-excursion
+            (goto-char (point-min))
+            (while (re-search-forward "^\\\\usepackage\\(?:\\[.+?]\\)?{\\(.+?\\)}" nil t)
+              (push (split-string (substring-no-properties (match-string 1)) ",") packages))
+            (-flatten packages))
+        (when kill-later (kill-buffer buffer))))))
 
 (defun ref-man-export-get-all-imgs (&optional buffer-or-filename)
   "Return list of all file paths in `includegraphics' directives for org subtree.
@@ -713,7 +754,6 @@ Optional BUFFER specifies the org buffer."
         (with-current-buffer buffer
           (prog1 (ref-man-export-get-all-imgs-subr nil)
             (kill-buffer)))))))
-
 
 (defun ref-man-export-link-standalone-files (&optional tex-file out-dir)
   "Copy all supporting files corresponding to a TEX-FILE.
@@ -788,7 +828,6 @@ tex file."
         (save-buffer))
       (kill-buffer buf))))
 
-
 ;; FIXME: compile-cmd is unused
 (defun ref-man-export-generate-standalone-from-org ()
   "Create a folder from doc-root with all files required for a self contained document.
@@ -852,7 +891,6 @@ Requires the bib and other files to be generated once with
         (save-buffer))
       (kill-buffer buf))))
 
-;; FIXME: docs-dir and compile-cmd are unused
 (defun ref-man-export-generate-standalone-from-latex ()
   "Create a folder from a latex file with all files required for a self contained document.
 
@@ -863,26 +901,35 @@ Requires the bib and other files to be generated once."
   ;; NOTE: Perhaps output to a different directory also?
   (interactive)
   (let* ((file (ido-read-file-name "Enter the path of the LaTeX file "))
-         (imgs (ref-man-export-get-all-imgs file))
-         ;; (docs-dir ref-man-export-output-dir)
+         (orig-buf (find-file-noselect file))
+         (imgs (with-current-buffer orig-buf
+                 (save-excursion
+                   (goto-char (point-min))
+                   (ref-man-export-get-all-imgs-subr nil))))
+         (packages (ref-man-export-get-all-packages orig-buf))
+         (package-files (-keep
+                         (lambda (x)
+                           (let ((path (string-trim (shell-command-to-string (format "kpsewhich %s.sty" x)))))
+                             (and (not (string-empty-p path)) path)))
+                         packages))
          (doc-name (f-base (f-filename file)))
          (existing-files-dir (f-parent file))
          (out-dir (concat existing-files-dir "-standalone/"))
-         (files (mapcar (lambda (x) (path-join existing-files-dir (concat doc-name x)))
-                        '(".tex" ".bib")))
+         (img-files (mapcar (lambda (x) (path-join existing-files-dir x)) imgs))
+         (src-files (mapcar (lambda (x) (path-join existing-files-dir (concat doc-name x)))
+                            '(".tex" ".bib")))
+         (tex-files (f-files existing-files-dir (lambda (x) (or (string-suffix-p ".cls" x)
+                                                                (string-suffix-p ".sty" x)))))
          (default-directory existing-files-dir)
-         ;; (compile-cmd (if current-prefix-arg
-         ;;                  (s-lex-format "pdflatex ${doc-name}.tex && biber ${doc-name} && pdflatex ${doc-name}")
-         ;;                (s-lex-format "pdflatex ${doc-name}.tex && bibtex ${doc-name}.aux && pdflatex ${doc-name}.tex && pdflatex ${doc-name}.tex && rm *.out *.aux *.log *.blg")))
          article-file)
-    (unless (-all? (lambda (x) (and (f-exists? x) (f-file? x))) files)
+    (kill-buffer orig-buf)
+    (unless (-all? (lambda (x) (and (f-exists? x) (f-file? x))) src-files)
       (user-error "Some files for document are missing.  Generate first?"))
     (when (f-exists? out-dir)
       (f-delete out-dir t))
     (f-mkdir out-dir)
-    (seq-do (lambda (x) (copy-file x out-dir t)) files)
-    (seq-do (lambda (x) (copy-file x out-dir t)) imgs)
-    (let ((buf (find-file-noselect (path-join out-dir (concat doc-name ".tex")))))
+    (seq-do (lambda (x) (copy-file x out-dir t)) (-concat src-files img-files tex-files package-files))
+    (let* ((buf (find-file-noselect (path-join out-dir (concat doc-name ".tex")))))
       (with-current-buffer buf
         (goto-char (point-min))
         (re-search-forward "\\documentclass\\[.*?]{\\(.+?\\)}")
@@ -893,16 +940,6 @@ Requires the bib and other files to be generated once."
         (goto-char (point-min))
         (while (re-search-forward "\\(\\includegraphics\\(?:\\[.+?]\\)?\\){\\(.+?\\)}" nil t)
           (replace-match (format "\\1{%s}" (concat "./" (f-filename (match-string 2))))))
-        (seq-do (lambda (x)
-                  (goto-char (point-min))
-                  (when (re-search-forward (format "\\(\\usepackage\\(?:\\[.+?]\\)?\\){%s}" (car x)) nil t)
-                    (replace-match (format "\\1{%s}" (format "%s" (car x)))) ; (format "sty/%s" (car x))
-                    (copy-file (cdr x) out-dir)))
-                '(("authblk" .  "/home/joe/texmf/tex/latex/authblk.sty")
-                  ("algorithm2e" . "/usr/share/texlive/texmf-dist/tex/latex/algorithm2e/algorithm2e.sty")
-                  ("algorithmic" . "/usr/share/texlive/texmf-dist/tex/latex/algorithms/algorithmic.sty")
-                  ("algorithmicx" . "/usr/share/texlive/texmf-dist/tex/latex/algorithmicx/algorithmicx.sty")
-                  ("algpseudocode" . "/usr/share/texlive/texmf-dist/tex/latex/algorithmicx/algpseudocode.sty")))
         (save-buffer))
       (kill-buffer buf))))
 
@@ -1062,8 +1099,8 @@ Options are:
 
 Example:
 
-\(setq ref-man-export-latex-table-properties
-      '(:caption-bottom t :center t :minipage nil))")
+(setq ref-man-export-latex-table-properties
+      \\='(:caption t :caption-pos bottom :center t :minipage nil))")
 
 (defvar ref-man-export-latex-table-cleanup-hook nil)
 
@@ -1089,8 +1126,8 @@ Example:
                   (if center "\\centering" "")
                   (or (and caption-top (format "\\caption{%s}" caption)) "")
                   table-string
-                  (if label (format "\\label{%s}" label) "")
                   (or (and caption-bottom (format "\\caption{%s}" caption)) "")
+                  (if label (format "\\label{%s}" label) "")
                   (if minipage "\\end{minipage}" "")))
          (text (with-temp-buffer
                  (insert text)
@@ -1120,8 +1157,8 @@ Do not add a caption if NO-CAPTION is non-nil."
              (label (or (org-element-property :label el) (org-element-property :name el)
                         (plist-get :label (cadr el)) (plist-get :name (cadr el))))
              (ref-man-export-latex-table-properties
-              (-concat ref-man-export-latex-table-properties
-                       `(:caption ,caption :label ,label)))
+              (-concat `(:caption ,caption :label ,label)
+                       ref-man-export-latex-table-properties))
              org-export-show-temporary-export-buffer
              table)
         (util/save-mark-and-restriction
@@ -1142,7 +1179,7 @@ Do not add a caption if NO-CAPTION is non-nil."
                                  (end-of-line)
                                  (point))))
                   (narrow-to-region top bottom))))
-         (org-export-to-buffer 'latex "*Latex Export*" nil nil nil nil)
+         (org-export-to-buffer 'ref-latex "*Latex Export*" nil nil nil nil)
          (setq table (with-current-buffer "*Latex Export*"
                        (beginning-of-line)
                        (run-hook-with-args 'ref-man-export-latex-table-cleanup-hook)
@@ -1385,7 +1422,8 @@ CHECKSUM is the current data checksum."
         (ref-man-export-find-file-other-window-no-ask md-file t)))))
 
 (defun ref-man-export-determine-output-dir (type docs-dir title-words)
-  (let ((out-file (org-entry-get (point) "OUTFILE")))
+  (let ((out-file (org-entry-get (point) "OUTFILE"))
+        (n ref-man-export-truncate-filenames-length))
     (if out-file
         (f-dirname out-file)
       (pcase type
@@ -1393,22 +1431,18 @@ CHECKSUM is the current data checksum."
         (_ (path-join (if (org-entry-get (point) "MD_OUTPUT_DIR")
                           (f-expand (org-entry-get (point) "MD_OUTPUT_DIR"))
                         docs-dir)
-                      (string-join title-words "-")))))))
+                      (string-join (-take n title-words) "-")))))))
 
 (defun ref-man-export-determine-md-file (type out-dir title-words checksum with-checksum)
-  (let ((out-file (org-entry-get (point) "OUTFILE")))
+  (let ((out-file (org-entry-get (point) "OUTFILE"))
+        (n ref-man-export-truncate-filenames-length))
     (if (and out-file (string-suffix-p ".md" out-file))
         out-file
       (pcase type
         ('blog (path-join out-dir (concat (string-join title-words "-") ".md")))
         (_ (path-join out-dir (concat
-                               (string-join (if with-checksum
-                                                (-take 3 title-words)
-                                              title-words) "-")
-                               (if with-checksum
-                                   (concat "-" (substring checksum 0 10))
-                                 "")
-                               ".md")))))))
+                               (string-join (-take n title-words) "-")
+                               (if with-checksum (substring checksum 0 10) "") ".md")))))))
 
 (defun ref-man-export-determine-out-file (type out-dir md-file)
   (let ((out-file (org-entry-get (point) "OUTFILE")))
@@ -1493,15 +1527,12 @@ See `ref-man-export-parse-references' for how bibtexs are extracted."
 
 
 (defun ref-man-export-generate-output-file-with-pndconf
-    (type md-file tmp-bib-file template-opt pndconf-opts)
+    (type md-file template-opt pndconf-opts)
   "Write the output file.
 
 The output file is determined by the TYPE.
 
 MD-FILE is converted with `pndconf' to the desired output file.
-
-A TMP-BIB-FILE may be used to generate the bibliography depending
-on the options given.
 
 TEMPLATE-OPT is a fixed path to the required template.
 
@@ -1539,9 +1570,7 @@ These options are set in `ref-man-export-article'."
           (erase-buffer)
           (insert (format "Running command %s\n" cmd))
           (insert msg)
-          (ansi-color-apply-on-region (point-min) (point-max))))
-      (when tmp-bib-file
-        (delete-file tmp-bib-file)))))
+          (ansi-color-apply-on-region (point-min) (point-max)))))))
 
 ;; FIXME: Lexical vars templates-dir csl-dir pandoc-opts are not used
 
@@ -1565,7 +1594,8 @@ These options are set in `ref-man-export-article'."
 ;; TODO: Should convert these args to keywords
 ;; TODO: org export opts should be a separate opts plist
 (defun ref-man-export-article (bufferp type &optional no-urls no-gdrive
-                                       ox-opts-list no-cite force plain)
+                                       ox-opts-list no-cite force plain
+                                       inhibit-display)
   "Export current org buffer or subtree as an article.
 
 Export to markdown first and then use `pandoc' and `pndconf'.
@@ -1629,12 +1659,10 @@ preprints."
        (with-abstract (org-entry-get (point) "WITH_ABSTRACT"))
        ;; NOTE: pndconf yaml opts
        (templates-dir ref-man-export-pandoc-templates-dir)
-       (tmp-bib-file (unless (or (string= "2.14" (ref-man-pandoc-version))
-                                 (string< "2.14" (ref-man-pandoc-version)))
-                       (make-temp-file "ref-bib-" nil ".bib")))
        (docs-dir ref-man-export-output-dir) ; where all docs are stored
        (csl-dir ref-man-export-pandoc-csl-dir)
        (csl-file (ref-man-export-get-csl-file no-urls))
+       (inhibit-display (or inhibit-display (org-entry-get (point) "INHIBIT_DISPLAY")))
        (citeproc "biblatex")
        (mathjax-path ref-man-export-mathjax-dir)
        ;; NOTE: pndconf opts
@@ -1658,7 +1686,7 @@ preprints."
        (out-file (ref-man-export-determine-out-file type out-dir md-file))
        (org-file (path-join out-dir (concat (string-join (-take 3 title-words) "-")
                                             "-" (substring checksum 0 10) ".org")))
-       (metadata (ref-man-export-get-opts type title tmp-bib-file
+       (metadata (ref-man-export-get-opts md-file type title nil ; NOTE: bib-file is set to nil here
                                           mathjax-path csl-file))
        (force (or force (org-entry-get (point) "FORCE")))
        (no-confirm (pcase (org-entry-get (point) "NO_CONFIRM" nil t)
@@ -1712,7 +1740,7 @@ preprints."
           (setq yaml-header (ref-man-export-generate-yaml-header
                              type (when (or with-abstract (eq type 'paper)) abstract) metadata
                              (ref-man-export-bib-strings
-                              bibtexs citeproc tmp-bib-file no-gdrive))))
+                              bibtexs citeproc nil no-gdrive)))) ; NOTE: tmp-bib-file set to nil
         (goto-char (point-min))
         (if (eq type 'paper)
             (ref-man-export-org-to-md type nil (and ref-man-export-paper-version-org-file org-file))
@@ -1728,11 +1756,12 @@ preprints."
     ;; Actual export to target type, unless only markdown was required
     (unless (string= out-file md-file)
       (ref-man-export-generate-output-file-with-pndconf
-       type md-file tmp-bib-file template-opt pndconf-cmdline-opts))
+       type md-file template-opt pndconf-cmdline-opts))
     (run-hook-with-args 'ref-man-export-post-export-hook
                         :bibtexs bibtexs :metadata metadata
                         :yaml-header yaml-header :md-file md-file)
-    (ref-man-export-find-file-other-window-no-ask (or out-file md-file) out-file)))
+    (unless inhibit-display
+      (ref-man-export-find-file-other-window-no-ask (or out-file md-file) out-file))))
 
 ;; TODO: This is buggy probably because of (util/org "util-org") kind of names
 ;; (defvar ref-man-export-async-paths

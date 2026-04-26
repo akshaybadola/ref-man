@@ -1,11 +1,11 @@
 ;;; ref-man-core.el --- Core Components for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022,2023,2025
+;; Copyright (C) 2018,2019,2020,2021,2022,2023,2025,2026
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Sunday 11 May 2025 08:50:06 AM IST>
+;; Time-stamp:	<Sunday 26 April 2026 11:33:48 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -502,7 +502,7 @@ Navdeep Jaitly and Noam Shazee\", it'll split at \"and\" and
 transpose the last name as the first element of each name
 inserting a comma there, resulting in \"Bengio, Samy and Vinyals,
 Oriol and Jaitly, Navdeep and Shazee, Noam\"."
-  (let* ((author-str (ref-man--replace-non-ascii author-str))
+  (let* ((author-str (ref-man--transcribe author-str ref-man-bibtex-author-replacement-strings))
          (author-str (replace-in-string (replace-in-string author-str "\\.$" "") ",$" ""))
          (authors (split-string author-str "," t))
          (result-authors
@@ -981,6 +981,96 @@ buffer with that filename."
             (message "[ref-man] Opened buffer but is empty.")))
         (ref-man--generate-org-buffer-content org-buf refs-list entry-alist visiting-filename)))))
 
+(defun ref-man-insert-linked-text (text buf-name pt)
+  "Insert TEXT with link to BUF-NAME and point PT."
+  (let ((map (make-sparse-keymap)))
+    ;; Bind both Enter and Return keys
+    (define-key map (kbd "RET") 'ref-man-follow-text-link-go)
+    (define-key map (kbd "C-<return>") 'ref-man-follow-text-link-pop)
+    (define-key map (kbd "C-o") 'ref-man-follow-text-link-open)
+    (insert (propertize text
+                        'face 'link
+                        'mouse-face 'highlight
+                        'help-echo "RET: Open File"
+                        'keymap map
+                        'link-buf buf-name
+                        'link-pt pt))))
+
+(defun ref-man-follow-text-link-go ()
+  "Command to follow link made by `ref-man-insert-linked-text'."
+  (interactive)
+  (ref-man-follow-text-link))
+
+(defun ref-man-follow-text-link-pop ()
+  "Command to pop to link made by `ref-man-insert-linked-text.'"
+  (interactive)
+  (ref-man-follow-text-link t))
+
+(defun ref-man-follow-text-link-open ()
+  "Command to open link in another window made by `ref-man-insert-linked-text.'"
+  (interactive)
+  (ref-man-follow-text-link nil t))
+
+(defun ref-man-follow-text-link (&optional pop-to open)
+  "Read properties at point and jump to the target.
+
+With optional POP-TO, pop to the selected buffer.
+With optional OPEN, open the buffer in new window on side."
+  (let ((buf (get-text-property (point) 'link-buf))
+        (pt (get-text-property (point) 'link-pt)))
+    (if buf
+        (progn
+          (cond (pop-to
+                 (pop-to-buffer buf)
+                 (goto-char pt))
+                (open
+                 (let ((orig-win (display-buffer (marker-buffer (copy-marker (point))) t))
+                       (win (util/get-or-create-window-on-side)))
+                   (set-window-buffer win buf)
+                   (save-selected-window
+                     (select-window win)
+                     (goto-char pt))))
+                (t (switch-to-buffer buf)
+                   (goto-char pt))))
+      (message "No link at point."))))
+
+(defun ref-man-org-display-duplicates (buf dups)
+  (let ((target (get-buffer-create "*Ref Man Duplicates*")))
+    (with-current-buffer target
+      (erase-buffer)
+      (goto-char (point-min))
+      (seq-do (lambda (x)
+                (ref-man-insert-linked-text (concat "- " (substring-no-properties (car x)) "\n")
+                                            buf (nth 1 x))
+                (seq-do (lambda (y)
+                          (ref-man-insert-linked-text (concat "  - " (substring-no-properties (car y)) "\n")
+                                                      (nth 1 y) (nth 2 y)))
+                        (a-get dups x)))
+              (a-keys dups))))
+  (switch-to-buffer "*Ref Man Duplicates*"))
+
+(defun ref-man-org-list-duplicate-headings-in-subtree ()
+  "List duplicate headings in subtree children.
+Display the entries if any found in a separate buffer."
+  (interactive)
+  (let ((dups (make-hash-table :test 'equal)))
+    (save-excursion
+      (save-restriction
+        (org-narrow-to-subtree)
+        (while (not (eobp))
+          (when (outline-next-heading)
+            (pcase-let* ((pt (point))
+                         (`(,heading ,cid ,buf-name) (list (org-get-heading t t t t)
+                                                           (org-entry-get (point) "CUSTOM_ID")
+                                                           (buffer-name)))
+                         (headings (-keep (lambda (x)
+                                            (unless (and (= pt (a-get x 'POS)) (string= (a-get x 'BUF) buf-name))
+                                              `(,(a-get x 'HEADING) . ,(list (a-get x 'BUF) (a-get x 'POS)))))
+                                          (ref-man-org-check-for-duplicate-pub heading cid))))
+              (when headings
+                (setq dups (a-assoc dups (list heading pt) (-concat (a-get dups (list heading pt)) headings)))))))))
+    (ref-man-org-display-duplicates (buffer-name (current-buffer)) dups)))
+
 (defun ref-man-org-find-duplicate-headings ()
   "Find duplicate headings for current heading or link under point.
 Display the entries if any found in a helm buffer."
@@ -1236,7 +1326,7 @@ the heading, otherwise delete."
     (with-current-buffer buf
       (ref-man-org-end-of-meta-data (not consolidate-drawers)
                                     no-newline)
-      (when (and (looking-back ":END:") (or (looking-at-p "[ \n]+") (eobp)))
+      (when (and (looking-back ":END:" (pos-bol)) (or (looking-at-p "[ \n]+") (eobp)))
         (insert "\n"))
       (pcase-let* ((`(,key . ,val) prop)
                    (`(,beg ,end ,has-text) (ref-man-org-text-bounds))
@@ -1426,36 +1516,6 @@ to the org buffer by `ref-man--org-bibtex-write-ref-from-assoc'."
             (org-set-property (upcase (car (cdr (split-string (symbol-name (car ent)) ":"))))
                               (cdr ent)))))
 
-;; CHECK: This is unused?
-(defun ref-man--org-bibtex-write-ref-from-assoc-permissive (entry &optional ignore-errors)
-  "Write an org entry from an alist ENTRY parsed from json.
-Optional non-nil IGNORE-ERRORS is unused to conform with all the
-org writing functions."
-  (let* ((key (car entry))
-         (entry (nth 1 entry)))
-    (org-insert-heading-after-current)
-    (insert (cdr (assoc "title" entry)))
-    (insert "\n")
-    (when (assoc "author" entry)
-      (org-indent-line)
-      (insert (format "- Authors: %s\n" (ref-man--replace-non-ascii (cdr (assoc "author" entry))))))
-    (when (and (assoc "venue" entry) (assoc "year" entry))
-      (org-indent-line)
-      (insert (format "- %s\n" (concat (cdr (assoc "venue" entry)) ", " (cdr (assoc "year" entry))))))
-    (when (assoc "howpublished" entry)
-      (org-indent-line)
-      (insert (format "- %s\n" (concat "Published as: " (cdr (assoc "venue" entry))))))
-    (org-insert-property-drawer)
-    (cl-loop for ent in entry
-          do
-          (when (not (string-equal (car ent) "abstract"))
-            (org-set-property (upcase (car ent))
-                              (ref-man--replace-non-ascii (ref-man--fix-curly (cdr ent))))))
-    (org-set-property "CUSTOM_ID" key)
-    (if (string-equal (assoc "type" entry) "misc")
-        (org-set-property "BTYPE" "misc")
-      (org-set-property "BTYPE" "article"))))
-
 (defun ref-man-org-insert-entry-at-eob-after-current-same-level ()
   (let* ((stars (save-excursion
                   (if (save-excursion (goto-char (line-beginning-position)) (looking-at "^\\*+"))
@@ -1466,7 +1526,7 @@ org writing functions."
     (goto-char (point-max))
     (insert stars " ")))
 
-(defun ref-man--org-bibtex-write-ref-from-ss-ref-fast (entry &optional ignore-errors
+(defun ref-man--org-bibtex-write-ref-from-ss-ref-fast (entry &optional ignore-bibkey-errors
                                                              update-current no-abstract)
   (when (a-get entry 'title)
     ;; NOTE: insert heading only when not updating current heading
@@ -1486,10 +1546,10 @@ org writing functions."
                (cond ((or (eq (car ent) 'author) (eq (car ent) 'authors))
                       (when (not (string-empty-p author-str))
                         (insert indent ":AUTHOR:" indent
-                                (ref-man--invert-accents
-                                 (ref-man--replace-non-ascii
-                                  (ref-man--fix-curly
-                                   (ref-man--build-bib-author author-str))))
+                                (->> author-str
+                                     (ref-man--build-bib-author)
+                                     (ref-man--fix-curly)
+                                     (ref-man--invert-author-accents))
                                 "\n")))
                      ((eq (car ent) 'isInfluential)
                       (if (not (eq (cdr ent) 't))
@@ -1523,7 +1583,7 @@ org writing functions."
        (cons "venue" (format "%s, %s" (a-get entry 'venue) (a-get entry 'year))) nil t)
       (ref-man-org-insert-prop-list-item (cons "authors" author-str) nil t)
       (let ((key (save-excursion (ref-man-parse-properties-for-bib-key))))
-        (unless (or key ignore-errors)
+        (unless (or key ignore-bibkey-errors)
           (debug)
           ;; FIXME: This function should filter the user read key
           ;; ref-man--build-bib-key-from-plist
@@ -1538,13 +1598,13 @@ org writing functions."
 
 ;; TODO: Rename this properly
 ;; TODO: Clean this
-(defun ref-man--org-bibtex-write-ref-from-ss-ref (entry &optional ignore-errors
+(defun ref-man--org-bibtex-write-ref-from-ss-ref (entry &optional ignore-bibkey-errors
                                                         update-current no-abstract)
   "Generate an org entry from data fetched from Semantic Scholar.
 
 ENTRY is an alist of a bibliographic property keys and values.
 
-Optional IGNORE-ERRORS to ignore erros in case error occurs while
+Optional IGNORE-BIBKEY-ERRORS to ignore erros in case error occurs while
 parsing the org properties as bibtex.
 
 With optional UPDATE-CURRENT, update the current org entry
@@ -1559,13 +1619,14 @@ Don't insert abstract with optional non-nil NO-ABSTRACT."
       ;; NOTE: insert heading only when not updating current heading
       (unless update-current
         (org-insert-heading-after-current))
+      (setq entry (a-assoc entry 'title (replace-regexp-in-string "\n" " " (a-get entry 'title))))
       (unless (org-entry-get (point) "NO_UPDATE_TITLE")
         (org-edit-headline (a-get entry 'title)))
       ;; FIXME: beg is same as current point
       (pcase-let ((`(,beg ,_ ,has-text) (ref-man-org-text-bounds))
                   (author-str (mapconcat (lambda (x)
                                            (a-get x 'name))
-                                         (a-get entry 'authors) ", "))
+                                         (or (a-get entry 'author) (a-get entry 'authors)) ", "))
                   (level (org-current-level))
                   (venue (and (a-get entry 'venue)
                               (not (string-empty-p (a-get entry 'venue)))
@@ -1597,10 +1658,10 @@ Don't insert abstract with optional non-nil NO-ABSTRACT."
                  (cond ((or (eq (car ent) 'author) (eq (car ent) 'authors))
                         (when (not (string-empty-p author-str))
                           (org-set-property "AUTHOR"
-                                            (ref-man--invert-accents
-                                             (ref-man--replace-non-ascii
-                                              (ref-man--fix-curly
-                                               (ref-man--build-bib-author author-str)))))))
+                                            (->> author-str
+                                                 (ref-man--build-bib-author)
+                                                 (ref-man--fix-curly)
+                                                 (ref-man--invert-author-accents)))))
                        ((eq (car ent) 'isInfluential)
                         (if (not (eq (cdr ent) 't))
                             (org-set-property "ISINFLUENTIAL" "nil")
@@ -1628,7 +1689,7 @@ Don't insert abstract with optional non-nil NO-ABSTRACT."
                                           (ref-man--replace-non-ascii
                                            (ref-man--fix-curly (format "%s" (cdr ent))))))))
         (let ((key (ref-man-parse-properties-for-bib-key)))
-          (unless (or key ignore-errors)
+          (unless (or key ignore-bibkey-errors)
             (debug)
             ;; FIXME: This function should filter the user read key
             ;; ref-man--build-bib-key-from-plist
@@ -1652,7 +1713,72 @@ Don't insert abstract with optional non-nil NO-ABSTRACT."
       ;;   (insert (cdr (assoc 'title entry))))
       )))
 
-(defun ref-man--org-bibtex-write-ref-from-assoc (entry &optional ignore-errors
+(defun ref-man--org-bibtex-write-ref-from-bibtex-parser-alist (entry &optional ignore-bibkey-errors
+                                                              update-current no-abstract)
+  "Generate an org entry from data fetched from bibtex parser.
+
+The arguments mean the same as `ref-man--org-bibtex-write-ref-from-ss-ref'.
+
+This function is a bit more permissive and ignores errors inserting an entry."
+  (condition-case nil
+      (save-excursion
+        (when (a-get entry 'title)          ; NOTE: insert only when title exists
+          ;; NOTE: insert heading only when not updating current heading
+          (unless update-current
+            (org-insert-heading-after-current))
+          (setq entry (a-assoc entry 'title (replace-regexp-in-string "\n" " " (a-get entry 'title))))
+          (unless (org-entry-get (point) "NO_UPDATE_TITLE")
+            (org-edit-headline (a-get entry 'title)))
+          ;; FIXME: beg is same as current point
+          (pcase-let ((`(,beg ,_ ,has-text) (ref-man-org-text-bounds))
+                      (author-str (replace-regexp-in-string "\n" " "
+                                                            (or (a-get entry 'author)
+                                                                (a-get entry 'authors)
+                                                                (a-get entry 'editor))))
+                      (level (org-current-level))
+                      (venue (when-let* ((venue (or (a-get entry 'journal) (a-get entry 'booktitle)
+                                                    (a-get entry 'howpublished))))
+                               (and (not (string-empty-p venue)) venue)))
+                      (year (or (org-entry-get (point) "YEAR")
+                                (a-get entry 'year))))
+            (when-let* ((venue (cond (venue (cons "venue" (format "%s, %s" venue year)))
+                                     ((and (eq (a-get entry 'ENTRYTYPE) 'misc) (a-get entry 'url))
+                                      (cons "venue" (format "%s, %s" (a-get entry 'url) year)))
+                                     (t nil))))
+              (ref-man-org-insert-prop-list-item venue nil t))
+            (setq entry (a-assoc entry 'year year))
+            (ref-man-org-insert-prop-list-item (cons "authors" author-str) nil t)
+            (when (and (not no-abstract) (a-get entry 'abstract))
+              (ref-man-org-insert-abstract-list-item (cons "abstract" (a-get entry 'abstract)) nil t))
+            (org-insert-property-drawer)
+            (cl-loop for ent in entry
+                     do
+                     (cond ((or (eq (car ent) 'author) (eq (car ent) 'authors))
+                            (when (not (string-empty-p author-str))
+                              (org-set-property "AUTHOR" author-str)))
+                           ((eq (car ent) 'ENTRYTYPE)
+                            (org-set-property "BTYPE" (cdr ent)))
+                           ((eq (car ent) 'ID))
+                           (t (org-set-property (upcase (symbol-name (car ent)))
+                                                (ref-man--replace-non-ascii
+                                                 (ref-man--fix-curly
+                                                  (replace-regexp-in-string
+                                                   "\n" " " (format "%s" (cdr ent)))))))))
+            (let ((key (ref-man-parse-properties-for-bib-key)))
+              (unless (or key ignore-bibkey-errors)
+                (debug)
+                ;; FIXME: This function should filter the user read key
+                ;; ref-man--build-bib-key-from-plist
+                (setq key (read-from-minibuffer (format "Could not parse key:\nauthor: %s\ntitle: %s\nyear: %s"
+                                                        (org-entry-get (point) "AUTHOR")
+                                                        (org-entry-get (point) "TITLE")
+                                                        (org-entry-get (point) "YEAR")))))
+              (when key
+                (org-set-property "CUSTOM_ID" key))))))
+    (error nil)))
+
+
+(defun ref-man--org-bibtex-write-ref-from-assoc (entry &optional ignore-bibkey-errors
                                                        update-current no-abstract)
   "Write an org entry a bib ENTRY which is an alist of strings.
 
@@ -1682,7 +1808,7 @@ The arguments mean the same as `ref-man--org-bibtex-write-ref-from-ss-ref'."
     (org-set-property "CUSTOM_ID" key)
     (org-set-property "BTYPE" "article")))
 
-(defun ref-man--org-bibtex-write-ref-from-plist (entry &optional ignore-errors
+(defun ref-man--org-bibtex-write-ref-from-plist (entry &optional ignore-bibkey-errors
                                                        update-current no-abstract)
   "Write an org entry a bib ENTRY which is a plist.
 
@@ -1749,7 +1875,7 @@ The arguments mean the same as `ref-man--org-bibtex-write-ref-from-ss-ref'."
 ;;     (org-set-property "BTYPE" "article")))
 
 ;; FIXME: How's this different from earlier org generation functions?
-(defun ref-man--org-bibtex-write-heading-from-bibtex (entry &optional ignore-errors
+(defun ref-man--org-bibtex-write-heading-from-bibtex (entry &optional ignore-bibkey-errors
                                                             update-current no-abstract)
   "Write an org entry from an alist parsed from a bibtex ENTRY.
 
@@ -2025,10 +2151,15 @@ redundant entries and arxiv metadata is done."
                                        (equal (a-get bib-alist "type") "@misc"))
                                   (ref-man-org-parse-bibtex-fix-misc bib-alist)
                                 bib-alist))
-                   (bib-alist (mapcar (lambda (x) `(,(car x) . ,(if (cdr x)
-                                                                    (ref-man--replace-non-ascii (cdr x))
-                                                                  (cdr x))))
-                                      bib-alist)))
+                   (bib-alist (mapcar
+                               (lambda (x)
+                                 `(,(car x) . ,(if (cdr x)
+                                                   (if (string= (car x) "author")
+                                                       (ref-man--transcribe
+                                                        (cdr x) ref-man-bibtex-author-replacement-strings)
+                                                     (ref-man--replace-non-ascii (cdr x)))
+                                                 (cdr x))))
+                               bib-alist)))
         ;; (when clean
         ;;   (when (and (a-get bib-alist "journal")
         ;;              (string= (downcase (a-get bib-alist "journal")) "arxiv"))
@@ -2898,7 +3029,7 @@ Return a cons of `id-type' and `id'.  Possible values for
                     (cons 'ss (-last-item (split-string (string-remove-suffix "/" url) "/"))))
                    (t nil)))))))
 
-(defun ref-man--insert-refs-from-seq (data name seqtype &optional ignore-errors no-abstract fast)
+(defun ref-man--insert-refs-from-seq (data name seqtype &optional ignore-bibkey-errors no-abstract fast)
   "Insert references from a given sequence at cursor.
 
 DATA is json-data from semantic scholar.
@@ -2910,7 +3041,7 @@ determined.  It can be one of \\='ss \\='assoc \\='plist or \\='bibtex.
 After the heading is generated, each element of the data is
 inserted as a reference.
 
-With optional IGNORE-ERRORS non-nil, ignore any errors that may
+With optional IGNORE-BIBKEY-ERRORS non-nil, ignore any errors that may
 happen while inserting references in the buffer.
 
 Non-nil NO-ABSTRACT means to not insert the abstract."
@@ -2934,7 +3065,7 @@ Non-nil NO-ABSTRACT means to not insert the abstract."
       (org-insert-heading-respect-content)
       (org-demote)
       (seq-do (lambda (ref)
-                (funcall write-func ref ignore-errors nil no-abstract))
+                (funcall write-func ref ignore-bibkey-errors nil no-abstract))
               data)
       (outline-up-heading 1)
       (forward-line)
@@ -2942,7 +3073,7 @@ Non-nil NO-ABSTRACT means to not insert the abstract."
       (delete-blank-lines)
       (outline-previous-heading))))
 
-(defun ref-man-org-insert-ss-data-subr (ss-data &optional buf where ignore-errors only
+(defun ref-man-org-insert-ss-data-subr (ss-data &optional buf where ignore-bibkey-errors only
                                             no-abstract current fast)
   "Insert Semantic Scholar Data SS-DATA into an org buffer.
 
@@ -2955,7 +3086,7 @@ BUF is the target buffer, defaults to `current-buffer'.
 
 WHERE specifies the point at which to insert the data.  Defaults to `point'
 
-IGNORE-ERRORS if non-nil, indicates to ignore any errors that may happen
+IGNORE-BIBKEY-ERRORS if non-nil, indicates to ignore any errors that may happen
 while inserting references in the buffer.
 
 ONLY if given can be one of \\='refs or \\='cites and means to insert
@@ -2987,18 +3118,18 @@ citations after that."
   (org-demote)                          ; demote only once
   (pcase only
     ('refs (ref-man--insert-refs-from-seq
-            (a-get ss-data 'references) "references" 'ss ignore-errors t fast)
+            (a-get ss-data 'references) "references" 'ss ignore-bibkey-errors t fast)
            (org-insert-heading-respect-content)
-           (ref-man--insert-refs-from-seq nil "citations" 'ss ignore-errors t fast))
-    ('cites (ref-man--insert-refs-from-seq nil "citations" 'ss ignore-errors t fast)
+           (ref-man--insert-refs-from-seq nil "citations" 'ss ignore-bibkey-errors t fast))
+    ('cites (ref-man--insert-refs-from-seq nil "citations" 'ss ignore-bibkey-errors t fast)
             (org-insert-heading-respect-content)
             (ref-man--insert-refs-from-seq
-             (a-get ss-data 'citations) "citations" 'ss ignore-errors t fast))
+             (a-get ss-data 'citations) "citations" 'ss ignore-bibkey-errors t fast))
     (_ (ref-man--insert-refs-from-seq
-        (a-get ss-data 'references) "references" 'ss ignore-errors t fast)
+        (a-get ss-data 'references) "references" 'ss ignore-bibkey-errors t fast)
        (org-insert-heading-respect-content)
        (ref-man--insert-refs-from-seq
-        (a-get ss-data 'citations) "citations" 'ss ignore-errors t fast)))
+        (a-get ss-data 'citations) "citations" 'ss ignore-bibkey-errors t fast)))
   (outline-up-heading 1)
   (org-hide-block-all))
 
@@ -3071,6 +3202,14 @@ CUSTOM_ID."
          (save-excursion
            (goto-char pt)
            (org-entry-get (point) prop)))))))
+
+(defun ref-man-org-delete-empty-headings-in-buffer ()
+  "Delete empty headings in current org buffer."
+  (let ((inhibit-read-only t))
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward "^\\*+ *$" nil t)
+        (delete-region (pos-bol) (+ (pos-eol) 1))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; END org utility functions ;;
@@ -3561,13 +3700,8 @@ Display buffer.")
         (overlay-put overlay 'ref-man-org-load-more-ov 'read-only)
         (overlay-put overlay 'face 'ref-man-org-load-more-face)))))
 
-(defun ref-man-org-display-all-references ()
-  "Fetch and display ALL references in a Semantic Scholar display buffer."
-  (interactive)
-  (pcase-let* ((ssid (save-excursion
-                       (goto-char (point-min))
-                       (org-entry-get (point) "PAPERID")))
-               (`(,pt ,existing-ids) (save-restriction
+(defun ref-man-org-display-references-helper (data-func insert-func)
+  (pcase-let* ((`(,pt ,existing-ids) (save-restriction
                                        (let ((case-fold-search t)
                                              pt ids)
                                          (goto-char (point-min))
@@ -3576,16 +3710,67 @@ Display buffer.")
                                          (while (re-search-forward "^\\*\\*\\* .+" nil t)
                                            (push (org-entry-get (point) "PAPERID") ids))
                                          `(,pt ,ids))))
-               (data (ref-man-ss-fetch-paper-references ssid))
                (count 0))
     (goto-char pt)
-    (outline-next-heading)
-    (mapc (lambda (x)
-            (unless (member (a-get x 'paperId) existing-ids)
-              (ref-man--org-bibtex-write-ref-from-ss-ref x t nil t)
-              (setq count (1+ count))))
-          data)
-    (message "[ref-man] Inserted %d more referenceds" count)))
+    (if existing-ids
+        (outline-next-heading)
+      (org-insert-heading)
+      (org-do-demote))
+    (let ((data (funcall data-func)))
+      (if (a-get data 'error)
+          (user-error "Got error %s" data)
+        (mapc (lambda (x)
+                (unless (member (a-get x 'paperId) existing-ids)
+                  (funcall insert-func x)
+                  (setq count (1+ count))))
+              data)
+        (ref-man-org-delete-empty-headings-in-buffer)
+        (message "[ref-man] Inserted %d more references" count)))))
+
+(defun ref-man-org-paperid-eq-p (paperid entry)
+  (and
+   (a-get entry 'PAPERID)
+   (string= (a-get entry 'PAPERID) paperid)))
+
+
+(defun ref-man-org-get-paperid-from-cache (paperid)
+  (let* ((predicate (-partial 'ref-man-org-paperid-eq-p paperid))
+         (maybe-ids (util/org-collected-headings predicate))
+         (maybe-ids (-filter (lambda (x) (pcase-let ((`(,buf ,vals) x))
+                                           vals))
+                             maybe-ids))
+         (entry (when maybe-ids (caar (a-vals maybe-ids))))
+         (arxivid (when entry
+                    (car (a-gets entry '(ARXIVID ARXIV_URL)
+                                 (lambda (x) (and x (not (string-empty-p x)))))))))
+    (when arxivid
+      (replace-regexp-in-string "https://arxiv.org/\\(abs\\|pdf\\|src\\)/" "" arxivid))))
+
+(defun ref-man-org-display-arxiv-references ()
+  "Fetch and display ArXiv references in a Semantic Scholar display buffer."
+  (interactive)
+  (let* ((ssid (save-excursion
+                       (goto-char (point-min))
+                       (org-entry-get (point) "PAPERID")))
+         (arxivid (ref-man-org-get-paperid-from-cache ssid))
+         (arxivid (or arxivid
+                      (with-temp-url-buffer
+                          (url-retrieve-synchronously
+                           (ref-man-py-url "paperid_to_arxivid" `(("id" . ,ssid))) t)
+                        (string-trim (buffer-substring-no-properties (point) (point-max))))))
+         (data-func (-partial 'ref-man-ss-fetch-arxiv-references arxivid))
+         (insert-func (-rpartial 'ref-man--org-bibtex-write-ref-from-bibtex-parser-alist t nil t)))
+    (ref-man-org-display-references-helper data-func insert-func)))
+
+(defun ref-man-org-display-all-references ()
+  "Fetch and display ALL references in a Semantic Scholar display buffer."
+  (interactive)
+  (let* ((ssid (save-excursion
+                 (goto-char (point-min))
+                 (org-entry-get (point) "PAPERID")))
+         (data-func (-partial 'ref-man-ss-fetch-paper-references ssid))
+         (insert-func (-rpartial 'ref-man--org-bibtex-write-ref-from-ss-ref t nil t)))
+    (ref-man-org-display-references-helper data-func insert-func)))
 
 (defun ref-man-org-fetch-more-citations (&optional count all)
   "Fetch some more citations in a Semantic Scholar display buffer.
@@ -3643,7 +3828,8 @@ See `ref-man-org-fetch-ss-data-for-entry' for details."
     (pcase-let ((`(,_ ,end ,_) (util/org-heading-and-body-bounds)))
       (goto-char end)
       (org-insert-heading)
-      (ref-man-org-insert-ss-data-subr ss-data (current-buffer) nil t only t t))))
+      (ref-man-org-insert-ss-data-subr ss-data (current-buffer) nil t only t t))
+    (ref-man-org-delete-empty-headings-in-buffer)))
 
 (defun ref-man-filter-org-ss--min-max-num (x v)
   (and (> (string-to-number x) (string-to-number (car v)))
@@ -4449,7 +4635,7 @@ property drawer as the URL property."
   (interactive "p")
   (let* ((props (org-entry-properties))
          (title (cdr (assoc "TITLE" props)))
-         (author (cdr (assoc "AUTHOR" props)))
+         (author (or (cdr (assoc "AUTHOR" props)) (cdr (assoc "EDITOR" props))))
          (year (cdr (assoc "YEAR" props))))
     (if (and title author year)
         (condition-case nil
@@ -4738,7 +4924,9 @@ Only works for internal org links."
              (args `(:url ,url :buffer ,buf
                           :point ,pt :heading ,heading)))
         (if file
-            (message "File already exists")
+            (progn
+              (ref-man--insert-source-file-property file)
+              (message "File already exists"))
           (if url
               (ref-man--download-redirect #'ref-man--download-callback-store-src url args)
             (message "No URL found."))))

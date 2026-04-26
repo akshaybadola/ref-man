@@ -612,3 +612,21 @@
 
 ** [2025-05-11 Sun 08:49]
    - Change for ~util/org-collect-headings-cache~
+
+** [2026-04-26 Sun 11:28]
+   - In ~ref-man-core~
+     + Added ~ref-man-org-list-duplicate-headings-in-subtree~ and helper functions
+     + Patched a bug in ~ref-man--org-bibtex-write-ref-from-ss-ref~ where incorrect
+       characters were being generated in author names (yet to be fully fixed)
+     + Added ~ref-man-org-display-arxiv-references~ and helper function
+       ~ref-man--org-bibtex-write-ref-from-bibtex-parser-alist~,
+       ~ref-man-org-display-all-references~
+   - In ~ref-man-export~
+     + Added ~ref-man-export-truncate-filenames-length~ to control filename truncation
+     + Improvments to ~ref-man-export-generate-standalone-from-latex~ and added
+       ~ref-man-export-get-all-packages~ helper function to get all
+       latex package names from tex file
+     + Some other minor changes
+   - In ~ref-man-util~
+     + Separated ~ref-man-bibtex-author-replacement-strings~ from
+       ~ref-man-bibtex-ascii-replacement-strings~

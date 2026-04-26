@@ -1,11 +1,11 @@
 ;;; ref-man-url.el --- url utilities and functions for `ref-man'. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022,2023,2025
+;; Copyright (C) 2018,2019,2020,2021,2022,2023,2025,2026
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Saturday 26 April 2025 07:52:08 AM IST>
+;; Time-stamp:	<Sunday 26 April 2026 11:33:48 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -31,8 +31,9 @@
 
 ;;; Code:
 
-(unless (featurep 'ref-man-util)
-  (require 'ref-man-util))
+(require 'url)
+(require 'ref-man-util)
+(require 'ref-man-py)
 (require 'doi-utils)
 
 (defcustom ref-man-pdf-proxy-port nil
@@ -118,7 +119,7 @@ The keys of the alist are regexps and the values are the types of URL.")
   "Get url from arxivid extracted from org property drawer at point."
   (interactive)
   (if (eq major-mode 'org-mode)
-      (let ((arxiv-id ref-man-url-maybe-get-arxiv-id))
+      (let ((arxiv-id (ref-man-url-maybe-get-arxiv-id)))
         (when arxiv-id
           (if (called-interactively-p 'any)
               (progn
@@ -269,6 +270,16 @@ downloadable one."
 ;; (defun ref-man-url-get-supplementary-url-from-aaai-url  (url))
 ;; (defun ref-man-url-get-supplementary-url-from-acm-url  (url))
 ;; (defun ref-man-url-get-supplementary-url-from-openreview-url (url))
+
+(defmacro with-temp-url-buffer (buf &rest body)
+  "Evaluate BODY in http response buffer BUF.
+
+The body is executed after skipping past the headers."
+  (declare (indent 1) (debug t))
+  `(with-current-buffer ,buf
+     (goto-char (point-min))
+     (forward-paragraph)
+     ,@body))
 
 (defmacro with-temp-shr-buffer (buf &rest body)
   "Construct a temp `shr' buffer from url buffer BUF and execute BODY.

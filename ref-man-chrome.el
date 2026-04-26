@@ -1,11 +1,11 @@
 ;;; ref-man-chrome.el --- Module to route the eww requests through chromium so that google doesn't complain about lack of javascript. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022
+;; Copyright (C) 2018,2019,2020,2021,2022,2026
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Wednesday 16 November 2022 09:26:01 AM IST>
+;; Time-stamp:	<Sunday 26 April 2026 11:33:48 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -85,13 +85,13 @@ The names are checked in order for the current active PATH variable.")
 (defcustom ref-man-chrome-port-number-start-from
   9222
   "Where to start port numbers for the debugger."
-  :type 'interger
+  :type 'integer
   :group 'ref-man)
 
 (defcustom ref-man-chrome-history-limit
   50
   "How many pages to save in memory.  Basically the page source is saved."
-  :type 'interger
+  :type 'integer
   :group 'ref-man)
 
 (defvar ref-man-chrome-verbose

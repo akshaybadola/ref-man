@@ -1,11 +1,11 @@
 ;;; ref-man-py.el --- Module for managing the files. ;;; -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2018,2019,2020,2021,2022,2023,2025
+;; Copyright (C) 2018,2019,2020,2021,2022,2023,2025,2026
 ;; Akshay Badola
 
 ;; Author:	Akshay Badola <akshay.badola.cs@gmail.com>
 ;; Maintainer:	Akshay Badola <akshay.badola.cs@gmail.com>
-;; Time-stamp:	<Saturday 26 April 2025 07:52:08 AM IST>
+;; Time-stamp:	<Sunday 26 April 2026 11:33:48 AM IST>
 ;; Keywords:	pdfs, references, bibtex, org, eww
 
 ;; This file is *NOT* part of GNU Emacs.
@@ -215,7 +215,7 @@ directories given by `ref-man-extra-documents-dirs'"
   "Check if a source file exists for a given URI in `ref-man-source-dir'."
   (let ((file-name (f-join ref-man-source-dir
                            (ref-man-files-arxiv-src-filename-from-url url))))
-    (file-exists-p file-name)))
+    (and (file-exists-p file-name) file-name)))
 
 
 (provide 'ref-man-files)
